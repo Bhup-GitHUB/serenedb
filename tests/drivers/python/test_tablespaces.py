@@ -1741,6 +1741,8 @@ def test_a_cold_column_scan_keeps_reading_ahead_of_its_workers(tmp_path: Path) -
                     "TABLESPACE idx AS SELECT hash(i) AS v FROM range(12000000) t(i)")
                 conn.execute("VACUUM (REFRESH_TABLE) wide")
                 conn.execute("SET threads = 2")
+                conn.execute(
+                    "SET GLOBAL external_file_cache_remote_max_block_size = 4194304")
                 expected = conn.execute(query).fetchall()
                 conn.execute("SET GLOBAL enable_external_file_cache = false")
                 conn.execute("SET GLOBAL enable_external_file_cache = true")
@@ -1751,13 +1753,52 @@ def test_a_cold_column_scan_keeps_reading_ahead_of_its_workers(tmp_path: Path) -
         finally:
             server.stop()
     assert rows == expected
-    reads = [entry for entry in log if entry["key"].endswith(".col")]
-    start_ended = min(entry["ended"] for entry in reads)
-    later = [entry for entry in reads if entry["began"] >= start_ended]
-    assert later, reads
-    in_flight = max(sum(other["began"] <= entry["began"] < other["ended"] for other in later)
-                    for entry in later)
-    assert in_flight >= 6, later
+    reads = sorted((entry for entry in log if entry["key"].endswith(".col")),
+                   key=lambda entry: entry["began"])
+    assert len({entry["key"] for entry in reads}) >= 16, reads
+    rounds: list[int] = []
+    for i, entry in enumerate(reads):
+        rounds.append(1 + max((rounds[j] for j in range(i)
+                               if reads[j]["ended"] <= entry["began"]), default=0))
+    assert max(rounds) <= 10, max(rounds)
+
+
+def test_a_cold_column_scan_skips_the_row_groups_its_filter_rules_out(tmp_path: Path) -> None:
+    location = f"s3://bucket/pruned-{tmp_path.name}"
+    query = "SELECT sum(k % 7) FROM sorted WHERE k < 184467440737095516"
+    with FakeS3() as fake:
+        server = _Server(tmp_path / "data")
+        try:
+            assert server.wait_ready(), server.output()
+            _create_secret(server, _Store(fake.endpoint, "key", "secret",
+                                          "bucket"), location)
+            with server.connect() as conn:
+                conn.execute("SET threads = 1")
+                conn.execute(
+                    "CREATE TABLE sorted WITH (storage = 'search', compaction_interval = 0) "
+                    "TABLESPACE idx AS SELECT hash(i) AS k FROM range(6000000) t(i) ORDER BY k")
+                conn.execute("VACUUM (REFRESH_TABLE) sorted")
+                conn.execute("RESET threads")
+                expected = conn.execute(query).fetchall()
+                conn.execute("SET GLOBAL enable_external_file_cache = false")
+                conn.execute("SET GLOBAL enable_external_file_cache = true")
+                fake.log = []
+                rows = conn.execute(query).fetchall()
+                log, fake.log = fake.log, None
+        finally:
+            server.stop()
+        with fake.lock:
+            stored = [len(obj.data) for (_, key), obj in fake.objects.items()
+                      if key.endswith(".col")]
+    assert rows == expected
+    assert len(stored) == 1, stored
+    stored = stored[0]
+    fetched = 0
+    for entry in log:
+        if entry["key"].endswith(".col"):
+            first, _, last = entry["range"].removeprefix("bytes=").partition("-")
+            fetched += int(last) - int(first) + 1
+    assert 0 < fetched * 4 < stored, (fetched, stored)
 
 
 @pytest.mark.parametrize("split", ["tail", "always"])

@@ -21,6 +21,7 @@
 #include <absl/algorithm/container.h>
 
 #include <algorithm>
+#include <atomic>
 #include <duckdb/storage/external_file_cache/external_file_cache.hpp>
 #include <iresearch/formats/column/col_reader.hpp>
 #include <iresearch/formats/column/column_reader.hpp>
@@ -36,12 +37,19 @@ namespace sdb::connector {
 namespace {
 
 constexpr uint64_t kScanStart = duckdb::ExternalFileCache::MAX_FILE_IN_FLIGHT;
-constexpr uint64_t kScanStartRowGroups = 4096;
+constexpr uint64_t kSampleRowGroups = 8;
 constexpr uint64_t kScanAhead = uint64_t{256} << 20;
 constexpr uint64_t kMinWorkerAhead = uint64_t{4} << 20;
 constexpr uint64_t kMaxWorkerAhead = uint64_t{32} << 20;
 constexpr uint64_t kMaxUnitAhead = uint64_t{64} << 20;
 constexpr uint64_t kMaxAheadRowGroups = 256;
+
+struct AheadScratch {
+  irs::ColFilterStateCache& states;
+  irs::ColFilterClassification& cls;
+  duckdb::ClientContext& context;
+  std::vector<duckdb::ExternalFileCacheRange>& extents;
+};
 
 bool RowGroupLive(const ScanGlobalState& g, const SegmentWork& work,
                   const RowGroupChecks& checks, UnitRows rows, uint64_t rg) {
@@ -71,6 +79,113 @@ uint64_t CollectRowGroup(const ScanGlobalState& g,
   return bytes;
 }
 
+void DeclareRowGroups(ScanGlobalState& g, const AheadScratch& scratch,
+                      uint32_t seg, uint64_t from, uint64_t to) {
+  const auto& sub = (*g.reader)[seg];
+  const auto* col_reader = sub.GetColReader();
+  const uint64_t docs = sub.Meta().docs_count;
+  if (!col_reader || docs == 0 || from >= to) {
+    return;
+  }
+  const auto& work = g.segments[seg];
+  RowGroupChecks checks;
+  if (work.live.size() == 0 && !g.col_filters.empty()) {
+    ClassifySegmentColFilters(sub, g, g.col_filters, scratch.states,
+                              scratch.cls, false);
+    if (scratch.cls.segment_dead) {
+      return;
+    }
+    checks = MakeRowGroupChecks(*col_reader, scratch.cls.active, docs,
+                                scratch.context, scratch.states);
+  }
+  const UnitRows rows{.begin = 0, .end = docs};
+  scratch.extents.clear();
+  for (auto rg = from; rg != to; ++rg) {
+    if (RowGroupLive(g, work, checks, rows, rg)) {
+      CollectRowGroup(g, *col_reader, rows, rg, scratch.extents);
+    }
+  }
+  if (!scratch.extents.empty()) {
+    col_reader->PrefetchExtents(scratch.extents);
+  }
+}
+
+void DeclareNextSegments(ScanGlobalState& g, const AheadScratch& scratch) {
+  const auto claimed =
+    std::min(g.next_segment.load(std::memory_order_relaxed), g.live_segments);
+  auto declared = g.ahead_segment.load(std::memory_order_relaxed);
+  for (;;) {
+    const auto begin = std::max(declared, claimed);
+    auto end = begin;
+    while (end != g.live_segments &&
+           g.ahead_before[end] - g.ahead_before[claimed] < g.ahead_rgs) {
+      ++end;
+    }
+    if (end <= declared) {
+      return;
+    }
+    if (!g.ahead_segment.compare_exchange_weak(declared, end,
+                                               std::memory_order_relaxed,
+                                               std::memory_order_relaxed)) {
+      continue;
+    }
+    for (auto i = begin; i != end; ++i) {
+      const auto seg = g.segment_order[i];
+      auto& work = g.segments[seg];
+      const auto count = static_cast<uint32_t>(std::min<uint64_t>(
+        work.rg_count,
+        g.ahead_rgs - (g.ahead_before[i] - g.ahead_before[claimed])));
+      DeclareRowGroups(g, scratch, seg, 0, count);
+      auto ahead = work.ahead_rg.load(std::memory_order_relaxed);
+      while (ahead < count && !work.ahead_rg.compare_exchange_weak(
+                                ahead, count, std::memory_order_relaxed,
+                                std::memory_order_relaxed)) {
+      }
+    }
+    return;
+  }
+}
+
+void DeclareNextRowGroups(ScanGlobalState& g, const AheadScratch& scratch,
+                          uint32_t seg) {
+  auto& work = g.segments[seg];
+  const auto next = work.next_claim.load(std::memory_order_relaxed);
+  const uint64_t claimed =
+    work.claims.empty()
+      ? std::min(next, work.rg_count)
+      : work.claims[std::min<size_t>(next, work.claims.size() - 1)].rg;
+  const auto end = static_cast<uint32_t>(
+    std::min<uint64_t>(work.rg_count, claimed + g.ahead_rgs));
+  auto declared = work.ahead_rg.load(std::memory_order_relaxed);
+  while (declared < end) {
+    if (work.ahead_rg.compare_exchange_weak(declared, end,
+                                            std::memory_order_relaxed,
+                                            std::memory_order_relaxed)) {
+      DeclareRowGroups(g, scratch, seg, std::max<uint64_t>(declared, claimed),
+                       end);
+      return;
+    }
+  }
+}
+
+void DeclareBatch(ScanGlobalState& g, ScanLocalState& l,
+                  const AheadScratch& scratch) {
+  const auto begin = std::max(
+    {l.ahead_batch, l.batch_next,
+     std::min(g.ahead_segment.load(std::memory_order_relaxed), l.batch_end)});
+  auto end = begin;
+  while (end < l.batch_end &&
+         g.ahead_before[end] - g.ahead_before[l.batch_next] <
+           g.ahead_worker_rgs) {
+    ++end;
+  }
+  for (auto i = begin; i < end; ++i) {
+    const auto seg = g.segment_order[i];
+    DeclareRowGroups(g, scratch, seg, 0, g.segments[seg].rg_count);
+  }
+  l.ahead_batch = std::max(l.ahead_batch, end);
+}
+
 }  // namespace
 
 void PlanReadAhead(ScanGlobalState& g, duckdb::ClientContext& context) {
@@ -90,43 +205,39 @@ void PlanReadAhead(ScanGlobalState& g, duckdb::ClientContext& context) {
   }
   g.ahead_bytes =
     std::clamp(kScanAhead / g.workers, kMinWorkerAhead, kMaxWorkerAhead);
+  g.ahead_before.assign(g.live_segments + 1, 0);
+  for (uint32_t i = 0; i != g.live_segments; ++i) {
+    g.ahead_before[i + 1] =
+      g.ahead_before[i] + g.segments[g.segment_order[i]].rg_count;
+  }
   irs::ColFilterStateCache states;
   irs::ColFilterClassification cls;
   std::vector<duckdb::ExternalFileCacheRange> extents;
-  uint64_t bytes = 0;
-  uint64_t examined = 0;
-  for (const auto seg : g.segment_order) {
+  uint64_t rg_bytes = 0;
+  for (uint32_t i = 0; i != g.live_segments && rg_bytes == 0; ++i) {
+    const auto seg = g.segment_order[i];
     const auto& sub = (*g.reader)[seg];
     const auto* col_reader = sub.GetColReader();
     const uint64_t docs = sub.Meta().docs_count;
     if (!col_reader || docs == 0) {
       continue;
     }
-    const auto& work = g.segments[seg];
-    RowGroupChecks checks;
-    if (work.live.size() == 0 && !g.col_filters.empty()) {
-      ClassifySegmentColFilters(sub, g, g.col_filters, states, cls, false);
-      if (cls.segment_dead) {
-        continue;
-      }
-      checks =
-        MakeRowGroupChecks(*col_reader, cls.active, docs, context, states);
-    }
-    const UnitRows rows{.begin = 0, .end = docs};
-    const auto end = (docs - 1) / g.rg_size + 1;
+    const auto rgs =
+      std::min<uint64_t>(g.segments[seg].rg_count, kSampleRowGroups);
     extents.clear();
-    for (uint64_t rg = 0;
-         rg != end && bytes < kScanStart && examined != kScanStartRowGroups;
-         ++rg, ++examined) {
-      if (RowGroupLive(g, work, checks, rows, rg)) {
-        bytes += CollectRowGroup(g, *col_reader, rows, rg, extents);
-      }
+    uint64_t bytes = 0;
+    for (uint64_t rg = 0; rg != rgs; ++rg) {
+      bytes +=
+        CollectRowGroup(g, *col_reader, {.begin = 0, .end = docs}, rg, extents);
     }
-    col_reader->PrefetchExtents(extents);
-    if (bytes >= kScanStart || examined == kScanStartRowGroups) {
-      return;
-    }
+    rg_bytes = bytes / rgs;
   }
+  rg_bytes = std::max<uint64_t>(rg_bytes, 1);
+  g.ahead_rgs = static_cast<uint32_t>(
+    std::clamp<uint64_t>(kScanStart / rg_bytes, 1, kMaxAheadRowGroups));
+  g.ahead_worker_rgs = static_cast<uint32_t>(
+    std::clamp<uint64_t>(g.ahead_bytes / rg_bytes, 1, kMaxAheadRowGroups));
+  DeclareNextSegments(g, {states, cls, context, extents});
 }
 
 void StartReadAhead(const ScanGlobalState& g, ScanLocalState& l,
@@ -175,9 +286,8 @@ void MoveReadAhead(const ScanGlobalState& g, ScanLocalState& l, uint64_t row) {
       CollectRowGroup(g, *col_reader, rows, next, l.ahead_extents);
     l.ahead_live.push_back(next);
     if (l.ahead_rgs == 0) {
-      l.ahead_rgs =
-        std::clamp<uint64_t>(l.ahead_budget / std::max<uint64_t>(bytes, 1), 1,
-                             kMaxAheadRowGroups);
+      l.ahead_rgs = std::clamp<uint64_t>(
+        l.ahead_budget / std::max<uint64_t>(bytes, 1), 1, kMaxAheadRowGroups);
     }
   }
   if (!l.ahead_extents.empty()) {
@@ -185,6 +295,20 @@ void MoveReadAhead(const ScanGlobalState& g, ScanLocalState& l, uint64_t row) {
   }
   l.ahead_check = l.ahead_rg == end ? std::numeric_limits<uint64_t>::max()
                                     : (rg + 1) * g.rg_size;
+}
+
+void ExtendReadAhead(ScanGlobalState& g, ScanLocalState& l) {
+  if (g.Ordered()) {
+    return;
+  }
+  const AheadScratch scratch{l.filter_states, l.ahead_cls, *g.client_context,
+                             l.ahead_extents};
+  if (l.unit.whole) {
+    DeclareBatch(g, l, scratch);
+  } else {
+    DeclareNextRowGroups(g, scratch, l.unit.seg);
+  }
+  DeclareNextSegments(g, scratch);
 }
 
 }  // namespace sdb::connector

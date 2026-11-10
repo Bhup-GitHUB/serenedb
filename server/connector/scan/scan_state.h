@@ -131,6 +131,7 @@ struct ABSL_CACHELINE_ALIGNED SegmentWork {
   uint32_t rg_count = 0;
   uint32_t run_end = 0;
   std::atomic_uint32_t next_claim{0};
+  std::atomic_uint32_t ahead_rg{0};
   std::atomic_uint32_t done_rgs{0};
   std::atomic_uint8_t claim{kUnclaimed};
   irs::BlockingOnce prepare;
@@ -273,6 +274,9 @@ struct ScanGlobalState final : public duckdb::GlobalTableFunctionState {
   uint64_t fold_rgs = 0;
   std::vector<irs::field_id> ahead_fields;
   uint64_t ahead_bytes = 0;
+  uint32_t ahead_rgs = 0;
+  uint32_t ahead_worker_rgs = 0;
+  std::vector<uint64_t> ahead_before;
   std::atomic_uint32_t worker_count{0};
 
   std::vector<uint32_t> segment_order;
@@ -281,6 +285,7 @@ struct ScanGlobalState final : public duckdb::GlobalTableFunctionState {
   uint32_t live_segments = 0;
   bool ordered = false;
   ABSL_CACHELINE_ALIGNED std::atomic_uint32_t next_segment{0};
+  std::atomic_uint32_t ahead_segment{0};
   ABSL_CACHELINE_ALIGNED std::atomic_uint32_t done_segments{0};
   ABSL_CACHELINE_ALIGNED absl::Mutex ordered_mutex;
   ABSL_CACHELINE_ALIGNED std::atomic_bool ordered_exhausted{false};
@@ -393,6 +398,8 @@ struct ScanLocalState : public duckdb::LocalTableFunctionState {
   uint64_t ahead_rg = 0;
   uint64_t ahead_rgs = 0;
   uint64_t ahead_budget = 0;
+  uint32_t ahead_batch = 0;
+  irs::ColFilterClassification ahead_cls;
   RowGroupChecks ahead_checks;
   std::vector<uint64_t> ahead_live;
   std::vector<duckdb::ExternalFileCacheRange> ahead_extents;
@@ -493,6 +500,7 @@ void PlanReadAhead(ScanGlobalState& g, duckdb::ClientContext& context);
 void StartReadAhead(const ScanGlobalState& g, ScanLocalState& l,
                     bool whole_unit);
 void MoveReadAhead(const ScanGlobalState& g, ScanLocalState& l, uint64_t row);
+void ExtendReadAhead(ScanGlobalState& g, ScanLocalState& l);
 
 void ClassifySegmentColFilters(
   const irs::SubReader& seg, ScanGlobalState& g,

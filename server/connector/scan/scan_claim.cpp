@@ -833,6 +833,7 @@ bool NextLiveUnit(ScanGlobalState& g, ScanLocalState& l) {
     if (!l.seg_cls.segment_dead) {
       if (!g.ahead_fields.empty()) {
         StartReadAhead(g, l, g.shape == ScanShape::Count);
+        ExtendReadAhead(g, l);
       }
       return true;
     }
