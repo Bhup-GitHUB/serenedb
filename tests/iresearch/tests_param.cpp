@@ -26,7 +26,9 @@
 #include <absl/strings/str_cat.h>
 
 #include <atomic>
+#include <duckdb/main/connection.hpp>
 #include <filesystem>
+#include <iresearch/utils/assert.hpp>
 #include <iresearch/utils/duckdb_engine.hpp>
 
 namespace tests {
@@ -67,8 +69,14 @@ std::shared_ptr<IndexDir> ObjectStoreDirectory(const TestBase*) {
 }
 
 irs::SimulatedObjectStore& ObjectStore() {
-  static auto& store = irs::SimulatedObjectStore::Register(
-    irs::DuckDBEngine::Instance().instance());
+  static auto& store = [] -> irs::SimulatedObjectStore& {
+    auto& db = irs::DuckDBEngine::Instance().instance();
+    duckdb::Connection con{db};
+    const auto pinned =
+      con.Query("SET external_file_cache_remote_max_block_size = 4194304");
+    SDB_VERIFY(!pinned->HasError());
+    return irs::SimulatedObjectStore::Register(db);
+  }();
   return store;
 }
 

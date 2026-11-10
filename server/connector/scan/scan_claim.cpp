@@ -28,7 +28,6 @@
 #include <duckdb/parallel/task_scheduler.hpp>
 #include <duckdb/planner/filter/expression_filter.hpp>
 #include <duckdb/planner/table_filter_state.hpp>
-#include <duckdb/storage/external_file_cache/external_file_cache.hpp>
 #include <duckdb/storage/storage_info.hpp>
 #include <duckdb/storage/table/row_group_reorderer.hpp>
 #include <iresearch/formats/column/col_reader.hpp>
@@ -465,52 +464,6 @@ bool Join(ScanGlobalState& g, ScanLocalState& l) {
   }
 }
 
-void PrefetchScanStart(const ScanGlobalState& g) {
-  std::vector<irs::field_id> fields;
-  for (const auto& filter : g.col_filters) {
-    if (!filter.is_score && !filter.zonemap_only) {
-      fields.push_back(filter.field);
-    }
-  }
-  if (g.col_filters.empty()) {
-    for (const auto& projection : g.cs_projections) {
-      fields.push_back(static_cast<irs::field_id>(projection.column_id));
-    }
-  }
-  if (fields.empty()) {
-    return;
-  }
-  std::vector<duckdb::ExternalFileCacheRange> extents;
-  uint64_t bytes = 0;
-  for (const auto seg : g.segment_order) {
-    const auto& sub = (*g.reader)[seg];
-    const auto* col_reader = sub.GetColReader();
-    const uint64_t docs = sub.Meta().docs_count;
-    if (!col_reader) {
-      continue;
-    }
-    extents.clear();
-    for (uint64_t begin = 0;
-         begin < docs && bytes < duckdb::ExternalFileCache::MAX_FILE_IN_FLIGHT;
-         begin += g.rg_size) {
-      const auto last = std::min(docs, begin + g.rg_size) - 1;
-      const auto from = extents.size();
-      for (const auto field : fields) {
-        if (const auto* column = col_reader->Column(field)) {
-          column->CollectBlocks(begin, last, extents);
-        }
-      }
-      for (auto i = from; i != extents.size(); ++i) {
-        bytes += extents[i].size;
-      }
-    }
-    col_reader->PrefetchExtents(extents);
-    if (bytes >= duckdb::ExternalFileCache::MAX_FILE_IN_FLIGHT) {
-      return;
-    }
-  }
-}
-
 constexpr uint32_t kLiveSamples = 16;
 constexpr uint64_t kParallelLiveRowGroups = 1024;
 constexpr uint64_t kLiveSlicesPerThread = 2;
@@ -530,15 +483,6 @@ bool RowGroupDead(const irs::ColumnReader& reader,
   return true;
 }
 
-struct RowGroupCheck {
-  const irs::ColumnReader* reader;
-  const duckdb::ExpressionFilter* filter;
-  duckdb::TableFilterState* state;
-  mutable irs::BlockWindow window;
-};
-
-using RowGroupChecks = absl::InlinedVector<RowGroupCheck, 4>;
-
 struct LivePass {
   SegmentWork* work;
   const irs::ColReader* col_reader;
@@ -551,32 +495,14 @@ struct LivePass {
 
 RowGroupChecks MakeChecks(const LivePass& pass,
                           irs::ColFilterStateCache& states) {
-  RowGroupChecks checks;
-  for (const auto& spec : pass.specs) {
-    if (spec.is_score || spec.row_gather) {
-      continue;
-    }
-    SDB_ASSERT(spec.row_fields.empty());
-    const auto* column = pass.col_reader->Column(spec.field);
-    SDB_ASSERT(column);
-    const auto* reader = irs::FilteredColumn(*column, spec);
-    if (!reader || reader->Type().IsNested()) {
-      continue;
-    }
-    SDB_ASSERT(reader->RowCount() == pass.rows);
-    checks.emplace_back(reader, &spec.filter->Cast<duckdb::ExpressionFilter>(),
-                        &states.State(*pass.context, *spec.filter));
-  }
-  return checks;
+  return MakeRowGroupChecks(*pass.col_reader, pass.specs, pass.rows,
+                            *pass.context, states);
 }
 
 bool RowGroupLive(const LivePass& pass, const RowGroupChecks& checks,
                   uint32_t rg) {
   const auto begin = uint64_t{rg} * pass.rg_size;
-  const auto end = std::min(pass.rows, begin + pass.rg_size);
-  return absl::c_none_of(checks, [&](const RowGroupCheck& c) {
-    return RowGroupDead(*c.reader, *c.filter, *c.state, c.window, begin, end);
-  });
+  return RowsLive(checks, begin, std::min(pass.rows, begin + pass.rg_size));
 }
 
 void MarkLive(LivePass& pass, const RowGroupChecks& checks, uint32_t begin,
@@ -651,6 +577,35 @@ void MarkLiveRowGroups(std::span<LivePass> passes,
 }
 
 }  // namespace
+
+RowGroupChecks MakeRowGroupChecks(const irs::ColReader& col_reader,
+                                  std::span<const irs::ColFilterSpec> specs,
+                                  uint64_t rows, duckdb::ClientContext& context,
+                                  irs::ColFilterStateCache& states) {
+  RowGroupChecks checks;
+  for (const auto& spec : specs) {
+    if (spec.is_score || spec.row_gather) {
+      continue;
+    }
+    SDB_ASSERT(spec.row_fields.empty());
+    const auto* column = col_reader.Column(spec.field);
+    SDB_ASSERT(column);
+    const auto* reader = irs::FilteredColumn(*column, spec);
+    if (!reader || reader->Type().IsNested()) {
+      continue;
+    }
+    SDB_ASSERT(reader->RowCount() == rows);
+    checks.emplace_back(reader, &spec.filter->Cast<duckdb::ExpressionFilter>(),
+                        &states.State(context, *spec.filter));
+  }
+  return checks;
+}
+
+bool RowsLive(const RowGroupChecks& checks, uint64_t begin, uint64_t end) {
+  return absl::c_none_of(checks, [&](const RowGroupCheck& c) {
+    return RowGroupDead(*c.reader, *c.filter, *c.state, c.window, begin, end);
+  });
+}
 
 std::vector<LiveClaim> CutClaims(const irs::bitset& live, uint32_t threads) {
   const auto live_count = static_cast<uint32_t>(live.count());
@@ -760,8 +715,9 @@ void BuildClaimPlan(ScanGlobalState& g, duckdb::ClientContext& context) {
     work.run_end = run_end;
   }
   MarkLiveRowGroups(passes, states, context, threads);
-  for (const auto& pass : passes) {
+  for (auto& pass : passes) {
     pass.work->claims = CutClaims(pass.live, static_cast<uint32_t>(threads));
+    pass.work->live = std::move(pass.live);
   }
   uint32_t skipped = 0;
   for (uint32_t i = 0; i != g.live_segments; ++i) {
@@ -796,7 +752,7 @@ void BuildClaimPlan(ScanGlobalState& g, duckdb::ClientContext& context) {
   }
   if (g.remote && bind.IsMatchAll() &&
       (g.shape == ScanShape::ColScan || g.shape == ScanShape::Count)) {
-    PrefetchScanStart(g);
+    PlanReadAhead(g, context);
   }
 }
 
@@ -875,6 +831,9 @@ bool NextLiveUnit(ScanGlobalState& g, ScanLocalState& l) {
   while (ClaimUnit(g, l)) {
     l.Classify(g, l.unit.seg);
     if (!l.seg_cls.segment_dead) {
+      if (!g.ahead_fields.empty()) {
+        StartReadAhead(g, l, g.shape == ScanShape::Count);
+      }
       return true;
     }
     FinishUnit(g, l);

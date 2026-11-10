@@ -1726,6 +1726,40 @@ def test_cold_column_scan_reads_its_columns_in_one_round(
     _one_round(log, ".col")
 
 
+def test_a_cold_column_scan_keeps_reading_ahead_of_its_workers(tmp_path: Path) -> None:
+    location = f"s3://bucket/ahead-{tmp_path.name}"
+    query = "SELECT sum(v % 7) FROM wide"
+    with FakeS3() as fake:
+        server = _Server(tmp_path / "data")
+        try:
+            assert server.wait_ready(), server.output()
+            _create_secret(server, _Store(fake.endpoint, "key", "secret",
+                                          "bucket"), location)
+            with server.connect() as conn:
+                conn.execute(
+                    "CREATE TABLE wide WITH (storage = 'search', compaction_interval = 0) "
+                    "TABLESPACE idx AS SELECT hash(i) AS v FROM range(12000000) t(i)")
+                conn.execute("VACUUM (REFRESH_TABLE) wide")
+                conn.execute("SET threads = 2")
+                expected = conn.execute(query).fetchall()
+                conn.execute("SET GLOBAL enable_external_file_cache = false")
+                conn.execute("SET GLOBAL enable_external_file_cache = true")
+                fake.latency = 0.05
+                fake.log = []
+                rows = conn.execute(query).fetchall()
+                log, fake.log = fake.log, None
+        finally:
+            server.stop()
+    assert rows == expected
+    reads = [entry for entry in log if entry["key"].endswith(".col")]
+    start_ended = min(entry["ended"] for entry in reads)
+    later = [entry for entry in reads if entry["began"] >= start_ended]
+    assert later, reads
+    in_flight = max(sum(other["began"] <= entry["began"] < other["ended"] for other in later)
+                    for entry in later)
+    assert in_flight >= 6, later
+
+
 @pytest.mark.parametrize("split", ["tail", "always"])
 @pytest.mark.parametrize("query", [
     "SELECT count(*) FROM logs WHERE body @@ ts_regexp('c.che')",

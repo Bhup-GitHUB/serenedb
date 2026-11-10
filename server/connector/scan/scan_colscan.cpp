@@ -58,6 +58,9 @@ duckdb::idx_t EmitFromUnit(ScanGlobalState& g, ColScanLocalState& l,
       l.doc_cursor = std::min<uint64_t>(dead_end, l.doc_end);
       continue;
     }
+    if (l.doc_cursor >= l.ahead_check) [[unlikely]] {
+      MoveReadAhead(g, l, l.doc_cursor);
+    }
     const auto take = static_cast<duckdb::idx_t>(
       std::min<uint64_t>(STANDARD_VECTOR_SIZE, l.doc_end - l.doc_cursor));
     const auto first =

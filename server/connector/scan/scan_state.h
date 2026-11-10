@@ -20,6 +20,7 @@
 
 #pragma once
 
+#include <absl/container/inlined_vector.h>
 #include <absl/functional/function_ref.h>
 #include <absl/synchronization/mutex.h>
 #include <absl/synchronization/notification.h>
@@ -27,8 +28,13 @@
 #include <atomic>
 #include <duckdb.hpp>
 #include <duckdb/function/table_function.hpp>
+#include <duckdb/planner/filter/expression_filter.hpp>
 #include <duckdb/planner/filter/table_filter_functions.hpp>
 #include <duckdb/planner/table_filter.hpp>
+#include <duckdb/planner/table_filter_state.hpp>
+#include <duckdb/storage/external_file_cache/external_file_cache.hpp>
+#include <iresearch/formats/column/col_reader.hpp>
+#include <iresearch/formats/column/column_reader.hpp>
 #include <iresearch/index/column_extract.hpp>
 #include <iresearch/index/docs_mask/docs_mask.hpp>
 #include <iresearch/index/hit_batcher.hpp>
@@ -129,6 +135,7 @@ struct ABSL_CACHELINE_ALIGNED SegmentWork {
   std::atomic_uint8_t claim{kUnclaimed};
   irs::BlockingOnce prepare;
   std::vector<LiveClaim> claims;
+  irs::bitset live;
   std::unique_ptr<OrderedUnits> ordered;
 
   uint32_t LiveCount() const noexcept {
@@ -264,6 +271,8 @@ struct ScanGlobalState final : public duckdb::GlobalTableFunctionState {
   uint32_t workers = 1;
   uint64_t rg_size = 0;
   uint64_t fold_rgs = 0;
+  std::vector<irs::field_id> ahead_fields;
+  uint64_t ahead_bytes = 0;
   std::atomic_uint32_t worker_count{0};
 
   std::vector<uint32_t> segment_order;
@@ -354,6 +363,15 @@ struct ScanGlobalState final : public duckdb::GlobalTableFunctionState {
   irs::doc_id_t UnitSpan(const ScanUnit& unit) const noexcept;
 };
 
+struct RowGroupCheck {
+  const irs::ColumnReader* reader;
+  const duckdb::ExpressionFilter* filter;
+  duckdb::TableFilterState* state;
+  mutable irs::BlockWindow window;
+};
+
+using RowGroupChecks = absl::InlinedVector<RowGroupCheck, 4>;
+
 struct ScanLocalState : public duckdb::LocalTableFunctionState {
   duckdb::DataChunk scan_chunk;
   uint32_t worker = std::numeric_limits<uint32_t>::max();
@@ -371,6 +389,13 @@ struct ScanLocalState : public duckdb::LocalTableFunctionState {
   bool units_exhausted = false;
   uint64_t rg_units = 0;
   uint64_t produced_rows = 0;
+  uint64_t ahead_check = std::numeric_limits<uint64_t>::max();
+  uint64_t ahead_rg = 0;
+  uint64_t ahead_rgs = 0;
+  uint64_t ahead_budget = 0;
+  RowGroupChecks ahead_checks;
+  std::vector<uint64_t> ahead_live;
+  std::vector<duckdb::ExternalFileCacheRange> ahead_extents;
 
   void Classify(ScanGlobalState& g, uint32_t seg);
 };
@@ -459,6 +484,15 @@ void BuildClaimPlan(ScanGlobalState& g, duckdb::ClientContext& context);
 bool ClaimUnit(ScanGlobalState& g, ScanLocalState& l);
 bool NextLiveUnit(ScanGlobalState& g, ScanLocalState& l);
 bool FinishUnit(ScanGlobalState& g, ScanLocalState& l);
+RowGroupChecks MakeRowGroupChecks(const irs::ColReader& col_reader,
+                                  std::span<const irs::ColFilterSpec> specs,
+                                  uint64_t rows, duckdb::ClientContext& context,
+                                  irs::ColFilterStateCache& states);
+bool RowsLive(const RowGroupChecks& checks, uint64_t begin, uint64_t end);
+void PlanReadAhead(ScanGlobalState& g, duckdb::ClientContext& context);
+void StartReadAhead(const ScanGlobalState& g, ScanLocalState& l,
+                    bool whole_unit);
+void MoveReadAhead(const ScanGlobalState& g, ScanLocalState& l, uint64_t row);
 
 void ClassifySegmentColFilters(
   const irs::SubReader& seg, ScanGlobalState& g,
