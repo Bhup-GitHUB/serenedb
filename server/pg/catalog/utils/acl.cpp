@@ -32,11 +32,16 @@
 #include <duckdb/parser/keyword_helper.hpp>
 #include <iresearch/utils/pg/errcodes.hpp>
 #include <iresearch/utils/pg/sql_exception_macro.hpp>
+#include <memory>
 #include <ranges>
+#include <span>
 #include <tuple>
 
-#include "auth/role_closure.h"
 #include "catalog/base_catalog.h"
+#include "pg/catalog/engine/builtin_functions.h"
+#include "pg/catalog/engine/registry.h"
+#include "pg/catalog/engine/system_table.h"
+#include "pg/catalog/utils/columns.h"
 
 namespace sdb::pg {
 namespace {
@@ -86,10 +91,10 @@ irs::pg::SqlErrorData AclSyntaxError(std::string message,
 }
 
 std::optional<duckdb::idx_t> AclRole(
-  const auth::RoleGraph& roles, std::string_view name, bool oids,
+  const duckdb::SecuritySnapshot& roles, std::string_view name, bool oids,
   std::optional<irs::pg::SqlErrorData>& error) {
-  if (const auto* role = roles.FindByName(name)) {
-    return role->first;
+  if (const auto role = roles.FindByName(name); role.IsValid()) {
+    return role.GetIndex();
   }
   if (duckdb::idx_t oid = 0; oids && absl::SimpleAtoi(name, &oid)) {
     return oid;
@@ -110,7 +115,7 @@ void PutId(std::string& out, std::string_view name) {
 }
 
 void PutRole(std::string& out, duckdb::idx_t role,
-             const auth::RoleGraph& roles) {
+             const duckdb::SecuritySnapshot& roles) {
   if (const auto name = roles.NameOf(role); !name.empty()) {
     PutId(out, name);
     return;
@@ -121,7 +126,7 @@ void PutRole(std::string& out, duckdb::idx_t role,
 }  // namespace
 
 void AppendAcl(std::string& out, const duckdb::AclItem& item,
-               const auth::RoleGraph& roles) {
+               const duckdb::SecuritySnapshot& roles) {
   if (item.grantee != kPublicGrantee) {
     PutRole(out, item.grantee, roles);
   }
@@ -138,10 +143,9 @@ void AppendAcl(std::string& out, const duckdb::AclItem& item,
   PutRole(out, item.grantor, roles);
 }
 
-std::optional<irs::pg::SqlErrorData> ParseAcl(std::string_view text,
-                                              const auth::RoleGraph& roles,
-                                              bool oids,
-                                              duckdb::AclItem& item) {
+std::optional<irs::pg::SqlErrorData> ParseAcl(
+  std::string_view text, const duckdb::SecuritySnapshot& roles, bool oids,
+  duckdb::AclItem& item) {
   auto grantee = ReadAclName(text);
   if (!text.starts_with('=')) {
     if (grantee != "group" && grantee != "user") {
@@ -225,6 +229,62 @@ void VisitDefaultAcls(
     ++oid;
     if (row.scope == kInvalidOid || catalog.LookupOid(transaction, row.scope)) {
       visitor(oid, row);
+    }
+  }
+}
+
+void VisitDatabaseGrants(duckdb::ClientContext& context,
+                         const duckdb::CatalogEntry& database,
+                         duckdb::idx_t role,
+                         absl::FunctionRef<void(const ObjectGrant&)> visitor) {
+  const auto names = [&](std::span<const duckdb::AclItem> acl) {
+    return absl::c_any_of(acl, [&](const duckdb::AclItem& item) {
+      return item.grantee == role || item.grantor == role;
+    });
+  };
+  const auto& rows = database.permissions.Rows();
+  for (const auto& wrapper : rows.foreign_data_wrappers) {
+    if (names(wrapper.acl)) {
+      visitor({kPgForeignDataWrapperTable, wrapper.oid, 0});
+    }
+  }
+  for (const auto& language : rows.languages) {
+    if (names(language.acl)) {
+      visitor({kPgLanguageTable, language.oid, 0});
+    }
+  }
+  for (const auto& schema : rows.schemas) {
+    if (names(schema.acl)) {
+      visitor({kPgNamespaceTable, schema.oid, 0});
+    }
+  }
+  std::shared_ptr<const BuiltinFunctions> builtins;
+  for (const auto& function : rows.functions) {
+    if (!names(function.acl)) {
+      continue;
+    }
+    if (!builtins) {
+      builtins = GetBuiltinFunctions(context);
+    }
+    const auto* builtin = builtins->FindByKey(function.name);
+    visitor({kPgProcTable, builtin ? builtin->oid : kInvalidOid, 0});
+  }
+  for (const auto& type : rows.types) {
+    if (names(type.acl)) {
+      visitor({kPgTypeTable, type.oid, 0});
+    }
+  }
+  for (const auto& relation : rows.relations) {
+    if (names(relation.acl)) {
+      visitor({kPgClassTable, relation.oid, 0});
+    }
+    const auto* system = FindSystemTable(relation.oid);
+    for (const auto& column : relation.columns) {
+      if (system && names(column.acl) &&
+          system->Columns().ColumnExists(column.column)) {
+        visitor({kPgClassTable, relation.oid,
+                 Attnum(system->Columns().GetColumn(column.column))});
+      }
     }
   }
 }

@@ -877,6 +877,21 @@ void SessionTransaction::Commit(duckdb::ClientContext& context) {
   std::move(rollback).Cancel();
   _state = SessionState::Committed;
   absl::Cleanup release = [this] { Release(); };
+  std::vector<duckdb::reference<duckdb::AttachedDatabase>> attached;
+  {
+    absl::MutexLock lock{&_mutex};
+    attached.swap(_attached);
+  }
+  for (auto& db : attached) {
+    if (auto replaced = db.get().TakeReplaced()) {
+      auto deleter = replaced->ExtractDeleter();
+      replaced->OnDetach(context);
+      if (deleter) {
+        duckdb::DatabaseManager::Get(replaced->GetDatabase())
+          .AddPendingTeardown(std::move(deleter));
+      }
+    }
+  }
   for (auto& action : _on_commit) {
     action();
   }
@@ -897,7 +912,7 @@ void SessionTransaction::Rollback() noexcept {
   }
   for (auto& db : attached) {
     auto& manager = duckdb::DatabaseManager::Get(db.get().GetDatabase());
-    if (auto detached = manager.DetachInternal(db.get().name)) {
+    if (auto detached = manager.RevertAttach(db.get())) {
       if (auto deleter = detached->ExtractDeleter()) {
         manager.AddPendingTeardown(std::move(deleter));
       }

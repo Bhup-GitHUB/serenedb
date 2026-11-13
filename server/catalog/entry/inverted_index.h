@@ -24,6 +24,7 @@
 #include <duckdb/catalog/catalog_entry/index_catalog_entry.hpp>
 #include <duckdb/catalog/catalog_transaction.hpp>
 #include <duckdb/catalog/duck_catalog.hpp>
+#include <duckdb/catalog/permissions.hpp>
 #include <duckdb/common/case_insensitive_map.hpp>
 #include <duckdb/common/identifier.hpp>
 #include <duckdb/common/types.hpp>
@@ -203,6 +204,7 @@ class InvertedIndexConfig final : public irs::IndexFieldOptions {
   CompressionByColumn declared_compression;
   irs::containers::FlatHashSet<irs::field_id> table_columns;
   std::vector<ConstraintKey> constraint_keys;
+  std::vector<duckdb::FunctionCall> calls;
 
  private:
   static constexpr uint32_t kNoKey = std::numeric_limits<uint32_t>::max();

@@ -684,6 +684,29 @@ duckdb::unique_ptr<duckdb::CatalogEntry> SearchTableEntry::Copy(
   return Successor(context, *bound);
 }
 
+duckdb::vector<duckdb::IndexCalls> SearchTableEntry::IndexFunctionCalls(
+  duckdb::ClientContext& context) {
+  duckdb::vector<duckdb::IndexCalls> indexes;
+  ParentSchema(context).Scan(
+    context, duckdb::CatalogType::INDEX_ENTRY,
+    [&](duckdb::CatalogEntry& entry) {
+      const auto& index = entry.Cast<duckdb::IndexCatalogEntry>();
+      if (index.table_oid != oid || !IsInvertedIndex(index)) {
+        return;
+      }
+      const auto& config = index.Cast<InvertedIndexEntry>().Config();
+      if (!config || config->calls.empty()) {
+        return;
+      }
+      auto& calls = indexes.emplace_back();
+      for (const auto column : index.column_ids) {
+        calls.columns.emplace_back(column);
+      }
+      calls.calls.assign(config->calls.begin(), config->calls.end());
+    });
+  return indexes;
+}
+
 duckdb::TableStorageInfo SearchTableEntry::GetStorageInfo(
   duckdb::ClientContext&) {
   duckdb::TableStorageInfo result;
@@ -1187,7 +1210,7 @@ duckdb::unique_ptr<duckdb::CatalogEntry> SearchTableEntry::AlterEntry(
     auto definition = Definition();
     definition->permissions = permissions;
     info.Cast<duckdb::AlterPermissionsInfo>().ApplyTo(
-      definition->permissions, type, &definition->columns);
+      definition->permissions, type, definition->columns);
     return Altered(context, info, std::move(definition));
   }
   if (info.type == duckdb::AlterType::REPLACE_DEFINITION) {
@@ -1684,7 +1707,7 @@ void SearchTableEntry::VerifyKey(duckdb::ClientContext& context,
       .VerifyReferences(context, *this, spec);
     return;
   }
-  search::VerifyUniqueKey(context, RowsWithOwn(context).Reader(), spec);
+  search::VerifyUniqueKey(context, *this, RowsWithOwn(context).Reader(), spec);
 }
 
 void SearchTableEntry::ReplaceStoreColumnsAtCommit(

@@ -130,6 +130,9 @@ class SearchTableEntry final : public duckdb::TableCatalogEntry {
 
   duckdb::TableStorageInfo GetStorageInfo(duckdb::ClientContext&) final;
 
+  duckdb::vector<duckdb::IndexCalls> IndexFunctionCalls(
+    duckdb::ClientContext& context) final;
+
   bool ScanColumnSegmentInfo(
     const duckdb::QueryContext& context,
     duckdb::ColumnSegmentInfoScanState& state,

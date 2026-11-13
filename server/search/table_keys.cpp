@@ -322,6 +322,7 @@ std::optional<KeySpec> IndexKeySpec(const catalog::SearchTableEntry& table,
 }
 
 void VerifyUniqueKey(duckdb::ClientContext& context,
+                     const catalog::SearchTableEntry& table,
                      const irs::DirectoryReader& reader, const KeySpec& spec) {
   std::vector<KeyProbe::Segment> segments;
   for (const auto& segment : reader) {
@@ -330,13 +331,13 @@ void VerifyUniqueKey(duckdb::ClientContext& context,
   ForEachSegmentKey(
     segments, spec.key.field, [&](std::string_view key, size_t rows) {
       if (rows > 1) {
+        const auto text = connector::ConstraintKeyText(
+          context, context.CurrentRole(), table, spec, key);
         THROW_SQL_ERROR(
           ERR_CODE(ERRCODE_UNIQUE_VIOLATION),
           ERR_MSG("could not create unique index \"", spec.constraint, "\""),
-          ERR_DETAIL(
-            "Key ",
-            connector::ConstraintKeyText(context, key, spec.names, spec.types),
-            " is duplicated."));
+          ERR_DETAIL(text ? absl::StrCat("Key ", *text, " is duplicated.")
+                          : std::string{"Duplicate keys exist."}));
       }
       return true;
     });

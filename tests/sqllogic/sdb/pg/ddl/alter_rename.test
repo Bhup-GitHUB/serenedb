@@ -236,7 +236,7 @@ db error: ERROR: relation "pudge_view" already exists
 statement error
 ALTER FUNCTION clickclack RENAME TO clickclack;
 ----
-db error: ERROR: function "clickclack" already exists
+db error: ERROR: function clickclack() already exists in schema "public"
 
 
 statement error

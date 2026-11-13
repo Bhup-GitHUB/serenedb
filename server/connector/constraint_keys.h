@@ -20,17 +20,20 @@
 
 #pragma once
 
+#include <duckdb/catalog/permissions.hpp>
 #include <duckdb/common/types/data_chunk.hpp>
 #include <duckdb/common/types/vector.hpp>
 #include <duckdb/main/client_context.hpp>
 #include <duckdb/planner/expression.hpp>
 #include <iresearch/index/field_meta.hpp>
+#include <optional>
 #include <span>
 #include <string>
 #include <vector>
 
 #include "catalog/entry/inverted_index.h"
 #include "connector/column_id.h"
+#include "search/key_spec.h"
 
 namespace sdb::connector {
 
@@ -64,11 +67,12 @@ class ConstraintKeyEncoder {
   std::vector<duckdb::unique_ptr<duckdb::Expression>> _expressions;
 };
 
-// The key's values as PostgreSQL shows them in a DETAIL: `(a, b)=(1, x)`.
-std::string ConstraintKeyText(duckdb::ClientContext& context,
-                              std::string_view key,
-                              std::span<const std::string> names,
-                              std::span<const duckdb::LogicalType> types);
+// The key's values as PostgreSQL shows them in a DETAIL: `(a, b)=(1, x)`, to a
+// role that may read every key column of `table`.
+std::optional<std::string> ConstraintKeyText(
+  duckdb::ClientContext& context, const duckdb::RoleAccess& role,
+  const duckdb::TableCatalogEntry& table, const search::KeySpec& spec,
+  std::string_view key);
 
 std::string EncodeKeyValue(const duckdb::Value& value);
 

@@ -268,7 +268,7 @@ void BaseCatalog::DropSchema(duckdb::ClientContext& context,
   }
   DeclareModified(transaction, *this,
                   duckdb::DatabaseModificationType::DROP_CATALOG_ENTRY);
-  DropDependents(transaction, schema, info.cascade);
+  DropDependents(transaction, schema, info.cascade, info.dropped_together);
   SchemaSet(transaction, schema).Drop(transaction, schema.name);
 }
 
@@ -413,13 +413,82 @@ bool BaseCatalog::DropFrom(EntrySet& set,
 }
 
 EntrySet& BaseCatalog::Set(duckdb::CatalogType type) {
-  if (type != duckdb::CatalogType::SCHEMA_ENTRY) {
+  auto* set = FindSet(type);
+  if (!set) {
     THROW_SQL_ERROR(
       ERR_CODE(ERRCODE_INTERNAL_ERROR),
       ERR_MSG("Unsupported catalog type ", duckdb::CatalogTypeToString(type),
               " in catalog ", GetName().GetIdentifierName()));
   }
-  return _schemas;
+  return *set;
+}
+
+EntrySet* BaseCatalog::FindSet(duckdb::CatalogType type) {
+  return type == duckdb::CatalogType::SCHEMA_ENTRY ? &_schemas : nullptr;
+}
+
+void BaseCatalog::ScanTopLevelEntries(
+  duckdb::CatalogTransaction transaction, duckdb::CatalogType type,
+  const std::function<void(duckdb::CatalogEntry&)>& callback) {
+  if (auto* set = FindSet(type)) {
+    set->Scan(transaction, callback);
+  }
+}
+
+duckdb::optional_ptr<duckdb::CatalogEntry> BaseCatalog::LookupTopLevelEntry(
+  duckdb::CatalogTransaction transaction, duckdb::CatalogType type,
+  const duckdb::Identifier& name) {
+  auto* set = FindSet(type);
+  return set ? set->Get(transaction, name) : nullptr;
+}
+
+void BaseCatalog::RefuseDroppingTogether(
+  duckdb::CatalogTransaction transaction,
+  const duckdb::catalog_entry_vector_t& entries) {
+  catalog::RefuseDroppingTogether(transaction, entries);
+}
+
+duckdb::catalog_entry_vector_t BaseCatalog::DropOrder(
+  duckdb::CatalogTransaction transaction,
+  const duckdb::catalog_entry_vector_t& entries) {
+  std::vector<std::vector<size_t>> subjects(entries.size());
+  for (size_t i = 0; i < entries.size(); ++i) {
+    ScanSubjects(transaction, entries[i], [&](duckdb::CatalogEntry& subject) {
+      for (size_t j = 0; j < entries.size(); ++j) {
+        if (j != i && entries[j].get().oid == subject.oid) {
+          subjects[i].push_back(j);
+        }
+      }
+    });
+  }
+  duckdb::catalog_entry_vector_t order;
+  std::vector<bool> dropped(entries.size(), false);
+  while (order.size() < entries.size()) {
+    bool progressed = false;
+    for (size_t i = 0; i < entries.size(); ++i) {
+      if (dropped[i]) {
+        continue;
+      }
+      bool needed = false;
+      for (size_t k = 0; k < entries.size() && !needed; ++k) {
+        needed = !dropped[k] && absl::c_linear_search(subjects[k], i);
+      }
+      if (!needed) {
+        dropped[i] = true;
+        order.push_back(entries[i]);
+        progressed = true;
+      }
+    }
+    if (!progressed) {
+      for (size_t i = 0; i < entries.size(); ++i) {
+        if (!dropped[i]) {
+          order.push_back(entries[i]);
+        }
+      }
+      break;
+    }
+  }
+  return order;
 }
 
 EntrySet& BaseCatalog::SchemaSet(duckdb::CatalogTransaction transaction,

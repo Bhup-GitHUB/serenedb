@@ -37,7 +37,6 @@
 #include "connector/duckdb_physical_create_index.h"
 #include "connector/duckdb_reindex_function.h"
 #include "connector/duckdb_storage_extension.h"
-#include "connector/duckdb_subscription.h"
 #include "connector/duckdb_vacuum_function.h"
 #include "connector/functions/ai/ai.h"
 #include "connector/functions/array.h"
@@ -59,10 +58,13 @@
 #include "connector/iresearch_replacement_scan.h"
 #include "connector/scan/scan_function.h"
 #include "docs/docs_functions.h"
+#include "pg/catalog/engine/builtin_functions.h"
 #include "pg/catalog/engine/registry.h"
 #include "pg/catalog/engine/scan_function.h"
 #include "pg/catalog/functions/functions.h"
+#include "pg/catalog/oids.h"
 #include "pg/connection_context.h"
+#include "pg/types/mapping.h"
 #include "pg/types/register.h"
 #include "query/config.h"
 #include "query/config_variable_names.h"
@@ -98,12 +100,15 @@ void ConfigureEngineDBConfig(duckdb::DBConfig& config,
     };
   config.create_client_context = CreateClientContext;
   config.create_secret_storage = catalog::CreateSecretStorage;
+  config.bootstrap_role = pg::kRootUser;
+  config.database_owner_role = pg::kPgDatabaseOwnerRole;
   connector::RegisterSereneDBStorage(config);
   connector::RegisterConfigVariables(config);
   config.AddExtensionOption(
     duckdb::Identifier{"data_directory"}, "Shows the data directory.",
     duckdb::LogicalType::VARCHAR, duckdb::Value{datadir}, nullptr, nullptr,
-    duckdb::SetScope::AUTOMATIC, true);
+    duckdb::SetScope::AUTOMATIC, true,
+    duckdb::SettingAccess{duckdb::SettingContext::INTERNAL, true});
   connector::RegisterIResearchReplacementScan(config);
 }
 
@@ -144,9 +149,9 @@ void ConfigureServerDBConfig(duckdb::DBConfig& config) {
   // parallelism by one and make `threads`/`cpu_threads` resolve to N-1 internal
   // workers; zero makes the count exact and `threads=1` a true single worker.
   // Sessions run as tasks on that pool, so it must never be left empty; the
-  // value is refused for the lifetime of the process (IsUnchangeableSetting),
-  // which is what keeps `threads -
-  // external_threads` from ever resolving to zero internal workers.
+  // setting is declared internal, so no client can change it, which is what
+  // keeps `threads - external_threads` from ever resolving to zero internal
+  // workers.
   config.SetOptionByName("external_threads", duckdb::Value::UBIGINT(0));
 }
 
@@ -184,8 +189,6 @@ void RegisterEngineModules(duckdb::DatabaseInstance& db) {
 
 void RegisterServerExtensions(duckdb::DatabaseInstance& db) {
   RegisterEngineModules(db);
-
-  connector::RegisterSubscriptionPragma(db);
 
   pg::RegisterFunctions(db);
 
@@ -228,6 +231,27 @@ void RegisterServerExtensions(duckdb::DatabaseInstance& db) {
   pg::InitSystemTables();
   pg::InitSystemFunctions(db, parser);
   pg::InitSystemViews(parser);
+  auto& config = duckdb::DBConfig::GetConfig(db);
+  pg::VisitSystemTables("pg_catalog", [&](const pg::SystemTable& table) {
+    config.builtin_relations.emplace(table.Sql().name);
+  });
+  pg::VisitSystemViews("pg_catalog", [&](const pg::StaticView& view) {
+    config.builtin_relations.emplace(view.name);
+  });
+  config.builtin_function_key = &pg::BuiltinFunctionKey;
+  config.builtin_signature_key = &pg::BuiltinSignatureKey;
+  config.builtin_type_oid = &pg::BuiltinTypeOid;
+  for (const auto& wrapper : pg::kForeignDataWrappers) {
+    config.foreign_data_wrappers.emplace(
+      wrapper.name,
+      duckdb::ForeignDataWrapper{.oid = wrapper.oid, .owner = pg::kRootUser});
+  }
+  for (const auto& language : pg::kSystemLanguages) {
+    config.languages.emplace(language.name,
+                             duckdb::Language{.oid = language.oid,
+                                              .owner = pg::kRootUser,
+                                              .trusted = language.trusted});
+  }
 }
 
 }  // namespace sdb::server::query

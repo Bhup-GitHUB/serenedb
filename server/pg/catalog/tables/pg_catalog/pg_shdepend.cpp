@@ -20,10 +20,11 @@
 
 #include <absl/algorithm/container.h>
 
+#include <duckdb/catalog/catalog_entry/macro_catalog_entry.hpp>
 #include <duckdb/catalog/catalog_entry/table_catalog_entry.hpp>
+#include <duckdb/catalog/catalog_entry/view_catalog_entry.hpp>
 #include <duckdb/main/attached_database.hpp>
 #include <duckdb/main/database_manager.hpp>
-#include <ranges>
 
 #include "catalog/catalog.h"
 #include "catalog/cluster.h"
@@ -95,30 +96,55 @@ class PgShdepend final : public SystemTableScan<kPgShdependSql> {
       }
     }
     auto& cluster = catalog::ClusterOf(context);
+    const auto transaction = cluster.GetCatalogTransaction(context);
+    if (const auto root = cluster.LookupOid(transaction, kRootUser)) {
+      duckdb::idx_t oid = 0;
+      for (const auto& row : root->permissions.Rows().parameters) {
+        ++oid;
+        if (Names(row.acl, role.oid)) {
+          Depend(kInvalidOid, kPgParameterAclTable, oid, 0, role.oid, 'a');
+        }
+      }
+    }
     cluster.Set(duckdb::CatalogType::DATABASE_ENTRY)
-      .Scan(
-        cluster.GetCatalogTransaction(context),
-        [&](duckdb::CatalogEntry& entry) {
-          Entry(kInvalidOid, role.oid, entry);
-          VisitDefaultAcls(
-            Context(), entry,
-            [&](duckdb::idx_t oid, const duckdb::DefaultAcl& row) {
-              if (row.role == role.oid) {
-                Depend(entry.oid, kPgDefaultAclTable, oid, 0, role.oid, 'o');
-              } else if (Names(row.acl, role.oid)) {
-                Depend(entry.oid, kPgDefaultAclTable, oid, 0, role.oid, 'a');
-              }
-            });
-        });
+      .Scan(transaction, [&](duckdb::CatalogEntry& entry) {
+        Entry(kInvalidOid, role.oid, entry);
+        VisitDefaultAcls(
+          Context(), entry,
+          [&](duckdb::idx_t oid, const duckdb::DefaultAcl& row) {
+            if (row.role == role.oid) {
+              Depend(entry.oid, kPgDefaultAclTable, oid, 0, role.oid, 'o');
+            } else if (Names(row.acl, role.oid)) {
+              Depend(entry.oid, kPgDefaultAclTable, oid, 0, role.oid, 'a');
+            }
+          });
+        VisitDatabaseGrants(Context(), entry, role.oid,
+                            [&](const ObjectGrant& grant) {
+                              Depend(entry.oid, grant.classid, grant.objid,
+                                     grant.objsubid, role.oid, 'a');
+                            });
+      });
   }
 
  private:
   void Entry(duckdb::idx_t database, duckdb::idx_t role,
-             const duckdb::CatalogEntry& entry) {
+             duckdb::CatalogEntry& entry) {
     const auto classid = CatalogClassOid(entry.type);
     if (classid == kInvalidOid ||
         entry.type == duckdb::CatalogType::INDEX_ENTRY ||
         entry.type == duckdb::CatalogType::ROLE_ENTRY) {
+      return;
+    }
+    if (classid == kPgProcTable) {
+      const auto& macro = entry.Cast<duckdb::MacroCatalogEntry>();
+      for (const auto& overload : macro.macros) {
+        const auto& permissions = macro.OverloadPermissions(*overload);
+        if (permissions.owner == role) {
+          Depend(database, classid, macro.OverloadOid(*overload), 0, role, 'o');
+        } else if (Names(permissions.acl, role)) {
+          Depend(database, classid, macro.OverloadOid(*overload), 0, role, 'a');
+        }
+      }
       return;
     }
     if (entry.permissions.owner == role) {
@@ -127,6 +153,18 @@ class PgShdepend final : public SystemTableScan<kPgShdependSql> {
     }
     if (Names(entry.permissions.acl, role)) {
       Depend(database, classid, entry.oid, 0, role, 'a');
+    }
+    if (entry.type == duckdb::CatalogType::VIEW_ENTRY) {
+      auto& view = entry.Cast<duckdb::ViewCatalogEntry>();
+      for (const auto& column : view.column_acls) {
+        if (!Names(column.acl, role)) {
+          continue;
+        }
+        if (const auto attnum = ViewAttnum(Context(), view, column.column)) {
+          Depend(database, classid, entry.oid, attnum, role, 'a');
+        }
+      }
+      return;
     }
     if (entry.type != duckdb::CatalogType::TABLE_ENTRY) {
       return;

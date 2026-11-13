@@ -81,12 +81,7 @@ std::string_view GetOriginalName(std::string_view name);
 int64_t ParseDurationMillis(std::string_view name, std::string_view text,
                             double unitless_ms);
 
-bool IsUnchangeableSetting(std::string_view name);
-
 bool IsNonTransactionalSetting(std::string_view name);
-
-void RequireSuperuserToSetGlobal(duckdb::ClientContext& ctx,
-                                 std::string_view name);
 
 namespace connector {
 

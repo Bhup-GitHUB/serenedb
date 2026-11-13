@@ -31,7 +31,6 @@
 #include <string>
 #include <string_view>
 
-#include "auth/role_closure.h"
 #include "pg/catalog/oids.h"
 
 namespace sdb::pg {
@@ -59,22 +58,27 @@ inline constexpr std::array kAclPrivileges{
   AclPrivilege{duckdb::AclMode::Maintain, 'm', "MAINTAIN"},
 };
 
-inline constexpr std::array kForeignDataWrapperAcl{duckdb::AclItem{
-  .grantee = kPublicGrantee,
-  .grantor = kRootUser,
-  .privs = duckdb::AclMode::Usage,
-}};
-
 void AppendAcl(std::string& out, const duckdb::AclItem& item,
-               const auth::RoleGraph& roles);
+               const duckdb::SecuritySnapshot& roles);
 
-std::optional<irs::pg::SqlErrorData> ParseAcl(std::string_view text,
-                                              const auth::RoleGraph& roles,
-                                              bool oids, duckdb::AclItem& item);
+std::optional<irs::pg::SqlErrorData> ParseAcl(
+  std::string_view text, const duckdb::SecuritySnapshot& roles, bool oids,
+  duckdb::AclItem& item);
 
 void VisitDefaultAcls(
   duckdb::ClientContext& context, const duckdb::CatalogEntry& database,
   absl::FunctionRef<void(duckdb::idx_t oid, const duckdb::DefaultAcl& row)>
     visitor);
+
+struct ObjectGrant {
+  duckdb::idx_t classid;
+  duckdb::idx_t objid;
+  int32_t objsubid;
+};
+
+void VisitDatabaseGrants(duckdb::ClientContext& context,
+                         const duckdb::CatalogEntry& database,
+                         duckdb::idx_t role,
+                         absl::FunctionRef<void(const ObjectGrant&)> visitor);
 
 }  // namespace sdb::pg
