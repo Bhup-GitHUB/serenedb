@@ -120,6 +120,13 @@ db error: ERROR: permission denied for function iceberg_load_table_response
 
 connection c_ved user=eifn_vedernikoff password=eifn_pw
 statement error
+SELECT * FROM iceberg_to_ducklake('eifn_${__DATABASE__}', 'eifn_lake_${__DATABASE__}');
+----
+db error: ERROR: permission denied for function iceberg_to_ducklake
+
+
+connection c_ved user=eifn_vedernikoff password=eifn_pw
+statement error
 SELECT * FROM set_iceberg_table_properties('eifn_${__DATABASE__}.${__DATABASE__}.eifn_t', {'eifn.owner': 'vedernikoff'});
 ----
 db error: ERROR: must be owner of table eifn_t
