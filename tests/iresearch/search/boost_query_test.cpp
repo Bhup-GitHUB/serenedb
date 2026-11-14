@@ -56,8 +56,8 @@ class SpaceField : public tests::FieldBase {
 
   std::string_view Value() const final { return _value; }
 
-  bool Write(irs::DataOutput& o) const final {
-    o.WriteByte(1);
+  bool Write(duckdb::WriteStream& o) const final {
+    o.Write<irs::byte_type>(1);
     return true;
   }
 

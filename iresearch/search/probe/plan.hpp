@@ -100,7 +100,7 @@ Node::ptr MakeWindowDisjunction(std::span<const Term> terms,
                                 const detail::TermScoring& scoring,
                                 const detail::ScoredCtx& ctx,
                                 score_t absorbed) {
-  const InputFile* doc = nullptr;
+  const duckdb::InputFile* doc = nullptr;
   std::vector<detail::FillNode::ptr> rest;
   if (!detail::CollectDense(terms, filters, field, doc, rest,
                             [&](const QueryBuilder& child) {

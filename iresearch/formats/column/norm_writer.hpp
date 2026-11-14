@@ -21,12 +21,12 @@
 #pragma once
 
 #include <cstdint>
+#include <duckdb/common/serializer/write_stream.hpp>
 #include <functional>
 #include <limits>
 #include <span>
 #include <vector>
 
-#include "iresearch/store/data_output.hpp"
 #include "iresearch/types.hpp"
 
 namespace irs {
@@ -102,7 +102,7 @@ inline uint64_t NormTableSize(const NormRegionMeta& region) noexcept {
 
 class NormColumnWriter final {
  public:
-  using Open = std::function<DataOutput&()>;
+  using Open = std::function<duckdb::WriteStream&()>;
 
   NormColumnWriter(field_id id, uint32_t row_group_size, Open open);
 
@@ -139,7 +139,7 @@ class NormColumnWriter final {
   void End();
 
   field_id _id;
-  DataOutput* _out = nullptr;
+  duckdb::WriteStream* _out = nullptr;
   Open _open;
   uint32_t _row_group_size;
   NormColumnMeta _meta;

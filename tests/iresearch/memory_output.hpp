@@ -21,8 +21,8 @@
 #pragma once
 
 #include <duckdb/common/memory_mapped_file.hpp>
-#include <iresearch/store/data_input.hpp>
-#include <iresearch/store/data_output.hpp>
+#include <duckdb/common/serializer/write_stream.hpp>
+#include <duckdb/storage/external_file_cache/input_file_reader.hpp>
 #include <iresearch/utils/string.hpp>
 #include <iterator>
 #include <memory>
@@ -40,17 +40,16 @@ class MemoryFile {
   bstring _bytes;
 };
 
-class MemoryFileOutput final : public DataOutput {
+class MemoryFileOutput final : public duckdb::WriteStream {
  public:
   explicit MemoryFileOutput(MemoryFile& file) noexcept : _file{file} {
-    _begin = _pos = _buf;
-    _end = std::end(_buf);
-    _offset = file.Length();
+    SetWindow(_buf, sizeof(_buf));
+    write_offset = file.Length();
   }
 
   void Flush() {
-    Append(_begin, static_cast<size_t>(_pos - _begin));
-    _pos = _begin;
+    Append(write_begin, WindowSize());
+    write_pos = write_begin;
   }
 
  private:
@@ -64,7 +63,7 @@ class MemoryFileOutput final : public DataOutput {
       return;
     }
     _file.Append(data, size);
-    _offset += size;
+    write_offset += size;
   }
 
   byte_type _buf[64];
@@ -94,9 +93,9 @@ class BytesMapping final : public duckdb::MemoryMappedFile {
   void Close() final {}
 };
 
-inline std::unique_ptr<irs::InputFile> OpenBytes(irs::bytes_view bytes) {
-  return std::make_unique<irs::InputFile>(
-    std::make_unique<BytesMapping>(bytes));
+inline duckdb::shared_ptr<duckdb::InputFile> OpenBytes(irs::bytes_view bytes) {
+  return duckdb::make_shared_ptr<duckdb::InputFile>(
+    duckdb::make_uniq<BytesMapping>(bytes));
 }
 
 }  // namespace tests

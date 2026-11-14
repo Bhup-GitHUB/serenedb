@@ -164,7 +164,8 @@ class PrunedLeaves {
           break;
         }
       }
-      auto& leaf = _leaves[_order[i]];
+      const auto c = _order[i];
+      auto& leaf = _leaves[c];
       uint32_t out = 0;
       for (uint32_t j = 0; j != len; ++j) {
         const auto doc = docs[j];
@@ -182,7 +183,7 @@ class PrunedLeaves {
         _fetcher.Fetch(std::span<const doc_id_t>{docs, len});
         fetched = len;
       }
-      _scorers[_order[i]].template Score<ScoreMergeType::Sum>(
+      _scorers[c].template Score<ScoreMergeType::Sum>(
         scores, static_cast<scores_size_t>(len));
     }
     return len;
@@ -208,8 +209,13 @@ class PrunedLeaves {
     return cost;
   }
 
-  IRS_FORCE_INLINE doc_id_t FirstOf(size_t drivers, doc_id_t target) {
-    auto first = _leaves[_order[0]].Probe(target);
+  IRS_FORCE_INLINE Leaf& Driver(size_t i) noexcept {
+    return _leaves[_order[i]];
+  }
+
+  IRS_FORCE_INLINE doc_id_t FirstOf(Leaf& driver, size_t drivers,
+                                    doc_id_t target) {
+    auto first = driver.Probe(target);
     for (size_t i = 1; i != drivers; ++i) {
       first = std::min(first, _leaves[_order[i]].Probe(target));
     }

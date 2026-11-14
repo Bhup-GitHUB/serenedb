@@ -7,8 +7,11 @@ what is below them, ranged reads with conditions, blob listings, same-account co
 batched deletes. Requests are not authenticated, except that while
 `sas_signatures` is set, a request whose SAS signature is not one of them is refused with 403
 AuthenticationFailed, as an expired SAS is. It counts requests by kind. `trickle` sends the bodies
-of reads at that many bytes a second. The next `drop[kind]` requests of a kind (PUT_BLOCK_LIST) take
+of reads at that many bytes a second, and `hold_read` holds a ranged read in the middle of its
+body. The next `drop[kind]` requests of a kind (PUT_BLOCK_LIST) take
 effect but get no response: the connection closes, and their blob names are listed in `dropped`.
+While `hold[kind]` holds an event, the requests of that kind (PUT_BLOCK, PUT_BLOCK_LIST, APPEND,
+FLUSH) after the first `unheld[kind]` wait for it before they are checked, counted as HELD.
 
 Point a secret at it with `connection_string`, or with `sas_connection_string(signature)`.
 """
@@ -19,6 +22,7 @@ import base64
 import collections
 import hashlib
 import json
+import threading
 import time
 import urllib.parse
 import uuid
@@ -52,6 +56,8 @@ class FakeAzure(FakeStore):
         self.trickle = 0
         self.drop: collections.Counter[str] = collections.Counter()
         self.dropped: list[str] = []
+        self.hold: dict[str, threading.Event] = {}
+        self.unheld: collections.Counter[str] = collections.Counter()
 
     @property
     def endpoint(self) -> str:
@@ -63,7 +69,8 @@ class FakeAzure(FakeStore):
                 f"BlobEndpoint={self.endpoint};DfsEndpoint={self.endpoint};")
 
     def sas_connection_string(self, signature: str) -> str:
-        return (f"BlobEndpoint={self.endpoint};SharedAccessSignature=sv=2022-11-02&ss=b&srt=sco"
+        return (f"BlobEndpoint={self.endpoint};DfsEndpoint={self.endpoint};"
+                "SharedAccessSignature=sv=2022-11-02&ss=b&srt=sco"
                 f"&sp=rwdlacx&se=2099-12-31T00:00:00Z&sig={signature}")
 
     def names(self, container: str, prefix: str = "") -> list[str]:
@@ -97,8 +104,19 @@ class _Handler(Handler):
         self._error(403, "AuthenticationFailed")
         return True
 
+    def _held(self, kind: str) -> None:
+        with self.fake.lock:
+            event = self.fake.hold.get(kind)
+            if event is not None and self.fake.unheld[kind] > 0:
+                self.fake.unheld[kind] -= 1
+                event = None
+        if event is not None:
+            self.fake.count("HELD")
+            event.wait()
+
     def _reply(self, status: int, body: bytes = b"", headers: dict[str, str] | None = None,
-               content_length: int | None = None, trickle: bool = False) -> None:
+               content_length: int | None = None, trickle: bool = False,
+               held: str | None = None) -> None:
         self.send_response(status)
         self.send_header("x-ms-request-id", str(uuid.uuid4()))
         self.send_header("x-ms-version", self.headers.get("x-ms-version", "2026-06-06"))
@@ -109,6 +127,8 @@ class _Handler(Handler):
         self.end_headers()
         if not body or self.command == "HEAD":
             return
+        if held is not None:
+            body = self._send_held(held, body)
         rate = self.fake.trickle if trickle else 0
         if not rate:
             self.wfile.write(body)
@@ -209,7 +229,7 @@ class _Handler(Handler):
             self._error(416, "InvalidRange")
             return
         headers["Content-Range"] = part[1]
-        self._reply(206, part[0], headers, trickle=True)
+        self._reply(206, part[0], headers, trickle=True, held=name)
 
     def _list(self, container: str, query: dict[str, list[str]]) -> None:
         prefix = query.get("prefix", [""])[0]
@@ -282,9 +302,11 @@ class _Handler(Handler):
         self._reply(201, headers={"ETag": blob.etag, "Last-Modified": http_date(blob.modified)})
 
     def do_PUT(self) -> None:
+        container, name, query = self._target()
+        self._held({"block": "PUT_BLOCK", "blocklist": "PUT_BLOCK_LIST"}.get(
+            query.get("comp", [""])[0], ""))
         if self._forbidden():
             return
-        container, name, query = self._target()
         body = self._body()
         source = self.headers.get("x-ms-rename-source")
         if source:
@@ -371,11 +393,12 @@ class _Handler(Handler):
         self._error(400, "InvalidQueryParameterValue")
 
     def do_PATCH(self) -> None:
+        container, name, query = self._target()
+        action = query.get("action", [""])[0]
+        self._held(action.upper())
         if self._forbidden():
             return
-        container, name, query = self._target()
         body = self._body()
-        action = query.get("action", [""])[0]
         position = int(query.get("position", ["0"])[0])
         if action not in ("append", "flush"):
             self._error(400, "InvalidQueryParameterValue")

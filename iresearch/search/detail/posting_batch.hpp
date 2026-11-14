@@ -36,7 +36,6 @@
 #include "iresearch/search/detail/posting_leaf.hpp"
 #include "iresearch/search/scorers/score_args.hpp"
 #include "iresearch/search/scorers/scorer.hpp"
-#include "iresearch/store/data_input.hpp"
 #include "iresearch/utils/empty.hpp"
 #include "iresearch/utils/shared.hpp"
 #include "iresearch/utils/type_limits.hpp"
@@ -165,13 +164,12 @@ class PostingBatch {
 
   IRS_FORCE_INLINE uint32_t* Enc() noexcept { return EncOf<InputType>(_enc); }
 
-  void OpenInput(const PostingMeta& meta, const InputFile& doc_in,
-                 bool bounds) {
-    _in = OpenDocInput<InputType>(meta, doc_in);
+  void OpenInput(const PostingMeta& meta, const duckdb::InputFile& doc_in,
+                 bool bounds, bool scans = false) {
+    _in = OpenDocInput<InputType>(meta, doc_in,
+                                  scans ? duckdb::ReadAheadSteps::SCANNING
+                                        : duckdb::ReadAheadSteps::SKIPPING);
     auto& in = In();
-    if (const auto extent = DocExtent(meta); extent != 0) {
-      _hint.Arm(meta.doc_start, meta.doc_start + extent);
-    }
     if (meta.docs_count <= kBlock) {
       SkipScoreBounds(bounds, in);
     }
@@ -214,7 +212,7 @@ class PostingBatch {
   }
 
   IRS_FORCE_INLINE void ReadDocs(doc_id_t* IRS_RESTRICT dest, uint32_t len) {
-    _hint.Advance(In(), In().Position());
+    In().Advance();
     block_io::ReadTailDeltaAt(len, In(), Enc(), dest, _last);
     _last = dest[len - 1];
     _left_in_list -= len;
@@ -245,7 +243,6 @@ class PostingBatch {
   [[no_unique_address]] utils::Need<!Scored, FreqLen> _freq_len;
   [[no_unique_address]] utils::Need<Scored, LeafScore> _score;
   [[no_unique_address]] utils::Need<Scored, LeafProvider> _provider;
-  GrowingHint _hint;
   BlockCursor<InputType> _walk;
 };
 

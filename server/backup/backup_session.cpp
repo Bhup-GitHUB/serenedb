@@ -88,15 +88,16 @@ void CollectStores(catalog::SereneDBCatalog& catalog, duckdb::idx_t database,
 }
 
 Cut RecordCut(
-  duckdb::ClientContext& context, const std::filesystem::path& backup_dir,
+  duckdb::ClientContext& context, const std::string& backup_dir,
   std::span<const duckdb::shared_ptr<duckdb::AttachedDatabase>> pins,
   pg::ProgressMetrics& progress) {
   Cut cut;
   progress.SetPhase(pg::progress_phase::BaseBackup::WaitingForCommits);
   const auto commits = CommitGate().Close(context);
-  cut.catalog_link = backup_dir / kCatalogLink;
+  cut.catalog_link =
+    duckdb::FileSystem::JoinPath(catalog::kEngineDir, kBackupDir, kCatalogLink);
   cut.catalog_log_size =
-    catalog::ClusterOf().SnapshotCatalogLog(cut.catalog_link);
+    catalog::ClusterOf().SnapshotCatalogLog(backup_dir, kCatalogLink);
   for (const auto& db : pins) {
     auto& storage = db->GetStorageManager();
     auto& entry = cut.databases.emplace_back();
@@ -190,12 +191,8 @@ StartedBackup BackupSession::Begin(duckdb::ClientContext& context,
   }
   const auto& layout =
     catalog::ClusterLayout(catalog::ClusterOf().GetAttached());
-  auto backup_dir = layout.EngineDir() / kBackupDir;
-  if (!catalog::RemoveTree(backup_dir.string())) {
-    THROW_SQL_ERROR(
-      ERR_CODE(ERRCODE_IO_ERROR),
-      ERR_MSG("could not remove directory \"", backup_dir.string(), "\""));
-  }
+  auto backup_dir = duckdb::FileSystem::JoinPath(layout.engine, kBackupDir);
+  catalog::RemoveTreeOrThrow(backup_dir);
   catalog::CreateDirectory(backup_dir);
   absl::Cleanup remove_backup_dir = [&]() noexcept {
     catalog::RemoveTree(backup_dir);
@@ -215,7 +212,6 @@ StartedBackup BackupSession::Begin(duckdb::ClientContext& context,
   }
   auto& positions = PositionSource::Instance();
   const auto start_lsn = positions.Issue();
-  cut.catalog_link = cut.catalog_link.lexically_relative(layout.directory);
   auto label_file = BuildBackupLabel(
     label, start_lsn, positions.SystemIdentifier(), absl::Now(), cut);
   std::move(resume_removals).Cancel();

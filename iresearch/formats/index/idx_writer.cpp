@@ -20,7 +20,9 @@
 
 #include "iresearch/formats/index/idx_writer.hpp"
 
+#include <duckdb/common/fault_points.hpp>
 #include <duckdb/common/serializer/binary_serializer.hpp>
+#include <duckdb/common/serializer/write_stream.hpp>
 #include <duckdb/common/types.hpp>
 #include <utility>
 #include <vector>
@@ -28,8 +30,6 @@
 #include "iresearch/formats/format_utils.hpp"
 #include "iresearch/index/column_info.hpp"
 #include "iresearch/index/file_names.hpp"
-#include "iresearch/store/data_output.hpp"
-#include "iresearch/store/file_output.hpp"
 #include "iresearch/utils/pg/sql_exception_macro.hpp"
 
 namespace irs {
@@ -46,10 +46,10 @@ void IdxWriter::EnsureOut() {
   if (_out) {
     return;
   }
-  _out = FileOutput::Open(_fs, _root, _filename, _observers, true);
+  _out = OpenOutput(_fs, _root, _filename, _observers, true);
 }
 
-DataOutput& IdxWriter::BlocksOut() {
+duckdb::WriteStream& IdxWriter::BlocksOut() {
   EnsureOut();
   return *_out;
 }
@@ -86,7 +86,13 @@ void IdxWriter::Commit() {
           list.WriteObject([&](duckdb::BinarySerializer& obj) {
             obj.WriteProperty<uint64_t>(0, "id", e.id);
             obj.WriteProperty<uint64_t>(1, "tree_offset", e.meta.tree_offset);
+            SDB_IF_FAILURE("ivf_footer_byte_sizes") {
+              obj.WriteProperty<uint64_t>(2, "tree_byte_size", 0);
+            }
             obj.WriteProperty<uint64_t>(3, "stats_offset", e.meta.stats_offset);
+            SDB_IF_FAILURE("ivf_footer_byte_sizes") {
+              obj.WriteProperty<uint64_t>(4, "stats_byte_size", 0);
+            }
             obj.WriteProperty<uint64_t>(5, "root_byte_size",
                                         e.meta.root_byte_size);
           });
@@ -122,7 +128,7 @@ void IdxWriter::Commit() {
                          });
     }
   });
-  _out->Close();
+  CloseOutput(*_out, _observers);
   _out.reset();
 }
 

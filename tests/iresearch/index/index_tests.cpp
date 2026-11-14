@@ -62,12 +62,13 @@ using namespace std::literals;
 namespace {
 
 size_t RemoveUnreferencedFiles(const tests::IndexDir& dir) {
-  size_t before = 0;
-  dir.Visit([&](std::string_view) { ++before; });
+  std::vector<std::string> before;
+  dir.Visit([&](std::string_view name) { before.emplace_back(name); });
   irs::RemoveUnreferenced(dir.Fs(), dir.Root(), dir.Refs());
-  size_t after = 0;
-  dir.Visit([&](std::string_view) { ++after; });
-  return before - after;
+  absl::flat_hash_set<std::string> after;
+  dir.Visit([&](std::string_view name) { after.emplace(name); });
+  return static_cast<size_t>(absl::c_count_if(
+    before, [&](const std::string& name) { return !after.contains(name); }));
 }
 
 // Per-doc cs column id used by tests in this file. `kNameColumnId` keys the
@@ -168,7 +169,7 @@ class NameKeyField final : public tests::FieldBase {
     return std::vector<irs::bstring>{};
   }
 
-  bool Write(irs::DataOutput&) const final { return true; }
+  bool Write(duckdb::WriteStream&) const final { return true; }
 
  private:
   int64_t _key;
@@ -398,7 +399,7 @@ duckdb::FileSystem& DatabaseFileSystem() {
 }
 
 IndexDir OverFileSystem(const IndexDir& files, duckdb::FileSystem& fs) {
-  SDB_ASSERT(files.Kind() != irs::StorageKind::Memory);
+  SDB_ASSERT(files.Kind() != tests::StorageKind::Memory);
   return IndexDir{files.Db(), fs, files.Root()};
 }
 
@@ -580,7 +581,7 @@ class IndexTestCase : public tests::IndexTestBase {
           files.emplace(name);
         });
         std::erase_if(added, [&](const std::string& name) {
-          return dir().Kind() == irs::StorageKind::Remote &&
+          return dir().Kind() == tests::StorageKind::Remote &&
                  name.starts_with("_2.");
         });
         ASSERT_EQ(std::vector<std::string>{"segments_3"}, added);
@@ -601,7 +602,7 @@ class IndexTestCase : public tests::IndexTestBase {
           after_commit.emplace(name);
         });
         absl::erase_if(files, [&](const std::string& name) {
-          return dir().Kind() != irs::StorageKind::Local &&
+          return dir().Kind() != tests::StorageKind::Local &&
                  name.starts_with("_2.");
         });
         ASSERT_EQ(files, after_commit);
@@ -1052,13 +1053,15 @@ class IndexTestCase : public tests::IndexTestBase {
       auto file_count = 0;
       auto dir_visitor = [&file_count](std::string_view) { ++file_count; };
       // clear any unused files before taking count
-      irs::RemoveAllUnreferenced(dir().Fs(), dir().Root(), dir().Refs());
+      irs::RemoveAllUnreferenced(dir().Fs(), dir().Root(), dir().Refs(),
+                                 dir().Files());
       dir().Visit(dir_visitor);
       auto file_count_before = file_count;
       ASSERT_TRUE(InsertWithName(*writer, *doc3));
       ASSERT_TRUE(writer->RefreshBegin());  // prepare for commit tx #2
       writer->RefreshAbort();               // rollback tx #2
-      irs::RemoveAllUnreferenced(dir().Fs(), dir().Root(), dir().Refs());
+      irs::RemoveAllUnreferenced(dir().Fs(), dir().Root(), dir().Refs(),
+                                 dir().Files());
       file_count = 0;
       dir().Visit(dir_visitor);
       ASSERT_EQ(file_count_before,
@@ -1320,7 +1323,7 @@ class IndexTestCase : public tests::IndexTestBase {
   }
 
   void WriterAtomicityCheck() {
-    if (dir().Kind() != irs::StorageKind::Local) {
+    if (dir().Kind() != tests::StorageKind::Local) {
       GTEST_SKIP() << "only a local index syncs its files";
     }
 
@@ -1864,7 +1867,7 @@ TEST_P(IndexTestCase, writer_begin_clear) {
 }
 
 TEST_P(IndexTestCase, writer_commit_cleanup_interleaved) {
-  if (dir().Kind() == irs::StorageKind::Memory) {
+  if (dir().Kind() == tests::StorageKind::Memory) {
     GTEST_SKIP() << "file system hooks need a local index";
   }
 
@@ -1875,7 +1878,7 @@ TEST_P(IndexTestCase, writer_commit_cleanup_interleaved) {
     std::optional<tests::IndexDir> synced_dir;
     tests::CallbackFileSystem fs{[&] {
       irs::RemoveAllUnreferenced(synced_dir->Fs(), synced_dir->Root(),
-                                 synced_dir->Refs());
+                                 synced_dir->Refs(), synced_dir->Files());
     }};
     synced_dir.emplace(tests::OverFileSystem(dir(), fs));
     auto writer = tests::MakeWriter(*synced_dir, irs::kOmCreate,
@@ -1984,7 +1987,7 @@ TEST_P(IndexTestCase, europarl_docs_automaton) {
 }
 
 TEST_P(IndexTestCase, europarl_docs_big) {
-  if (dir().Kind() == irs::StorageKind::Local &&
+  if (dir().Kind() == tests::StorageKind::Local &&
       !std::getenv("SDB_LONG_TESTS")) {
     GTEST_SKIP() << "too long for a PR run: test.py --long-tests runs it";
   }
@@ -2332,7 +2335,7 @@ TEST_P(IndexTestCase, document_context) {
 
     std::string_view Name() { return ""; }
 
-    bool Write(irs::DataOutput&) {
+    bool Write(duckdb::WriteStream&) {
       {
         std::lock_guard cond_lock{cond_mutex};
       }
@@ -4622,8 +4625,8 @@ TEST_P(IndexTestCase, doc_update) {
      public:
       mutable irs::KeywordTokenizer tokens;
       bool write_result;
-      bool Write(irs::DataOutput& out) const final {
-        out.WriteByte(1);
+      bool Write(duckdb::WriteStream& out) const final {
+        out.Write<irs::byte_type>(1);
         return write_result;
       }
       irs::analysis::Tokenizer& GetTokens() const final { return tokens; }
@@ -5766,7 +5769,7 @@ TEST_P(IndexTestCase, compact_single_segment) {
 }
 
 TEST_P(IndexTestCase, segment_compact_long_running) {
-  if (dir().Kind() == irs::StorageKind::Memory) {
+  if (dir().Kind() == tests::StorageKind::Memory) {
     GTEST_SKIP() << "file system hooks need a local index";
   }
 
@@ -5964,7 +5967,7 @@ TEST_P(IndexTestCase, segment_compact_long_running) {
   // long running transaction + segment removal
   {
     irs::RemoveAllUnreferenced(this->dir().Fs(), this->dir().Root(),
-                               this->dir().Refs());
+                               this->dir().Refs(), this->dir().Files());
     auto query_doc1 = MakeByTerm(kNameFieldId, "A");
 
     tests::BlockingFileSystem fs{blocker};
@@ -6120,7 +6123,7 @@ TEST_P(IndexTestCase, segment_compact_long_running) {
   // long running transaction + document removal
   {
     irs::RemoveAllUnreferenced(this->dir().Fs(), this->dir().Root(),
-                               this->dir().Refs());
+                               this->dir().Refs(), this->dir().Files());
     auto query_doc1 = MakeByTerm(kNameFieldId, "A");
 
     tests::BlockingFileSystem fs{blocker};
@@ -6262,7 +6265,7 @@ TEST_P(IndexTestCase, segment_compact_long_running) {
   // long running transaction + document removal
   {
     irs::RemoveAllUnreferenced(this->dir().Fs(), this->dir().Root(),
-                               this->dir().Refs());
+                               this->dir().Refs(), this->dir().Files());
     auto query_doc1_doc4 = MakeByTerms(kNameFieldId, {"A", "D"});
 
     tests::BlockingFileSystem fs{blocker};
@@ -10545,8 +10548,8 @@ TEST_P(IndexTestCase, writer_insert_immediate_remove) {
 
   // file removal should pass for all files (especially valid for Microsoft
   // Windows)
-  irs::RemoveAllUnreferenced(directory.Fs(), directory.Root(),
-                             directory.Refs());
+  irs::RemoveAllUnreferenced(directory.Fs(), directory.Root(), directory.Refs(),
+                             directory.Files());
 
   // validate that all files from old segments have been removed
   count = 0;
@@ -10609,8 +10612,8 @@ TEST_P(IndexTestCase, writer_insert_immediate_remove_all) {
 
   // file removal should pass for all files (especially valid for Microsoft
   // Windows)
-  irs::RemoveAllUnreferenced(directory.Fs(), directory.Root(),
-                             directory.Refs());
+  irs::RemoveAllUnreferenced(directory.Fs(), directory.Root(), directory.Refs(),
+                             directory.Files());
 
   // validate that all files from old segments have been removed
   count = 0;
@@ -10654,7 +10657,7 @@ TEST_P(IndexTestCase, writer_remove_all_from_last_segment) {
     // file removal should pass for all files (especially valid for
     // Microsoft Windows)
     irs::RemoveAllUnreferenced(directory.Fs(), directory.Root(),
-                               directory.Refs());
+                               directory.Refs(), directory.Files());
 
     // validate that all files from old segments have been removed
     count = 0;
@@ -10718,7 +10721,7 @@ TEST_P(IndexTestCase, writer_remove_all_from_last_segment_compaction) {
     // file removal should pass for all files (especially valid for
     // Microsoft Windows)
     irs::RemoveAllUnreferenced(directory.Fs(), directory.Root(),
-                               directory.Refs());
+                               directory.Refs(), directory.Files());
 
     // validate that all files from old segments have been removed
     size_t count{0};
@@ -11217,7 +11220,7 @@ TEST_P(IndexTestCase11, create_over_unreadable_index) {
     old_segment = snapshot[0].Meta().name;
   }
 
-  const auto old_meta = irs::index_meta::LastFile(dir().Fs(), dir().Root());
+  const auto old_meta = irs::index_meta::LastFile(dir().Files());
   ASSERT_TRUE(old_meta);
   {
     auto out = dir().Create(*old_meta);
@@ -11237,7 +11240,7 @@ TEST_P(IndexTestCase11, create_over_unreadable_index) {
   ASSERT_SQL_ERROR(open_writer(irs::kOmCreate | irs::kOmAppend),
                    ERRCODE_FEATURE_NOT_SUPPORTED);
   {
-    const auto meta = irs::index_meta::LastFile(dir().Fs(), dir().Root());
+    const auto meta = irs::index_meta::LastFile(dir().Files());
     ASSERT_EQ(old_meta, meta);
     irs::IndexMeta index_meta;
     ASSERT_SQL_ERROR(irs::index_meta::Read(dir().Db(), dir().Fs(), dir().Root(),
@@ -11249,7 +11252,7 @@ TEST_P(IndexTestCase11, create_over_unreadable_index) {
   ASSERT_TRUE(InsertWithName(*writer, *doc2));
   writer->RefreshCommit();
 
-  const auto new_meta = irs::index_meta::LastFile(dir().Fs(), dir().Root());
+  const auto new_meta = irs::index_meta::LastFile(dir().Files());
   ASSERT_TRUE(new_meta);
   EXPECT_LT(irs::index_meta::ParseGeneration(*old_meta),
             irs::index_meta::ParseGeneration(*new_meta));
@@ -11343,8 +11346,8 @@ TEST_P(IndexTestCase11, docs_mask_one_file_per_version) {
     ASSERT_EQ(meta.docs_mask->FrozenSize(), meta.docs_mask_size);
   }
 
-  irs::RemoveAllUnreferenced(directory.Fs(), directory.Root(),
-                             directory.Refs());
+  irs::RemoveAllUnreferenced(directory.Fs(), directory.Root(), directory.Refs(),
+                             directory.Files());
   ASSERT_EQ(1, mask_files());
 
   auto reader =

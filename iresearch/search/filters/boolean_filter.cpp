@@ -451,7 +451,7 @@ QueryBuilder::ptr BooleanFilter::PrepareSegment(
             collector->Term(ctx.thread, i).Collect(meta);
           }
           if (const auto extent = DocExtent(meta); extent != 0) {
-            AppendRange(docs, meta.doc_start, meta.doc_start + extent);
+            docs.push_back({.offset = meta.doc_start, .size = extent});
           }
           add(i, meta);
           ++next;
@@ -460,7 +460,7 @@ QueryBuilder::ptr BooleanFilter::PrepareSegment(
         add(next, kNoPosting);
       }
       if (const auto* doc = reader->Handles().doc; doc && run.size() > 1) {
-        HintRanges(*doc, docs);
+        doc->Hint(docs);
       }
     },
     [&](const Filter& filter, Occur occur) {

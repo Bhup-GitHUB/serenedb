@@ -20,6 +20,7 @@
 
 #include "search/index_durability.h"
 
+#include <absl/algorithm/container.h>
 #include <absl/cleanup/cleanup.h>
 #include <absl/strings/str_cat.h>
 
@@ -38,7 +39,6 @@
 #include <iresearch/index/index_meta.hpp>
 #include <iresearch/index/segment_reader_impl.hpp>
 #include <iresearch/store/index_files.hpp>
-#include <iresearch/store/storage.hpp>
 #include <iresearch/utils/assert.hpp>
 #include <iresearch/utils/duckdb_engine.hpp>
 #include <iresearch/utils/log.hpp>
@@ -96,7 +96,7 @@ IndexDurability::IndexDurability(duckdb::AttachedDatabase& database,
     _refs{std::make_shared<irs::IndexFileRefs>()} {}
 
 IndexDurability::~IndexDurability() {
-  if (irs::StorageKindOf(_root) != irs::StorageKind::Memory) {
+  if (!_root.starts_with(duckdb::MemoryFileSystem::PREFIX)) {
     return;
   }
   try {
@@ -121,13 +121,16 @@ IndexDurability::OpenWriter(bool is_new, irs::IndexWriterOptions options,
     stamp = IndexStamp::Read(in);
   };
   options.reader_options.refs = _refs;
-  if (is_new || irs::StorageKindOf(_root) == irs::StorageKind::Memory) {
+  _swept.store(options.cleanup_on_open, std::memory_order_relaxed);
+  if (is_new || _root.starts_with(duckdb::MemoryFileSystem::PREFIX)) {
     auto writer = irs::IndexWriter::Make(
       _db, _fs, _root, irs::OpenMode::kOmCreate, std::move(options));
     writer->RefreshCommit();
     return {std::move(writer), std::move(stamp)};
   }
-  ResolvePendingSave();
+  auto files = irs::ListIndexFiles(_fs, _root);
+  ResolvePendingSave(files);
+  options.files = std::move(files);
   auto writer = irs::IndexWriter::Make(
     _db, _fs, _root, irs::OpenMode::kOmAppend | irs::OpenMode::kOmCreate,
     std::move(options));
@@ -177,8 +180,9 @@ void IndexDurability::WritePayload(const irs::SourcePosition& position,
                                          _pending_checkpoint, 0);
 }
 
-void IndexDurability::ResolvePendingSave() const {
-  const auto pending = irs::index_meta::LastPendingFile(_fs, _root);
+void IndexDurability::ResolvePendingSave(
+  std::vector<std::string>& files) const {
+  const auto pending = irs::index_meta::LastPendingFile(files);
   if (!pending) {
     return;
   }
@@ -200,13 +204,16 @@ void IndexDurability::ResolvePendingSave() const {
                ": the database of a pending checkpoint save is not attached");
     if (checkpoint <=
         store->GetStorageManager().GetBlockManager().GetCheckpointIteration()) {
-      const auto committed = irs::index_meta::FileName(
+      auto committed = irs::index_meta::FileName(
         irs::index_meta::ParsePendingGeneration(*pending));
-      _fs.MoveFile(irs::PathOf(_root, *pending), irs::PathOf(_root, committed));
+      _fs.MoveFile(_fs.JoinPath(_root, *pending),
+                   _fs.JoinPath(_root, committed));
+      *absl::c_find(files, *pending) = std::move(committed);
       return;
     }
   }
-  std::ignore = _fs.TryRemoveFile(irs::PathOf(_root, *pending));
+  std::ignore = _fs.TryRemoveFile(_fs.JoinPath(_root, *pending));
+  files.erase(absl::c_find(files, *pending));
 }
 
 void IndexDurability::MarkStaged(const irs::SourcePosition& position) {
@@ -477,7 +484,8 @@ absl::Status IndexDurability::Cleanup() {
     if (_swept.load(std::memory_order_relaxed)) {
       irs::RemoveUnreferenced(_fs, _root, *_refs);
     } else {
-      irs::RemoveAllUnreferenced(_fs, _root, *_refs);
+      irs::RemoveAllUnreferenced(_fs, _root, *_refs,
+                                 irs::ListIndexFiles(_fs, _root));
       _swept.store(true, std::memory_order_relaxed);
     }
   } catch (const std::exception& e) {
@@ -496,7 +504,7 @@ absl::Status IndexDurability::CompactFiles(irs::IndexWriter& writer) {
     const auto reader = writer.GetSnapshot();
     for (const auto& segment : reader.Meta().index_meta.segments) {
       for (const auto& file : segment.meta.files) {
-        _fs.Compact(irs::PathOf(_root, file));
+        _fs.Compact(_fs.JoinPath(_root, file));
       }
     }
   } catch (const std::exception& e) {

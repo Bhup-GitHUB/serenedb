@@ -75,7 +75,7 @@ struct KeywordField {
     return irs::IndexFeatures::Freq | irs::IndexFeatures::Norm;
   }
 
-  bool Write(irs::DataOutput&) const { return true; }
+  bool Write(duckdb::WriteStream&) const { return true; }
 
   irs::field_id id{irs::field_limits::invalid()};
   std::string_view value;
@@ -94,7 +94,7 @@ struct TextField {
            irs::IndexFeatures::Norm;
   }
 
-  bool Write(irs::DataOutput&) const { return true; }
+  bool Write(duckdb::WriteStream&) const { return true; }
 
   irs::field_id id{irs::field_limits::invalid()};
   std::string_view value;

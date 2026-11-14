@@ -65,25 +65,32 @@ duckdb::idx_t EmitFromUnit(ScanGlobalState& g, ColScanLocalState& l,
       std::min<uint64_t>(STANDARD_VECTOR_SIZE, l.doc_end - l.doc_cursor));
     const auto first =
       irs::doc_limits::min() + static_cast<irs::doc_id_t>(l.doc_cursor);
-    duckdb::idx_t produced;
+    const duckdb::SelectionVector* live = nullptr;
+    duckdb::idx_t live_count = 0;
     if (l.has_mask) {
       l.live_sel.Initialize(l.live_sel_data);
-      const auto live =
+      live_count =
         l.mask.FillLive(first, static_cast<uint32_t>(take), l.live_sel.data());
-      produced = live == take ? scanner.Scan(l.doc_cursor, take, output)
-                              : scanner.Scan(l.doc_cursor, take, output,
-                                             &l.live_sel, live);
-    } else {
-      produced = scanner.Scan(l.doc_cursor, take, output);
+      if (live_count != take) {
+        live = &l.live_sel;
+      }
     }
+    const auto produced =
+      scanner.Filter(l.doc_cursor, take, output, live, live_count);
+    if (produced == 0) {
+      l.doc_cursor += take;
+      output.Reset();
+      continue;
+    }
+    if (l.doc_cursor >= l.projected_until) [[unlikely]] {
+      DeclareProjected(g, l, l.doc_cursor);
+    }
+    scanner.Project(l.doc_cursor, take, produced, output);
     l.doc_cursor += take;
-    if (produced != 0) {
-      WriteRowPositions(g, l.unit.seg, first, scanner.Selection(), produced,
-                        output);
-      WriteVirtualColumns(g, produced, nullptr, output);
-      return produced;
-    }
-    output.Reset();
+    WriteRowPositions(g, l.unit.seg, first, scanner.Selection(), produced,
+                      output);
+    WriteVirtualColumns(g, produced, nullptr, output);
+    return produced;
   }
   return 0;
 }

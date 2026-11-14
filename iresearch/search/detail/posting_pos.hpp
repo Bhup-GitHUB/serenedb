@@ -30,7 +30,6 @@
 #include "iresearch/formats/posting/iterator_pos.hpp"
 #include "iresearch/formats/posting_meta.hpp"
 #include "iresearch/search/detail/enc_buf.hpp"
-#include "iresearch/store/data_input.hpp"
 #include "iresearch/utils/pg/sql_exception_macro.hpp"
 #include "iresearch/utils/shared.hpp"
 #include "iresearch/utils/type_limits.hpp"
@@ -48,9 +47,9 @@ class PostingPos {
 
   PostingPos() = default;
 
-  explicit PostingPos(const PostingMeta& meta, const InputFile& doc_in,
-                      IndexFeatures layout, const InputFile& pos_in,
-                      const InputFile* pay_in) {
+  explicit PostingPos(const PostingMeta& meta, const duckdb::InputFile& doc_in,
+                      IndexFeatures layout, const duckdb::InputFile& pos_in,
+                      const duckdb::InputFile* pay_in) {
     Prepare(meta, doc_in, layout, pos_in, pay_in);
   }
 
@@ -59,9 +58,9 @@ class PostingPos {
   PostingPos(PostingPos&&) = delete;
   PostingPos& operator=(PostingPos&&) = delete;
 
-  void Prepare(const PostingMeta& meta, const InputFile& doc_in,
-               IndexFeatures layout, const InputFile& pos_in,
-               const InputFile* pay_in) {
+  void Prepare(const PostingMeta& meta, const duckdb::InputFile& doc_in,
+               IndexFeatures layout, const duckdb::InputFile& pos_in,
+               const duckdb::InputFile* pay_in) {
     SDB_ASSERT(meta.docs_count != 0);
     SDB_ASSERT(IsSubsetOf(IndexFeatures::Pos, layout));
     SDB_ASSERT(!Offs || IsSubsetOf(IndexFeatures::Offs, layout));
@@ -74,11 +73,9 @@ class PostingPos {
       _left_in_leaf = 1;
       _max_in_leaf = doc;
     } else {
-      _in = OpenDocInput<InputType>(meta, doc_in);
+      _in =
+        OpenDocInput<InputType>(meta, doc_in, duckdb::ReadAheadSteps::SKIPPING);
       auto& in = In();
-      if (const auto extent = DocExtent(meta); extent != 0) {
-        _hint.Arm(meta.doc_start, meta.doc_start + extent);
-      }
       if (meta.docs_count <= doc_limits::kBlockSize) {
         SkipScoreBounds(Bounds, in);
       }
@@ -219,7 +216,7 @@ class PostingPos {
 
   void ReadLeaf(doc_id_t prev) {
     auto& in = In();
-    _hint.Advance(in, in.Position());
+    in.Advance();
     if (_left_in_list >= doc_limits::kBlockSize) [[likely]] {
       block_io::ReadBlockDelta(in, Enc(), _docs, prev);
       _left_in_leaf = doc_limits::kBlockSize;
@@ -261,7 +258,6 @@ class PostingPos {
   InputType _in;
   Position _pos;
   BlockCursor<InputType> _cursor;
-  GrowingHint _hint;
   doc_id_t _doc = doc_limits::invalid();
   doc_id_t _max_in_leaf = doc_limits::invalid();
   uint32_t _docs_count = 0;

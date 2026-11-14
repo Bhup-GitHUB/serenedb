@@ -25,12 +25,11 @@
 #include <duckdb/common/file_system.hpp>
 #include <duckdb/common/memory_mapped_file.hpp>
 #include <duckdb/main/database.hpp>
+#include <duckdb/storage/external_file_cache/input_file_reader.hpp>
 #include <iresearch/formats/index_meta_reader.hpp>
 #include <iresearch/index/directory_reader.hpp>
 #include <iresearch/index/index_reader_options.hpp>
 #include <iresearch/index/index_writer.hpp>
-#include <iresearch/store/data_input.hpp>
-#include <iresearch/store/file_output.hpp>
 #include <iresearch/store/index_files.hpp>
 #include <iresearch/store/storage.hpp>
 #include <iresearch/utils/string.hpp>
@@ -41,27 +40,36 @@
 
 namespace tests {
 
+enum class StorageKind : uint8_t {
+  Local,
+  Memory,
+  Remote,
+};
+
 class IndexDir {
  public:
   IndexDir(duckdb::DatabaseInstance& db, std::string_view root);
   IndexDir(duckdb::DatabaseInstance& db, duckdb::FileSystem& fs,
            std::string_view root);
 
-  std::unique_ptr<irs::FileOutput> Create(std::string_view name) const;
-  std::unique_ptr<irs::InputFile> Open(std::string_view name,
-                                       duckdb::MappedFileAccess access) const;
+  std::unique_ptr<duckdb::BufferedFileWriter> Create(
+    std::string_view name) const;
+  void Close(duckdb::BufferedFileWriter& out) const;
+  duckdb::shared_ptr<duckdb::InputFile> Open(
+    std::string_view name, duckdb::MappedFileAccess access) const;
   irs::bstring ReadWhole(std::string_view name) const;
   bool Has(std::string_view name) const;
   bool Remove(std::string_view name) const;
   void Rename(std::string_view src, std::string_view dst) const;
   void Sync(std::span<const std::string_view> names) const;
   void Compact(std::string_view name) const;
+  std::vector<std::string> Files() const;
   void Visit(absl::FunctionRef<void(std::string_view)> visitor) const;
 
   duckdb::DatabaseInstance& Db() const noexcept { return _state->db; }
   duckdb::FileSystem& Fs() const noexcept { return _state->fs; }
   const std::string& Root() const noexcept { return _state->root; }
-  irs::StorageKind Kind() const noexcept { return _state->kind; }
+  StorageKind Kind() const noexcept { return _state->kind; }
   irs::IndexFileRefs& Refs() const noexcept { return *_state->refs; }
   const irs::FileObservers& Observers() const noexcept { return _observers; }
 
@@ -77,7 +85,7 @@ class IndexDir {
     duckdb::DatabaseInstance& db;
     duckdb::FileSystem& fs;
     std::string root;
-    irs::StorageKind kind;
+    StorageKind kind;
     std::shared_ptr<irs::IndexFileRefs> refs;
   };
 

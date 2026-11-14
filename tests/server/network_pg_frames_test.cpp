@@ -21,6 +21,7 @@
 #include <absl/base/internal/endian.h>
 #include <gtest/gtest.h>
 
+#include <duckdb/common/exception.hpp>
 #include <duckdb/common/types.hpp>
 #include <iresearch/utils/duckdb_engine.hpp>
 #include <iresearch/utils/pg/errcodes.hpp>
@@ -102,4 +103,11 @@ TEST(NetworkPgFrames, CommandCompleteAndError) {
   EXPECT_EQ(error[0], PQ_MSG_ERROR_RESPONSE);
   EXPECT_NE(error.find("42601"), std::string::npos);
   EXPECT_NE(error.find("boom"), std::string::npos);
+}
+
+TEST(NetworkPgFrames, CorruptedDataIsReportedAsDataCorrupted) {
+  const auto error = DuckErrorToSqlData(
+    duckdb::ErrorData{duckdb::DataCorruptionException{"truncated"}});
+  EXPECT_EQ(ERRCODE_DATA_CORRUPTED, error.errcode);
+  EXPECT_EQ("truncated", error.errmsg);
 }

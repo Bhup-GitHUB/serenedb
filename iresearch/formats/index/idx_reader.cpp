@@ -23,13 +23,12 @@
 #include <cstring>
 #include <duckdb/common/serializer/binary_deserializer.hpp>
 #include <duckdb/common/types.hpp>
+#include <duckdb/storage/external_file_cache/input_file_reader.hpp>
 
 #include "iresearch/formats/format_utils.hpp"
 #include "iresearch/index/column_info.hpp"
 #include "iresearch/index/file_names.hpp"
 #include "iresearch/search/detail/ann_index.hpp"
-#include "iresearch/store/data_input.hpp"
-#include "iresearch/store/storage.hpp"
 #include "iresearch/utils/containers/flat_hash_map.hpp"
 
 #ifndef IRESEARCH_NO_VECTOR
@@ -46,8 +45,8 @@ IdxReader::IdxReader(duckdb::FileSystem& fs, std::string_view root,
     return;
   }
   const auto filename = FileName(segment_name, kIdxFormatExt);
-  _file =
-    OpenInput(fs, PathOf(root, filename), duckdb::MappedFileAccess::RANDOM);
+  _file = fs.OpenInputFile(fs.JoinPath(root, filename),
+                           duckdb::MappedFileAccess::RANDOM);
 
   format_utils::ReadFooter(
     *_file, filename,
@@ -60,12 +59,14 @@ IdxReader::IdxReader(duckdb::FileSystem& fs, std::string_view root,
             const auto id = obj.ReadProperty<uint64_t>(0, "id");
             const auto tree_offset =
               obj.ReadProperty<uint64_t>(1, "tree_offset");
+            obj.ReadDeletedProperty<uint64_t>(2, "tree_byte_size");
             const auto stats_offset =
               obj.ReadProperty<uint64_t>(3, "stats_offset");
+            obj.ReadDeletedProperty<uint64_t>(4, "stats_byte_size");
             const auto root_byte_size =
               obj.ReadProperty<uint64_t>(5, "root_byte_size");
 
-            IndexInput body{*_file};
+            duckdb::InputFileReader body{*_file};
             body.Seek(tree_offset);
             auto entry = CentroidsTree::Deserialize(body, root_byte_size);
             entry.SetQuantStatsOffset(stats_offset);

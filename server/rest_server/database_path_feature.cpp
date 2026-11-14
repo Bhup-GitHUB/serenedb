@@ -22,7 +22,6 @@
 #include "database_path_feature.h"
 
 #include <absl/flags/flag.h>
-#include <absl/strings/str_cat.h>
 
 #include <duckdb/common/error_data.hpp>
 #include <duckdb/common/file_system.hpp>
@@ -55,11 +54,11 @@ DatabasePathFeature::DatabasePathFeature()
       lifecycle::ResolveDataDir(absl::GetFlag(FLAGS_server_directory))) {
   // Resolve the HBA config path against the (now absolute) data directory.
   if (const std::string hba = absl::GetFlag(FLAGS_hba_config); hba.empty()) {
-    _hba_config_file = absl::StrCat(_directory, "/pg_hba.conf");
+    _hba_config_file = duckdb::FileSystem::JoinPath(_directory, "pg_hba.conf");
   } else if (std::filesystem::path{hba}.is_absolute()) {
     _hba_config_file = hba;
   } else {
-    _hba_config_file = absl::StrCat(_directory, "/", hba);
+    _hba_config_file = duckdb::FileSystem::JoinPath(_directory, hba);
   }
 
   try {
@@ -81,7 +80,7 @@ DatabasePathFeature::DatabasePathFeature()
   // runs on normal exit and releases / unlinks every lockfile we acquired.
   // Fatal paths (_exit / abort) skip static dtors; the stale lockfile that
   // remains is handled by VerifyLockFile on the next start.
-  const auto lock_filename = absl::StrCat(_directory, "/LOCK");
+  const auto lock_filename = duckdb::FileSystem::JoinPath(_directory, "LOCK");
   if (const auto status = VerifyLockFile(lock_filename.c_str()); !status.ok()) {
     SDB_FATAL(GENERAL, status.message());
   }

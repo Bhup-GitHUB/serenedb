@@ -109,6 +109,8 @@ int DuckExceptionToErrcode(duckdb::ExceptionType type) {
       return ERRCODE_INDETERMINATE_DATATYPE;
     case duckdb::ExceptionType::IO:
       return ERRCODE_IO_ERROR;
+    case duckdb::ExceptionType::DATA_CORRUPTION:
+      return ERRCODE_DATA_CORRUPTED;
     case duckdb::ExceptionType::CONNECTION:
     case duckdb::ExceptionType::NETWORK:
     case duckdb::ExceptionType::HTTP:

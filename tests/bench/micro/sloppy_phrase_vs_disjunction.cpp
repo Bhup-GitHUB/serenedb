@@ -48,6 +48,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <duckdb/common/file_system.hpp>
+#include <duckdb/common/serializer/write_stream.hpp>
 #include <filesystem>
 #include <fstream>
 #include <iresearch/index/directory_reader.hpp>
@@ -60,7 +61,6 @@
 #include <iresearch/search/filters/phrase_filter.hpp>
 #include <iresearch/search/offsets/make.hpp>
 #include <iresearch/search/queries/phrase_query.hpp>
-#include <iresearch/store/data_output.hpp>
 #include <iresearch/utils/duckdb_engine.hpp>
 #include <iresearch/utils/string.hpp>
 #include <iresearch/utils/type_limits.hpp>
@@ -95,7 +95,7 @@ struct IField {
   virtual irs::IndexFeatures GetIndexFeatures() const = 0;
   virtual irs::analysis::Tokenizer& GetTokens() const = 0;
   virtual std::string_view Value() const = 0;
-  virtual bool Write(irs::DataOutput& out) const = 0;
+  virtual bool Write(duckdb::WriteStream& out) const = 0;
 };
 
 class FieldBase : public IField {
@@ -131,7 +131,7 @@ class TextField final : public FieldBase {
 
   std::string_view Value() const final { return _value; }
 
-  bool Write(irs::DataOutput&) const final { return false; }
+  bool Write(duckdb::WriteStream&) const final { return false; }
 
  private:
   irs::analysis::Tokenizer::ptr _stream;

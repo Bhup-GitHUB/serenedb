@@ -9233,7 +9233,7 @@ class OverlapField : public tests::FieldBase {
   std::string_view Value() const final { return _value; }
 
  private:
-  bool Write(irs::DataOutput&) const final { return false; }
+  bool Write(duckdb::WriteStream&) const final { return false; }
 
   std::string _value{"foo"};
   irs::analysis::Tokenizer::ptr _stream;
@@ -9442,7 +9442,7 @@ class RepeatOverlapField : public tests::FieldBase {
   std::string_view Value() const final { return {}; }
 
  private:
-  bool Write(irs::DataOutput&) const final { return false; }
+  bool Write(duckdb::WriteStream&) const final { return false; }
 
   static constexpr std::array<FixedTokensStream::Token, 3> kTokens{{
     {"foo", 1, 0, 3},
@@ -9630,7 +9630,7 @@ class OverlapPrefixField : public tests::FieldBase {
   std::string_view Value() const final { return _value; }
 
  private:
-  bool Write(irs::DataOutput&) const final { return false; }
+  bool Write(duckdb::WriteStream&) const final { return false; }
 
   std::string _value{"foo"};
   irs::analysis::Tokenizer::ptr _stream;
@@ -9734,7 +9734,7 @@ class VariadicOverlapField : public tests::FieldBase {
   std::string_view Value() const final { return {}; }
 
  private:
-  bool Write(irs::DataOutput&) const final { return false; }
+  bool Write(duckdb::WriteStream&) const final { return false; }
 
   static constexpr std::array<FixedTokensStream::Token, 3> kTokens{{
     {"aa", 1, 0, 2},

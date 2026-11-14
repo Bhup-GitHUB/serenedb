@@ -38,7 +38,7 @@
 #include <iresearch/index/index_writer.hpp>
 #include <iresearch/index/segment_reader.hpp>
 #include <iresearch/index/segment_reader_impl.hpp>
-#include <iresearch/store/file_output.hpp>
+#include <iresearch/store/index_files.hpp>
 #include <iresearch/utils/down_cast.hpp>
 #include <iresearch/utils/index_utils.hpp>
 #include <iterator>
@@ -743,7 +743,7 @@ TEST_F(SearchRowRemovalTest, LongRunsOfPositionsRemoveTheirRows) {
 TEST_F(SearchRowRemovalTest, SegmentIdsPast32BitsAreRemovedByPosition) {
   _writer.reset();
   {
-    auto out = irs::FileOutput::Open(_fs, _root, "_4294967294", {}, false);
+    auto out = irs::OpenOutput(_fs, _root, "_4294967294", {}, false);
     ASSERT_TRUE(out);
     out->Close();
   }

@@ -28,8 +28,7 @@
 
 #include "iresearch/formats/format_utils.hpp"
 #include "iresearch/index/file_names.hpp"
-#include "iresearch/store/file_output.hpp"
-#include "iresearch/store/storage.hpp"
+#include "iresearch/store/index_files.hpp"
 #include "iresearch/utils/log.hpp"
 #include "iresearch/utils/pg/sql_exception_macro.hpp"
 
@@ -62,7 +61,7 @@ bool IndexMetaWriter::prepare(const FileObservers& observers, IndexMeta& meta,
   filename = index_meta::FileName(meta.gen);
   _observers = observers;
 
-  auto out = FileOutput::Open(_fs, _root, pending_filename, observers, false);
+  auto out = OpenOutput(_fs, _root, pending_filename, observers, false);
 
   format_utils::WriteFooter(*out, [&](duckdb::BinarySerializer& meta_out) {
     meta_out.WriteProperty<uint64_t>(
@@ -87,7 +86,7 @@ bool IndexMetaWriter::prepare(const FileObservers& observers, IndexMeta& meta,
         [&](duckdb::BinarySerializer& obj) { _payload(position, obj); });
     }
   });
-  out->Close();
+  CloseOutput(*out, observers);
 
   _pending_gen = meta.gen;
 
@@ -102,7 +101,7 @@ bool IndexMetaWriter::commit() {
   const auto src = PendingFileName(_pending_gen);
   const auto dst = index_meta::FileName(_pending_gen);
 
-  _fs.MoveFile(PathOf(_root, src), PathOf(_root, dst));
+  _fs.MoveFile(_fs.JoinPath(_root, src), _fs.JoinPath(_root, dst));
   for (auto* observer : _observers) {
     observer->Renamed(src, dst);
   }
@@ -137,7 +136,7 @@ void IndexMetaWriter::rollback() noexcept {
   }
 
   try {
-    if (_fs.TryRemoveFile(PathOf(_root, seg_file))) {
+    if (_fs.TryRemoveFile(_fs.JoinPath(_root, seg_file))) {
       for (auto* observer : _observers) {
         observer->Removed(seg_file);
       }

@@ -36,18 +36,7 @@ template<typename T, size_t N = sizeof(T)>
 struct bytes_io;
 
 template<typename T>
-struct bytes_io<T, sizeof(uint8_t)> {
-  static constexpr T kMaxVSize = 1;
-};
-
-template<typename T>
-struct bytes_io<T, sizeof(uint16_t)> {
-  static constexpr T kMaxVSize = 2;
-};
-
-template<typename T>
 struct bytes_io<T, sizeof(uint32_t)> {
-  static constexpr T kMaxVSize = 5;
   static constexpr T kMask = 0x80;
 
   template<typename InputIterator>
@@ -110,7 +99,6 @@ struct bytes_io<T, sizeof(uint32_t)> {
 
 template<typename T>
 struct bytes_io<T, sizeof(uint64_t)> {
-  static constexpr T kMaxVSize = 10;
   static constexpr T kMask = 0x80;
 
   template<typename InputIterator>
@@ -237,32 +225,6 @@ IRS_FORCE_INLINE std::optional<T> ReadVarint(const byte_type*& in,
     }
   }
   return std::nullopt;
-}
-
-template<typename N, std::invocable<byte_type> Assign>
-IRS_FORCE_INLINE void WriteVarint(N n, Assign&& assign) {
-  static_assert(std::is_unsigned_v<N>);
-  static_assert(sizeof(N) >= 4,
-                "Otherwise probably better to use fixed size format");
-  static constexpr N kMax = 0x80;
-  while (n >= kMax) [[unlikely]] {
-    assign(static_cast<byte_type>(n | kMax));
-    n >>= 7;
-  }
-  assign(static_cast<byte_type>(n));
-}
-
-template<typename N, std::output_iterator<byte_type> Out>
-IRS_FORCE_INLINE void WriteVarint(N n, Out& out) {
-  WriteVarint(n, [&](byte_type b) { *out++ = b; });
-}
-
-template<typename N, std::output_iterator<byte_type> Out>
-IRS_FORCE_INLINE void WriteLE(N n, Out& out) {
-  static_assert(std::is_unsigned_v<N>);
-  for (size_t i = 0; i < sizeof(N); ++i) {
-    *out++ = static_cast<byte_type>(n >> (i * 8));
-  }
 }
 
 template<typename N, std::output_iterator<byte_type> Out>

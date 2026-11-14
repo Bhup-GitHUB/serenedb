@@ -832,8 +832,7 @@ bool NextLiveUnit(ScanGlobalState& g, ScanLocalState& l) {
     l.Classify(g, l.unit.seg);
     if (!l.seg_cls.segment_dead) {
       if (!g.ahead_fields.empty()) {
-        StartReadAhead(g, l, g.shape == ScanShape::Count);
-        ExtendReadAhead(g, l);
+        StartReadAhead(g, l);
       }
       return true;
     }

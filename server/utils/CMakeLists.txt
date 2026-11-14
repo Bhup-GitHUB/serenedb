@@ -5,7 +5,6 @@ add_library(
     STATIC
     app_server.cpp
     drain_gate.cpp
-    file_utils.cpp
     init.cpp
     lifecycle.cpp
     lockfile.cpp

@@ -25,7 +25,6 @@
 #include "iresearch/formats/posting_meta.hpp"
 #include "iresearch/index/index_reader.hpp"
 #include "iresearch/search/detail/posting_leaf.hpp"
-#include "iresearch/store/data_input.hpp"
 #include "iresearch/utils/type_limits.hpp"
 
 namespace irs::detail {
@@ -52,13 +51,13 @@ class PostingWindowScored : public PostingLeaf<InputType, kWindowScoredShape> {
  public:
   PostingWindowScored() = default;
 
-  PostingWindowScored(const PostingMeta& meta, const InputFile& doc_in,
+  PostingWindowScored(const PostingMeta& meta, const duckdb::InputFile& doc_in,
                       bool has_score_bounds, const SubReader& segment,
                       const TermReader& field, const ScoreArgs& args) {
     Prepare(meta, doc_in, has_score_bounds, segment, field, args);
   }
 
-  void Prepare(const PostingMeta& meta, const InputFile& doc_in,
+  void Prepare(const PostingMeta& meta, const duckdb::InputFile& doc_in,
                bool has_score_bounds, const SubReader& segment,
                const TermReader& field, const ScoreArgs& args) {
     SDB_ASSERT(meta.docs_count != 0);

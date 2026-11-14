@@ -22,12 +22,12 @@
 
 #include <absl/flags/declare.h>
 #include <absl/flags/flag.h>
-#include <absl/strings/str_cat.h>
 
 #include <duckdb.hpp>
 #include <duckdb/catalog/default/default_functions.hpp>
 #include <duckdb/catalog/default/default_types.hpp>
 #include <duckdb/catalog/default/default_views.hpp>
+#include <duckdb/common/file_system.hpp>
 
 #include "catalog/boot.h"
 #include "connector/duckdb_copy_filesystem.h"
@@ -106,12 +106,15 @@ void ConfigureServerDBConfig(duckdb::DBConfig& config) {
     duckdb::LogicalType::VARCHAR, duckdb::Value{datadir}, nullptr, nullptr,
     duckdb::SetScope::AUTOMATIC, true);
   connector::RegisterIResearchReplacementScan(config);
-  config.SetOptionByName("temp_directory",
-                         duckdb::Value{absl::StrCat(datadir, "/tmp")});
-  config.SetOptionByName("secret_directory",
-                         duckdb::Value{absl::StrCat(datadir, "/secrets")});
-  config.SetOptionByName("extension_directory",
-                         duckdb::Value{absl::StrCat(datadir, "/extensions")});
+  config.SetOptionByName(
+    "temp_directory",
+    duckdb::Value{duckdb::FileSystem::JoinPath(datadir, "tmp")});
+  config.SetOptionByName(
+    "secret_directory",
+    duckdb::Value{duckdb::FileSystem::JoinPath(datadir, "secrets")});
+  config.SetOptionByName(
+    "extension_directory",
+    duckdb::Value{duckdb::FileSystem::JoinPath(datadir, "extensions")});
   // DuckDB's own auto-detect uses std::thread::hardware_concurrency(), which
   // ignores cgroup CPU limits and would over-thread in a container. Pin it to
   // our cgroup-aware logical core count when unset, and publish the resolved

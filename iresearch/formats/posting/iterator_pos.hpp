@@ -24,14 +24,13 @@
 #include "iresearch/formats/posting/block_io.hpp"
 #include "iresearch/formats/posting/common.hpp"
 #include "iresearch/formats/posting_meta.hpp"
-#include "iresearch/store/data_input.hpp"
 #include "iresearch/utils/empty.hpp"
 
 namespace irs {
 
 struct DocState {
-  const InputFile* pos_in;
-  const InputFile* pay_in;
+  const duckdb::InputFile* pos_in;
+  const duckdb::InputFile* pay_in;
   const PostingMeta* term_state;
   uint32_t* enc_buf;
 };
@@ -54,7 +53,7 @@ class PositionImpl final : public PosAttr {
       _pend_pos = freq;
     }
     while (_value < target && _pend_pos) {
-      if (_buf_pos == pos_limits::kBlockSize) {
+      if (_buf_pos == pos_limits::kBlockSize) [[unlikely]] {
         ReadBlock();
         _buf_pos = 0;
       }
@@ -143,13 +142,17 @@ class PositionImpl final : public PosAttr {
         _pay.in = InputType{*state.pay_in};
       }
     }
-    _pos.hint.Arm(state.term_state->pos_start,
-                  state.term_state->pos_start + PosExtent(*state.term_state));
+    const auto pos_end =
+      state.term_state->pos_start + PosExtent(*state.term_state);
+    _pos.in.Seek(state.term_state->pos_start);
+    _pos.in.ReadAheadUntil(pos_end, duckdb::ReadAheadSteps::SKIPPING);
     _enc_buf = state.enc_buf;
 
     if constexpr (IteratorTraits::Offset()) {
-      _pay.hint.Arm(state.term_state->pay_start,
-                    state.term_state->pay_start + PayExtent(*state.term_state));
+      const auto pay_end =
+        state.term_state->pay_start + PayExtent(*state.term_state);
+      _pay.in.Seek(state.term_state->pay_start);
+      _pay.in.ReadAheadUntil(pay_end, duckdb::ReadAheadSteps::SKIPPING);
     }
     Land(state.term_state->pos_start, state.term_state->pay_start,
          state.term_state->pos_offset);
@@ -177,8 +180,8 @@ class PositionImpl final : public PosAttr {
  private:
   struct Stream {
     void Load() {
-      hint.Advance(in, group);
       in.Seek(group);
+      in.Advance();
       ReadHeader();
     }
 
@@ -194,7 +197,7 @@ class PositionImpl final : public PosAttr {
     }
 
     void ReadHeader() {
-      if constexpr (InputType::kContiguous) {
+      if constexpr (InputType::CONTIGUOUS) {
         header = in.Current();
         in.Consume(PosGroup::kHeaderBytes);
       } else {
@@ -210,9 +213,8 @@ class PositionImpl final : public PosAttr {
     InputType in;
     uint64_t group = 0;
     const byte_type* header = nullptr;
-    [[no_unique_address]] utils::Need<!InputType::kContiguous,
+    [[no_unique_address]] utils::Need<!InputType::CONTIGUOUS,
                                       byte_type[PosGroup::kHeaderBytes]> copy;
-    GrowingHint hint;
   };
 
   struct Cookie {
@@ -296,7 +298,7 @@ class PositionImpl final : public PosAttr {
     }
   }
 
-  void ReadBlock() {
+  IRS_NO_INLINE void ReadBlock() {
     if (_pos.header == nullptr) [[unlikely]] {
       Enter(_next);
     } else if (_next == PosGroup::kBlocks) [[unlikely]] {
@@ -312,11 +314,11 @@ class PositionImpl final : public PosAttr {
 
   IRS_FORCE_INLINE void Decode() {
     auto& pos = _pos.in;
-    _pos.hint.Advance(pos, pos.Position());
+    pos.Advance();
     block_io::ReadBlock(pos, _enc_buf, _pos_deltas);
     if constexpr (IteratorTraits::Offset()) {
       auto& pay = _pay.in;
-      _pay.hint.Advance(pay, pay.Position());
+      pay.Advance();
       block_io::ReadBlock(pay, _enc_buf, _offs_start_deltas);
       block_io::ReadBlock(pay, _enc_buf, _offs_lengths);
     }

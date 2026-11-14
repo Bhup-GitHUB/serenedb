@@ -93,7 +93,7 @@ std::string BuildBackupLabel(std::string_view label, uint64_t start_lsn,
     absl::FormatTime("%Y-%m-%d %H:%M:%S UTC", start_time, absl::UTCTimeZone()),
     "\n", "LABEL: ", one_line, "\n", "START TIMELINE: ", kTimeline, "\n",
     kFormatKey, kBackupLabelFormat, "\n", kSystemKey, system_identifier, "\n",
-    kCatalogKey, cut.catalog_link.string(), " ", cut.catalog_log_size, "\n");
+    kCatalogKey, cut.catalog_link, " ", cut.catalog_log_size, "\n");
   for (const auto& database : cut.databases) {
     absl::StrAppend(
       &out, kDatabaseKey, database.oid, " ", database.checkpoint_iteration, " ",

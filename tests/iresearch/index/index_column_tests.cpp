@@ -791,7 +791,7 @@ TEST_P(IndexColumnTestCase,
   auto MakePayload = [](irs::doc_id_t doc) {
     irs::bstring buf;
     irs::tests::BstringDataOutput out{buf};
-    out.WriteU64(static_cast<uint64_t>(doc) * 11 + 3);
+    out.Write<uint64_t>(static_cast<uint64_t>(doc) * 11 + 3);
     return buf;
   };
   auto always_present = [](irs::doc_id_t) { return true; };
@@ -916,7 +916,7 @@ TEST_P(IndexColumnTestCase,
   const irs::bstring kPayload = [] {
     irs::bstring buf;
     irs::tests::BstringDataOutput out{buf};
-    out.WriteU32(0xdeadbeef);
+    out.Write<uint32_t>(0xdeadbeef);
     return buf;
   }();
 
@@ -1124,7 +1124,7 @@ TEST_P(IndexColumnTestCase,
   auto MakePayload = [](irs::doc_id_t doc) {
     irs::bstring buf;
     irs::tests::BstringDataOutput out{buf};
-    out.WriteU64(static_cast<uint64_t>(doc) * 31 + 5);
+    out.Write<uint64_t>(static_cast<uint64_t>(doc) * 31 + 5);
     return buf;
   };
 
@@ -1238,7 +1238,7 @@ TEST_P(IndexColumnTestCase,
   const irs::bstring kPayload = [] {
     irs::bstring buf;
     irs::tests::BstringDataOutput out{buf};
-    out.WriteU32(0xcafebabe);
+    out.Write<uint32_t>(0xcafebabe);
     return buf;
   }();
 

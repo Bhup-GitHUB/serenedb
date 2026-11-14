@@ -21,6 +21,7 @@
 #include "catalog/entry/database.h"
 
 #include <duckdb/catalog/catalog.hpp>
+#include <duckdb/common/fault_points.hpp>
 #include <utility>
 
 #include "pg/progress_registry.h"
@@ -48,6 +49,7 @@ duckdb::unique_ptr<duckdb::CreateInfo> DatabaseCatalogEntry::GetInfo() const {
   info->tags = tags;
   info->options = _options;
   info->tablespace_oid = _tablespace;
+  SDB_IF_FAILURE("database_without_tablespace") { info->tablespace_oid = 0; }
   info->dependencies = dependencies;
   return std::move(info);
 }

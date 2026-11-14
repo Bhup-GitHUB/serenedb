@@ -38,6 +38,7 @@ class HookFileSystem : public duckdb::FileSystem {
   virtual void OnRemove(std::string_view name) {}
   virtual void OnRename(std::string_view src, std::string_view dst) {}
   virtual void OnClose(std::string_view name) {}
+  virtual void OnAbort(std::string_view name) noexcept {}
   virtual void OnSync(std::string_view name) {}
   virtual void OnSyncDirectory() {}
 
@@ -48,10 +49,11 @@ class HookFileSystem : public duckdb::FileSystem {
     const duckdb::OpenFileInfo& path, duckdb::FileOpenFlags flags,
     const duckdb::MMapOptions& options,
     duckdb::optional_ptr<duckdb::FileOpener> opener = nullptr) override;
-  duckdb::shared_ptr<duckdb::ExternalFileCacheFile> OpenBlockFile(
+  duckdb::shared_ptr<duckdb::InputFile> OpenBlockFile(
     const std::string& path) override;
   duckdb::unique_ptr<duckdb::FileWriter> OpenFileWriter(
-    const std::string& path, bool keep_cached) override;
+    const std::string& path, bool keep_cached,
+    duckdb::optional_ptr<duckdb::FileOpener> opener = nullptr) override;
   void Compact(const std::string& path) override;
 
   void Read(duckdb::FileHandle& handle, void* buffer, int64_t nr_bytes,

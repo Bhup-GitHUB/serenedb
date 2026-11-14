@@ -180,8 +180,6 @@ add_executable(
     utils/bit_utils_tests.cpp
     utils/bitset_tests.cpp
     utils/bitvector_tests.cpp
-    utils/crc_test.cpp
-    utils/file_utils_tests.cpp
     utils/huge_page_allocator_test.cpp
     utils/json_leaf_test.cpp
     utils/levenshtein_utils_test.cpp

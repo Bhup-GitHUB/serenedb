@@ -615,10 +615,10 @@ TEST(PhrasePositionsTest, positions_left_in_cache_blocks) {
     tests::OpenReader(dir, irs::tests::DefaultReaderOptions());
   ASSERT_EQ(1, reader.size());
   const auto handles = reader[0].field(kField)->Handles();
-  ASSERT_TRUE(handles.doc->Contiguous());
-  ASSERT_FALSE(handles.pos->Contiguous());
+  ASSERT_TRUE(handles.doc->IsMapped());
+  ASSERT_FALSE(handles.pos->IsMapped());
   ASSERT_LT(4 * duckdb::ExternalFileCache::DEFAULT_BLOCK_SIZE,
-            handles.pos->Length());
+            handles.pos->GetSize());
 
   irs::ByPhrase filter;
   *filter.mutable_field_id() = kField;

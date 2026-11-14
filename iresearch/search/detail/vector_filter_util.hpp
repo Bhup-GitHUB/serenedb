@@ -51,13 +51,11 @@ enum class CodebookUse : uint8_t {
 };
 
 inline std::shared_ptr<const QuantizerCodebook> ReadQuantizerCodebook(
-  const CentroidsTree& ivf, IndexInput& idx_in, VectorQuantization quant,
-  uint32_t d, VectorMetric metric, std::span<const float> query,
-  CodebookUse use) {
+  const CentroidsTree& ivf, duckdb::InputFileReader& idx_in,
+  VectorQuantization quant, uint32_t d, VectorMetric metric,
+  std::span<const float> query, CodebookUse use) {
   idx_in.Seek(ivf.QuantStatsOffset());
-  const auto stats_size = static_cast<size_t>(idx_in.ReadI64());
-  const auto stats = idx_in.Pin(stats_size);
-  auto quant_stats = MakeQuantizerStats(quant, d, stats.bytes, metric);
+  auto quant_stats = ReadQuantizerStats(idx_in, quant, d, metric);
   if (!quant_stats) {
     return nullptr;
   }
@@ -65,13 +63,11 @@ inline std::shared_ptr<const QuantizerCodebook> ReadQuantizerCodebook(
                                    : quant_stats->MakeCodebook(query);
 }
 
-inline bool PrepareVectorState(const CentroidsTree& ivf, const InputFile& idx,
-                               const SubReader& segment,
-                               const PrepareContext& ctx,
-                               const VectorFilterOptions& opts, uint32_t nprobe,
-                               VectorState& state,
-                               QueryBuilder::ptr& inner_query, CodebookUse use,
-                               uint32_t beam = 0) {
+inline bool PrepareVectorState(
+  const CentroidsTree& ivf, const duckdb::InputFile& idx,
+  const SubReader& segment, const PrepareContext& ctx,
+  const VectorFilterOptions& opts, uint32_t nprobe, VectorState& state,
+  QueryBuilder::ptr& inner_query, CodebookUse use, uint32_t beam = 0) {
   if (opts.query.empty() || nprobe == 0 || !field_limits::valid(opts.ann_id)) {
     return false;
   }
@@ -81,7 +77,7 @@ inline bool PrepareVectorState(const CentroidsTree& ivf, const InputFile& idx,
     return false;
   }
 
-  IndexInput idx_in{idx};
+  duckdb::InputFileReader idx_in{idx};
 
   const auto d = static_cast<uint32_t>(ivf.Dim());
 

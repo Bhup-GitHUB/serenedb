@@ -88,7 +88,8 @@ duckdb::unique_ptr<duckdb::Catalog> AttachReadOnly(
                             "\" is not a SereneDB database directory: its "
                             "name is not a database oid"));
   }
-  auto directory = std::make_shared<catalog::DatabaseDirectory>(*oid, path);
+  auto directory =
+    std::make_shared<catalog::DatabaseDirectory>(*oid, path.string());
   info.path = directory->DataFile();
   options.defer_storage_load = true;
   db.HoldUntilClosed(duckdb::shared_ptr<duckdb::StorageExtensionInfo>{
@@ -227,10 +228,9 @@ class SereneDBStorageExtension final : public duckdb::StorageExtension {
       duckdb::TaskScheduler::GetScheduler(db.GetDatabase()),
       duckdb::TaskSchedulerType::ASYNC};
     for (const auto& storage : storages) {
-      executor.ScheduleTask(duckdb::make_uniq<duckdb::FunctionExecutorTask>(
-        executor,
+      executor.ScheduleTask(
         [&storage, iteration] { storage->PrepareCheckpoint(iteration); },
-        "SearchPrepareCheckpoint"));
+        "SearchPrepareCheckpoint");
     }
     executor.WorkOnTasks();
     std::vector<std::weak_ptr<search::Store>> saves{storages.begin(),
@@ -259,18 +259,16 @@ class SereneDBStorageExtension final : public duckdb::StorageExtension {
       duckdb::TaskSchedulerType::ASYNC};
     for (const auto& save : saves) {
       if (auto storage = save.lock()) {
-        executor.ScheduleTask(duckdb::make_uniq<duckdb::FunctionExecutorTask>(
-          executor,
+        executor.ScheduleTask(
           [storage = std::move(storage)] { storage->FinishCheckpoint(); },
-          "SearchFinishCheckpoint"));
+          "SearchFinishCheckpoint");
       }
     }
     for (auto& table : catalog::SearchTableStorages(
            db.GetCatalog().Cast<catalog::SereneDBCatalog>())) {
-      executor.ScheduleTask(duckdb::make_uniq<duckdb::FunctionExecutorTask>(
-        executor,
+      executor.ScheduleTask(
         [table = std::move(table)] { table->FinishCheckpointIfIdle(); },
-        "SearchFinishCheckpoint"));
+        "SearchFinishCheckpoint");
     }
     executor.WorkOnTasks();
   }

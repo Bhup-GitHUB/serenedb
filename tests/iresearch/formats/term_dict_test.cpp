@@ -216,12 +216,12 @@ std::vector<uint64_t> DecodeVarints(std::string_view encoded) {
 }
 
 std::string EncodeVarints(std::span<const uint64_t> values) {
-  irs::bstring bytes;
-  auto out = std::back_inserter(bytes);
+  duckdb::MemoryStream bytes;
   for (const auto value : values) {
-    irs::WriteVarint(value, out);
+    bytes.WriteVarint(value);
   }
-  return std::string{irs::ViewCast<char>(irs::bytes_view{bytes})};
+  return std::string{reinterpret_cast<const char*>(bytes.GetData()),
+                     bytes.GetPosition()};
 }
 
 std::vector<irs::bstring> DecodeSeparatorKeys(std::string_view encoded) {
@@ -240,17 +240,17 @@ std::vector<irs::bstring> DecodeSeparatorKeys(std::string_view encoded) {
 }
 
 std::string EncodeSeparatorKeys(std::span<const irs::bstring> keys) {
-  irs::bstring bytes;
-  auto out = std::back_inserter(bytes);
+  duckdb::MemoryStream bytes;
   irs::bytes_view last;
   for (const auto& key : keys) {
     const auto shared = irs::CommonPrefixLength(last, irs::bytes_view{key});
-    irs::WriteVarint(static_cast<uint32_t>(shared), out);
-    irs::WriteVarint(static_cast<uint32_t>(key.size() - shared), out);
-    bytes.append(key, shared);
+    bytes.WriteVarint(static_cast<uint32_t>(shared));
+    bytes.WriteVarint(static_cast<uint32_t>(key.size() - shared));
+    bytes.WriteData(key.data() + shared, key.size() - shared);
     last = key;
   }
-  return std::string{irs::ViewCast<char>(irs::bytes_view{bytes})};
+  return std::string{reinterpret_cast<const char*>(bytes.GetData()),
+                     bytes.GetPosition()};
 }
 
 irs::bstring BigEndian(uint8_t shift, uint64_t value) {
@@ -467,13 +467,14 @@ class TermDictTest : public tests::DirectoryTestCaseBase {
     irs::bstring data;
     {
       const auto file = dir().Open(name, duckdb::MappedFileAccess::RANDOM);
-      ASSERT_NE(nullptr, file);
-      irs::IndexInput in{*file};
-      const uint64_t length = in.Length();
+      ASSERT_TRUE(file);
+      duckdb::InputFileReader in{*file};
+      const uint64_t length = file->GetSize();
       in.Seek(length - sizeof(uint32_t));
-      const uint64_t footer = static_cast<uint32_t>(in.ReadI32());
+      const uint64_t footer = in.Read<uint32_t>();
       data.resize(length - 2 * sizeof(uint32_t) - footer);
-      in.ReadData(0, data.data(), data.size());
+      in.Seek(0);
+      in.ReadData(data.data(), data.size());
     }
     ASSERT_TRUE(dir().Remove(name));
     auto out = dir().Create(name);
@@ -1362,7 +1363,7 @@ TEST_P(TermDictTest, small_fields_are_copied_at_open) {
     GTEST_SKIP() << "only a mapped input reads blocks in place";
   }
   const auto* begin = _reader->Base();
-  const auto* end = begin + _reader->Input().Length();
+  const auto* end = begin + _reader->Input().GetSize();
   for (const auto& field : fields) {
     SCOPED_TRACE(testing::Message("field ") << field.id);
     const auto& impl = Blocks(*Get(field));
@@ -1401,7 +1402,7 @@ TEST_P(TermDictTest, a_cold_open_loads_the_whole_dictionary) {
   const auto begin = _reader->PageOffset(0);
   const auto end = _reader->PageOffset(_reader->BlockCount());
   ASSERT_LT(begin, end);
-  EXPECT_TRUE(_reader->Input().Resident(begin, end - begin));
+  EXPECT_TRUE(_reader->Input().IsResident(begin, end - begin));
   AssertField(Blocks(*Get(2)), fields[1].entries);
 }
 

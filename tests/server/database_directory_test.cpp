@@ -18,11 +18,14 @@
 /// Copyright holder is SereneDB GmbH, Berlin, Germany
 ////////////////////////////////////////////////////////////////////////////////
 
+#include <absl/cleanup/cleanup.h>
+#include <absl/strings/match.h>
 #include <absl/strings/str_cat.h>
 #include <gtest/gtest.h>
 #include <unistd.h>
 
 #include <chrono>
+#include <duckdb/common/error_data.hpp>
 #include <filesystem>
 #include <fstream>
 #include <iresearch/utils/duckdb_engine.hpp>
@@ -209,6 +212,30 @@ TEST_F(DatabaseDirectoryTest, RemoveTreeSaysWhetherTheTreeIsGone) {
   std::ofstream{_root / "tree" / "sub" / "file"} << "data";
   EXPECT_TRUE(RemoveTree(Path("tree")));
   EXPECT_FALSE(std::filesystem::exists(_root / "tree"));
+}
+
+TEST_F(DatabaseDirectoryTest, RemoveTreeOrThrowSaysWhyTheTreeStays) {
+  if (::geteuid() == 0) {
+    GTEST_SKIP() << "root removes a file whatever the mode of its directory";
+  }
+  const auto sub = _root / "kept" / "sub";
+  std::filesystem::create_directories(sub);
+  std::ofstream{sub / "file"} << "data";
+  std::filesystem::permissions(sub, std::filesystem::perms::owner_read |
+                                      std::filesystem::perms::owner_exec);
+  absl::Cleanup writable = [&] {
+    std::filesystem::permissions(sub, std::filesystem::perms::owner_all);
+  };
+  try {
+    RemoveTreeOrThrow(Path("kept"));
+    FAIL() << "the removal reported no failure";
+  } catch (const std::exception& e) {
+    EXPECT_TRUE(
+      absl::StrContains(duckdb::ErrorData{e}.RawMessage(), "Permission denied"))
+      << duckdb::ErrorData{e}.RawMessage();
+  }
+  EXPECT_FALSE(RemoveTree(Path("kept")));
+  EXPECT_TRUE(std::filesystem::exists(sub / "file"));
 }
 
 TEST_F(DatabaseDirectoryTest, UnownedStoragesGoFromADirectory) {

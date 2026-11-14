@@ -116,16 +116,19 @@ class RefCounter : public util::Noncopyable {
       _removing.insert(claimed.begin(), claimed.end());
     }
     bool removed = false;
+    containers::FlatHashSet<Key, Hasher, Equal> kept;
     absl::Cleanup release = [&] noexcept {
       absl::MutexLock lock{&_lock};
       for (const auto& key : claimed) {
-        if (removed) {
+        if (removed && !kept.contains(key)) {
           _refs.erase(key);
         }
         _removing.erase(key);
       }
     };
-    remove(std::span<const Key>{claimed});
+    for (auto& key : remove(std::span<const Key>{claimed})) {
+      kept.insert(std::move(key));
+    }
     removed = true;
   }
 

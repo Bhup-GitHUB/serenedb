@@ -56,9 +56,8 @@ class StructColumnReader final : public ColumnReader {
     return row;
   }
 
-  void CollectBlocks(
-    uint64_t first, uint64_t last,
-    std::vector<duckdb::ExternalFileCacheRange>& out) const final {
+  void CollectBlocks(uint64_t first, uint64_t last,
+                     std::vector<duckdb::FileRange>& out) const final {
     ColumnReader::CollectBlocks(first, last, out);
     for (const auto& child : _children) {
       child->CollectBlocks(first, last, out);

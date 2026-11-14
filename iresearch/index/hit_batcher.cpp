@@ -165,9 +165,9 @@ void HitBatcher::BeginSegment(uint32_t seg_idx,
   _filters.FinishBind();
 }
 
-void HitBatcher::CollectBlocks(
-  const irs::ColReader& col_reader, uint64_t first, uint64_t last,
-  std::vector<duckdb::ExternalFileCacheRange>& out) const {
+void HitBatcher::CollectBlocks(const irs::ColReader& col_reader, uint64_t first,
+                               uint64_t last,
+                               std::vector<duckdb::FileRange>& out) const {
   const auto collect = [&](irs::field_id id) {
     if (const auto* column = col_reader.Column(id)) {
       column->CollectBlocks(first, last, out);
@@ -351,7 +351,7 @@ void HitBatcher::PrefetchColumns(uint64_t anchor, duckdb::idx_t span) {
   for (const auto& c : _columns) {
     c.reader->CollectBlocks(anchor, anchor + span - 1, _extents);
   }
-  file->PrefetchExtents(_extents);
+  file->Prefetch(_extents);
 }
 
 void HitBatcher::ScatterGroup(uint64_t anchor, duckdb::idx_t span) {

@@ -45,9 +45,11 @@
 #include <iresearch/search/ann/collector.hpp>
 #include <iresearch/search/ann/root.hpp>
 #include <iresearch/search/ann/shared_floor.hpp>
+#include <iresearch/search/count/root.hpp>
 #include <iresearch/search/detail/vector_slots.hpp>
 #include <iresearch/search/filters/filter.hpp>
 #include <iresearch/search/scorers/scorer.hpp>
+#include <iresearch/search/top/root.hpp>
 #include <iresearch/types.hpp>
 #include <iresearch/utils/blocking_once.hpp>
 #include <iresearch/utils/containers/bitset.hpp>
@@ -132,6 +134,7 @@ struct ABSL_CACHELINE_ALIGNED SegmentWork {
   uint32_t run_end = 0;
   std::atomic_uint32_t next_claim{0};
   std::atomic_uint32_t ahead_rg{0};
+  std::atomic_uint32_t projected_rg{0};
   std::atomic_uint32_t done_rgs{0};
   std::atomic_uint8_t claim{kUnclaimed};
   irs::BlockingOnce prepare;
@@ -273,6 +276,8 @@ struct ScanGlobalState final : public duckdb::GlobalTableFunctionState {
   uint64_t rg_size = 0;
   uint64_t fold_rgs = 0;
   std::vector<irs::field_id> ahead_fields;
+  std::vector<irs::field_id> ahead_projections;
+  bool ahead_projected = false;
   uint64_t ahead_bytes = 0;
   uint32_t ahead_rgs = 0;
   uint32_t ahead_worker_rgs = 0;
@@ -287,6 +292,7 @@ struct ScanGlobalState final : public duckdb::GlobalTableFunctionState {
   ABSL_CACHELINE_ALIGNED std::atomic_uint32_t next_segment{0};
   std::atomic_uint32_t ahead_segment{0};
   ABSL_CACHELINE_ALIGNED std::atomic_uint32_t done_segments{0};
+  ABSL_CACHELINE_ALIGNED std::atomic_uint64_t counted{0};
   ABSL_CACHELINE_ALIGNED absl::Mutex ordered_mutex;
   ABSL_CACHELINE_ALIGNED std::atomic_bool ordered_exhausted{false};
   std::vector<ScanOrderKey> ordered_heap;
@@ -397,12 +403,14 @@ struct ScanLocalState : public duckdb::LocalTableFunctionState {
   uint64_t ahead_check = std::numeric_limits<uint64_t>::max();
   uint64_t ahead_rg = 0;
   uint64_t ahead_rgs = 0;
-  uint64_t ahead_budget = 0;
+  uint64_t ahead_produced = 0;
+  uint64_t projected_until = std::numeric_limits<uint64_t>::max();
+  uint64_t projected_rgs = 0;
   uint32_t ahead_batch = 0;
   irs::ColFilterClassification ahead_cls;
   RowGroupChecks ahead_checks;
   std::vector<uint64_t> ahead_live;
-  std::vector<duckdb::ExternalFileCacheRange> ahead_extents;
+  std::vector<duckdb::FileRange> ahead_extents;
 
   void Classify(ScanGlobalState& g, uint32_t seg);
 };
@@ -420,8 +428,11 @@ struct FetchLocalState {
 
 struct CountLocalState final : public ScanLocalState {
   uint64_t local_count = 0;
-  uint64_t local_emitted = 0;
+  uint64_t to_emit = 0;
   ColFilterVerify col_verify;
+  irs::count::Root::ptr root;
+  uint32_t root_seg = std::numeric_limits<uint32_t>::max();
+  irs::doc_id_t root_end = 0;
 };
 
 struct ColScanLocalState final : public ScanLocalState {
@@ -461,6 +472,9 @@ struct RankedLocalState : public ScanLocalState, FetchLocalState {
 struct TopKLocalState final : public RankedLocalState {
   std::span<irs::ScoreDoc> hit_slice;
   std::optional<irs::LoserScoreCollector> collector;
+  irs::top::Root::ptr root;
+  uint32_t root_seg = std::numeric_limits<uint32_t>::max();
+  irs::doc_id_t root_end = 0;
 };
 
 struct AnnLocalState final : public RankedLocalState {
@@ -497,10 +511,10 @@ RowGroupChecks MakeRowGroupChecks(const irs::ColReader& col_reader,
                                   irs::ColFilterStateCache& states);
 bool RowsLive(const RowGroupChecks& checks, uint64_t begin, uint64_t end);
 void PlanReadAhead(ScanGlobalState& g, duckdb::ClientContext& context);
-void StartReadAhead(const ScanGlobalState& g, ScanLocalState& l,
-                    bool whole_unit);
-void MoveReadAhead(const ScanGlobalState& g, ScanLocalState& l, uint64_t row);
-void ExtendReadAhead(ScanGlobalState& g, ScanLocalState& l);
+void StartReadAhead(ScanGlobalState& g, ScanLocalState& l);
+void MoveReadAhead(ScanGlobalState& g, ScanLocalState& l, uint64_t row);
+void DeclareProjected(const ScanGlobalState& g, ScanLocalState& l,
+                      uint64_t row);
 
 void ClassifySegmentColFilters(
   const irs::SubReader& seg, ScanGlobalState& g,

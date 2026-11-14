@@ -56,7 +56,7 @@ struct HnswSearchLimits {
 class HnswIndex final : public AnnIndex {
  public:
   HnswIndex(HnswMeta meta, field_id field, HnswBases* bases,
-            const InputFile& file) noexcept
+            const duckdb::InputFile& file) noexcept
     : _meta{meta}, _field{field}, _bases{bases}, _file{file} {}
 
   AnnKind Kind() const noexcept final { return AnnKind::Hnsw; }
@@ -97,7 +97,7 @@ class HnswIndex final : public AnnIndex {
   HnswMeta _meta;
   field_id _field;
   HnswBases* _bases;
-  const InputFile& _file;
+  const duckdb::InputFile& _file;
   mutable BlockingOnce _load;
   mutable std::shared_ptr<const HnswData> _data;
 };

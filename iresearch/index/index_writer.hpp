@@ -126,6 +126,8 @@ struct IndexWriterOptions : public SegmentOptions {
 
   bool cleanup_on_open = true;
 
+  std::optional<std::vector<std::string>> files;
+
   ColumnOptionsProvider column_options;
   NormColumnIdProvider norm_column_id;
   uint32_t row_group_size = DEFAULT_ROW_GROUP_SIZE;
@@ -762,7 +764,8 @@ class IndexWriter : private util::Noncopyable {
     bool compaction, const IndexFieldOptions* field_options) const noexcept;
 
   Queued::Adopted OpenAdopted(std::string_view meta_file,
-                              const IndexReaderOptions& options) const;
+                              const IndexReaderOptions& options,
+                              std::string_view use) const;
 
   uint64_t NextSegmentId() noexcept;
   void InitMeta(IndexMeta& meta) const;

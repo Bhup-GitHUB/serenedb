@@ -605,10 +605,10 @@ TEST_P(HnswIndexTest, OpenReadsTheHeaderFromTheFooter) {
 
   const auto name = irs::FileName(segment.Meta().name, irs::kIdxFormatExt);
   auto bytes = dir.ReadWhole(name);
-  irs::BytesViewInput trailer{irs::bytes_view{bytes}.substr(
+  duckdb::MemoryReader trailer{irs::bytes_view{bytes}.substr(
     bytes.size() - irs::format_utils::kTrailerLen)};
-  trailer.ReadI32();
-  const auto footer_len = static_cast<uint32_t>(trailer.ReadI32());
+  trailer.Read<uint32_t>();
+  const auto footer_len = trailer.Read<uint32_t>();
   absl::c_fill_n(bytes,
                  bytes.size() - irs::format_utils::kTrailerLen - footer_len,
                  irs::byte_type{0});

@@ -23,6 +23,9 @@
 #include <cmath>
 #include <core_functions/array_kernels.hpp>
 #include <cstring>
+#include <duckdb/common/serializer/memory_stream.hpp>
+#include <duckdb/common/serializer/write_stream.hpp>
+#include <duckdb/storage/external_file_cache/input_file_reader.hpp>
 #include <functional>
 #include <iostream>
 #include <iresearch/formats/hnsw/hnsw_bases.hpp>
@@ -31,9 +34,6 @@
 #include <iresearch/formats/ivf/quantizers/common.hpp>
 #include <iresearch/index/vector_distance.hpp>
 #include <iresearch/search/scorers/score_function.hpp>
-#include <iresearch/store/data_input.hpp>
-#include <iresearch/store/data_output.hpp>
-#include <iresearch/utils/bytes_output.hpp>
 #include <iresearch/utils/misc.hpp>
 #include <limits>
 #include <memory>
@@ -63,9 +63,10 @@ score_t ScoreTol(score_t want) { return kScoreTol * (1.f + std::fabs(want)); }
 // The writer emits a u64 length prefix ahead of the blob, exactly as
 // IvfWriter::Flush stores it; strip it to get what MakeQuantizerStats sees.
 bstring SerializeStats(const QuantizerWriter& writer) {
-  BytesOutput out;
+  duckdb::MemoryStream out;
   writer.Serialize(out);
-  return bstring{out.Bytes().substr(sizeof(uint64_t))};
+  return bstring{
+    irs::bytes_view{out.GetData(), out.GetPosition()}.substr(sizeof(uint64_t))};
 }
 
 constexpr size_t kFastScanBbs = 32;
@@ -93,19 +94,19 @@ class PayloadStream {
 
   explicit PayloadStream(QuantizerWriter& writer) : _writer{writer} {}
 
-  Cluster Add(DataOutput& out, const float* vecs, size_t n) {
+  Cluster Add(duckdb::WriteStream& out, const float* vecs, size_t n) {
     const Cluster c{out.Position(), _writer.PendingLanes(), n};
     _writer.Encode(out, vecs, n);
     return c;
   }
 
-  void Finish(DataOutput& out) { _writer.Finish(out); }
+  void Finish(duckdb::WriteStream& out) { _writer.Finish(out); }
 
  private:
   QuantizerWriter& _writer;
 };
 
-uint64_t EncodeCluster(QuantizerWriter& writer, DataOutput& out,
+uint64_t EncodeCluster(QuantizerWriter& writer, duckdb::WriteStream& out,
                        const float* vecs, size_t n) {
   PayloadStream stream{writer};
   const auto c = stream.Add(out, vecs, n);
@@ -116,8 +117,9 @@ uint64_t EncodeCluster(QuantizerWriter& writer, DataOutput& out,
 bstring ReadPayload(MemoryFile& file, uint64_t start, uint64_t end) {
   bstring payload(end - start, 0);
   const auto file_bytes = tests::Bytes(file);
-  IndexInput in{file_bytes};
-  in.ReadData(start, payload.data(), payload.size());
+  duckdb::InputFileReader in{file_bytes};
+  in.Seek(start);
+  in.ReadData(payload.data(), payload.size());
   return payload;
 }
 
@@ -208,10 +210,9 @@ class ClusterScorer {
     const uint64_t offset = _base + index * _setting.record_size;
     const size_t bytes = count * size_t{_setting.record_size};
     _in.Seek(offset);
-    if (const auto view = _in.Peek(bytes); !view.empty()) {
-      SDB_ASSERT(
-        reinterpret_cast<uintptr_t>(view.data()) % _setting.alignment == 0);
-      return {view.data(), bytes};
+    if (const auto* const view = _in.Peek(bytes)) {
+      SDB_ASSERT(reinterpret_cast<uintptr_t>(view) % _setting.alignment == 0);
+      return {view, bytes};
     }
     _buf.resize(bytes);
     _in.ReadData(_buf.data(), bytes);
@@ -221,7 +222,7 @@ class ClusterScorer {
   std::unique_ptr<QuantizerReader> _qr;
   PayloadBlockSetting _setting;
   bstring _bytes;
-  IndexInput _in;
+  duckdb::InputFileReader _in;
   std::vector<byte_type> _buf;
   uint64_t _base;
   size_t _lane0;
@@ -334,8 +335,9 @@ TEST_P(none_quantizer_test, roundtrip_is_bit_exact) {
   bstring stored(n * d * sizeof(float), 0);
   {
     const auto file_bytes = tests::Bytes(file);
-    IndexInput in{file_bytes};
-    in.ReadData(pay_start, stored.data(), stored.size());
+    duckdb::InputFileReader in{file_bytes};
+    in.Seek(pay_start);
+    in.ReadData(stored.data(), stored.size());
   }
   EXPECT_EQ(std::memcmp(stored.data(), points.data(), stored.size()), 0);
 

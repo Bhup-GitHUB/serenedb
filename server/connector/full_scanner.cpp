@@ -81,10 +81,10 @@ FullScanner::FullScanner(
   _filters.FinishBind();
 }
 
-duckdb::idx_t FullScanner::Scan(uint64_t start_row, duckdb::idx_t count,
-                                duckdb::DataChunk& output,
-                                const duckdb::SelectionVector* live,
-                                duckdb::idx_t live_count) {
+duckdb::idx_t FullScanner::Filter(uint64_t start_row, duckdb::idx_t count,
+                                  duckdb::DataChunk& output,
+                                  const duckdb::SelectionVector* live,
+                                  duckdb::idx_t live_count) {
   _selection = nullptr;
   if (count == 0) {
     return 0;
@@ -102,8 +102,36 @@ duckdb::idx_t FullScanner::Scan(uint64_t start_row, duckdb::idx_t count,
       live = nullptr;
     }
   }
+  if (_filters.Empty()) {
+    _selection = live;
+    return live != nullptr ? live_count : count;
+  }
 
-  if (_filters.Empty() && live == nullptr) {
+  duckdb::idx_t survivors = live != nullptr ? live_count : count;
+  _sel.Initialize(_sel_data);
+  if (live != nullptr) {
+    for (duckdb::idx_t i = 0; i < survivors; ++i) {
+      _sel.set_index(i, live->get_index(i));
+    }
+  } else {
+    for (duckdb::idx_t i = 0; i < count; ++i) {
+      _sel.set_index(i, i);
+    }
+  }
+  survivors = _filters.FilterWindow(start_row, count, _sel, survivors, &output);
+  if (survivors == 0) {
+    return 0;
+  }
+  _filters.FinishOutputs(start_row, count, _sel, survivors, output);
+  _selection = &_sel;
+  return survivors;
+}
+
+void FullScanner::Project(uint64_t start_row, duckdb::idx_t count,
+                          duckdb::idx_t survivors, duckdb::DataChunk& output) {
+  SDB_ASSERT(survivors != 0);
+  if (_selection == nullptr) {
+    SDB_ASSERT(survivors == count);
     for (auto& b : _bound) {
       auto& out = output.data[b.output_slot];
       if (b.extract) {
@@ -125,49 +153,25 @@ duckdb::idx_t FullScanner::Scan(uint64_t start_row, duckdb::idx_t count,
       b.reader->Scan(*b.state, out, count);
     }
     FillAbsent(output);
-    return count;
+    return;
   }
-
-  const duckdb::SelectionVector* sel = live;
-  duckdb::idx_t survivors = live != nullptr ? live_count : count;
-  if (!_filters.Empty()) {
-    _sel.Initialize(_sel_data);
-    if (live != nullptr) {
-      for (duckdb::idx_t i = 0; i < survivors; ++i) {
-        _sel.set_index(i, live->get_index(i));
-      }
-    } else {
-      for (duckdb::idx_t i = 0; i < count; ++i) {
-        _sel.set_index(i, i);
-      }
-    }
-    survivors =
-      _filters.FilterWindow(start_row, count, _sel, survivors, &output);
-    if (survivors == 0) {
-      return 0;
-    }
-    _filters.FinishOutputs(start_row, count, _sel, survivors, output);
-    sel = &_sel;
-  }
-  SDB_ASSERT(sel != nullptr);
-  _selection = sel;
   for (auto& b : _bound) {
     auto& out = output.data[b.output_slot];
     if (b.extract) {
       if (survivors == count) {
         b.extract->MaterializeContiguous(start_row, count, out);
       } else {
-        b.extract->MaterializeSelected(start_row, *sel, survivors, out);
+        b.extract->MaterializeSelected(start_row, *_selection, survivors, out);
       }
       continue;
     }
     if (b.is_list_like) {
       duckdb::ListVector::SetListSize(out, 0);
     }
-    b.reader->GatherDense(*b.state, start_row, *sel, survivors, count, out);
+    b.reader->GatherDense(*b.state, start_row, *_selection, survivors, count,
+                          out);
   }
   FillAbsent(output);
-  return survivors;
 }
 
 void FullScanner::FillAbsent(duckdb::DataChunk& output) const {
@@ -192,8 +196,9 @@ void ScanLiveRows(duckdb::ClientContext& context, const irs::SubReader& segment,
   for (uint64_t row = 0; row < docs; row += STANDARD_VECTOR_SIZE) {
     const auto take = std::min<uint64_t>(STANDARD_VECTOR_SIZE, docs - row);
     chunk.Reset();
-    const auto produced = scanner.Scan(row, take, chunk);
+    const auto produced = scanner.Filter(row, take, chunk);
     SDB_ASSERT(produced == take, "unfiltered scan produced fewer rows");
+    scanner.Project(row, take, produced, chunk);
     chunk.SetChildCardinality(produced);
     if (has_mask) {
       const duckdb::idx_t keep =

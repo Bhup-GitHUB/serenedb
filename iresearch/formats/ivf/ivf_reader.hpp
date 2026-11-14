@@ -84,7 +84,7 @@ class IvfVectorReader {
 
 class IvfIndex final : public AnnIndex {
  public:
-  IvfIndex(CentroidsTree&& tree, const InputFile& file) noexcept
+  IvfIndex(CentroidsTree&& tree, const duckdb::InputFile& file) noexcept
     : _tree{std::move(tree)}, _file{file} {}
 
   CentroidsTree& Tree() noexcept { return _tree; }
@@ -115,7 +115,7 @@ class IvfIndex final : public AnnIndex {
 
  private:
   CentroidsTree _tree;
-  const InputFile& _file;
+  const duckdb::InputFile& _file;
 };
 
 }  // namespace irs

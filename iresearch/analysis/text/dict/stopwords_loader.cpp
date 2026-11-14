@@ -61,11 +61,13 @@ void LoadStopwords(StringSet<std::string>& buf, std::string_view path) {
       ERR_CODE(ERRCODE_CONFIG_FILE_ERROR),
       ERR_MSG("stop-word file or directory \"", root, "\" does not exist"));
   }
-  fs->ListFiles(root, [&](const std::string& name, bool is_directory) {
-    if (!is_directory) {
-      LoadStopwordsFile(*fs, fs->JoinPath(root, name), buf);
-    }
-  });
+  fs->ListFiles(root,
+                [&](duckdb::OpenFileInfo& info) {
+                  if (!duckdb::FileSystem::IsDirectory(info)) {
+                    LoadStopwordsFile(*fs, fs->JoinPath(root, info.path), buf);
+                  }
+                },
+                nullptr, {.strict = true});
 }
 
 }  // namespace irs::analysis::dict

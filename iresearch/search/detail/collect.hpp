@@ -141,7 +141,7 @@ bool DenseConjunction(std::span<const Term> terms,
 template<typename Term>
 bool WindowTerms(std::span<const Term> terms,
                  std::span<const QueryBuilder::ptr> filters,
-                 const TermReader* field, const InputFile*& doc) {
+                 const TermReader* field, const duckdb::InputFile*& doc) {
   if (terms.empty() || !filters.empty()) {
     return false;
   }

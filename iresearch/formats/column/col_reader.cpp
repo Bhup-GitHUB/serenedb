@@ -35,8 +35,6 @@
 #include "iresearch/formats/column/column_reader.hpp"
 #include "iresearch/formats/column/norm_column_reader.hpp"
 #include "iresearch/formats/format_utils.hpp"
-#include "iresearch/store/data_input.hpp"
-#include "iresearch/store/storage.hpp"
 #include "iresearch/utils/assert.hpp"
 #include "iresearch/utils/pg/sql_exception_macro.hpp"
 
@@ -142,7 +140,8 @@ ColReader::ColReader(duckdb::DatabaseInstance& db, duckdb::FileSystem& fs,
                      std::string_view root, std::string_view segment_name,
                      bool present, duckdb::MappedFileAccess access)
   : _db{&db},
-    _file{present ? OpenInput(fs, PathOf(root, FileName(segment_name)), access)
+    _file{present ? fs.OpenInputFile(fs.JoinPath(root, FileName(segment_name)),
+                                     access)
                   : nullptr},
     _ctx{db, _file.get()} {
   if (!_file) {

@@ -23,6 +23,7 @@
 #include <fsst.h>
 
 #include <cstdint>
+#include <duckdb/storage/external_file_cache/external_file_cache.hpp>
 #include <limits>
 #include <memory>
 #include <span>
@@ -36,7 +37,6 @@
 #include "iresearch/formats/index/term_dict_root.hpp"
 #include "iresearch/formats/term_reader.hpp"
 #include "iresearch/index/field_meta.hpp"
-#include "iresearch/store/data_input.hpp"
 #include "iresearch/utils/type_limits.hpp"
 
 namespace irs::term_dict {
@@ -44,7 +44,7 @@ namespace irs::term_dict {
 class FieldReader;
 
 struct PinnedRange {
-  PinnedBytes pinned;
+  duckdb::FilePin pinned;
   uint64_t start = std::numeric_limits<uint64_t>::max();
 };
 
@@ -148,7 +148,6 @@ class TermReaderImpl final : public TermReader {
   }
   const byte_type* Block(size_t block, PinnedRange& pinned) const;
   uint64_t BlockOffset(size_t block) const noexcept;
-  uint64_t BlocksEnd() const noexcept { return BlockOffset(_blocks); }
   InlinePages::Span InlineSpan(uint32_t block) const noexcept;
   void PrefetchLookup(uint32_t block) const;
   bool HintBlock(uint32_t block, InlinePages::Span span) const;

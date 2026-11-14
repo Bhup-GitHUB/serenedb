@@ -1,7 +1,7 @@
 ////////////////////////////////////////////////////////////////////////////////
 /// DISCLAIMER
 ///
-/// Copyright 2025 SereneDB GmbH, Berlin, Germany
+/// Copyright 2026 SereneDB GmbH, Berlin, Germany
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -18,29 +18,26 @@
 /// Copyright holder is SereneDB GmbH, Berlin, Germany
 ////////////////////////////////////////////////////////////////////////////////
 
-#pragma once
+#include <gtest/gtest.h>
 
-#include <memory>
+#include <duckdb/common/file_system.hpp>
+#include <filesystem>
+#include <string>
 
-#include "iresearch/store/data_output.hpp"
-#include "iresearch/utils/string.hpp"
+#include "server/utils/lifecycle.h"
 
-namespace irs {
+namespace sdb::lifecycle {
+namespace {
 
-class BytesOutput final : public DataOutput {
- public:
-  BytesOutput() noexcept = default;
+TEST(Lifecycle, TheDataDirectoryIsAbsoluteAndNormalized) {
+  const auto cwd = std::filesystem::current_path().string();
+  EXPECT_EQ(ResolveDataDir("/x/y"), "/x/y");
+  EXPECT_EQ(ResolveDataDir("/x/y///"), "/x/y");
+  EXPECT_EQ(ResolveDataDir("/x/./y//z/../"), "/x/y");
+  EXPECT_EQ(ResolveDataDir("data"), duckdb::FileSystem::JoinPath(cwd, "data"));
+  EXPECT_EQ(ResolveDataDir("./a/../data"),
+            duckdb::FileSystem::JoinPath(cwd, "data"));
+}
 
-  bytes_view Bytes() const noexcept {
-    return {_begin, static_cast<size_t>(_pos - _begin)};
-  }
-
-  void Clear() noexcept { _pos = _begin; }
-
- private:
-  void Overflow(const byte_type* data, size_t size) final;
-
-  std::unique_ptr<byte_type[]> _buf;
-};
-
-}  // namespace irs
+}  // namespace
+}  // namespace sdb::lifecycle

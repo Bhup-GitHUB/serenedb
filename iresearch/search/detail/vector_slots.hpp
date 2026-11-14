@@ -23,6 +23,7 @@
 #include <algorithm>
 #include <array>
 #include <bit>
+#include <duckdb/storage/external_file_cache/input_file_reader.hpp>
 #include <limits>
 #include <memory>
 #include <span>
@@ -47,7 +48,6 @@
 #include "iresearch/search/scorers/score_args.hpp"
 #include "iresearch/search/scorers/score_function.hpp"
 #include "iresearch/search/scorers/scorer.hpp"
-#include "iresearch/store/data_input.hpp"
 #include "iresearch/utils/assert.hpp"
 #include "iresearch/utils/attribute_provider.hpp"
 #include "iresearch/utils/bit_utils.hpp"
@@ -61,7 +61,7 @@ namespace irs::detail {
 
 class VectorBlockReader {
  public:
-  VectorBlockReader(const InputFile& file,
+  VectorBlockReader(const duckdb::InputFile& file,
                     const PayloadBlockSetting& setting) noexcept
     : _in{file},
       _record_size{setting.record_size},
@@ -72,22 +72,26 @@ class VectorBlockReader {
 
   void Reset(uint64_t base_offset) noexcept { _base = base_offset; }
 
+  void ReadAheadUntil(uint64_t records) {
+    _in.ReadAheadUntil(_base + records * _record_size);
+  }
+
   std::span<const byte_type> Read(size_t index, size_t count) {
     const uint64_t offset = _base + static_cast<uint64_t>(index) * _record_size;
     const size_t bytes = count * size_t{_record_size};
     _in.Seek(offset);
-    auto view = _in.Peek(bytes);
-    if (view.empty()) {
+    const auto* view = _in.Peek(bytes);
+    if (!view) {
       _scratch.resize(bytes);
       _in.ReadData(_scratch.data(), bytes);
-      view = {_scratch.data(), bytes};
+      view = _scratch.data();
     }
-    SDB_ASSERT(reinterpret_cast<uintptr_t>(view.data()) % _alignment == 0);
-    return {view.data(), bytes};
+    SDB_ASSERT(reinterpret_cast<uintptr_t>(view) % _alignment == 0);
+    return {view, bytes};
   }
 
  private:
-  IndexInput _in;
+  duckdb::InputFileReader _in;
   std::vector<byte_type> _scratch;
   uint64_t _base = 0;
   uint32_t _record_size;
@@ -317,7 +321,7 @@ class VectorCluster {
  public:
   static constexpr uint32_t kRun = doc_limits::kBlockSize;
 
-  VectorCluster(const PostingMeta& meta, const InputFile& doc_in,
+  VectorCluster(const PostingMeta& meta, const duckdb::InputFile& doc_in,
                 std::unique_ptr<QuantizerReader>&& quantizer,
                 VectorBlockReader&& payload, uint32_t lane)
     : _quantizer{std::move(quantizer)},
@@ -331,6 +335,7 @@ class VectorCluster {
     SDB_ASSERT(_lane < std::max<uint32_t>(1, _setting.group_size));
     _end = _lane + _total;
     _records = static_cast<uint32_t>(_setting.RecordCount(_end));
+    _pay.ReadAheadUntil(_records);
     _list.Prepare(meta, doc_in, IndexFeatures::None, false);
   }
 

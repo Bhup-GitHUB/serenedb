@@ -1,6 +1,7 @@
 """What the fake object stores share: a threaded HTTP server in the test process
-that counts requests by kind, and the path, date, listing and ranged-read rules
-S3 and Azure Blob Storage have in common.
+that counts requests by kind, a ranged read held in the middle of its body
+(`hold_read`), and the path, date, listing and ranged-read rules S3 and Azure
+Blob Storage have in common.
 """
 
 from __future__ import annotations
@@ -42,6 +43,21 @@ class Handler(http.server.BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", "0"))
         return self.rfile.read(length) if length else b""
 
+    def _send_held(self, name: str, body: bytes) -> bytes:
+        """Sends the start of [body] when the read of [name] is the held one, and returns the
+        rest once it is resumed."""
+        with self.fake.lock:
+            held = self.fake.held_read
+            if held is None or held[0] not in name or len(body) <= held[1]:
+                return body
+            self.fake.held_read = None
+        self.wfile.write(body[:held[1]])
+        self.wfile.flush()
+        self.fake.read_held.set()
+        if not self.fake.read_resumed.wait(10):
+            self.fake.read_held.clear()
+        return body[held[1]:]
+
 
 class _Server(http.server.ThreadingHTTPServer):
     request_queue_size = 1024
@@ -52,6 +68,9 @@ class FakeStore:
     def __init__(self, handler: type[Handler], port: int = 0) -> None:
         self.lock = threading.Lock()
         self.requests: collections.Counter[str] = collections.Counter()
+        self.held_read: tuple[str, int] | None = None
+        self.read_held = threading.Event()
+        self.read_resumed = threading.Event()
         store = self
 
         class BoundHandler(handler):
@@ -71,6 +90,16 @@ class FakeStore:
     def count(self, kind: str) -> None:
         with self.lock:
             self.requests[kind] += 1
+
+    def hold_read(self, name: str, after: int) -> None:
+        """The next ranged read of more than [after] bytes of an object whose name contains [name]
+        sends [after] of them, sets `read_held`, and sends the rest once `read_resumed` is set. It
+        gives up after ten seconds, before a client's deadline, and clears `read_held`: what
+        returns while `read_held` is set did not wait for the rest."""
+        self.read_held.clear()
+        self.read_resumed.clear()
+        with self.lock:
+            self.held_read = (name, after)
 
 
 def list_page(names: list[str], prefix: str, delimiter: str, after: str,

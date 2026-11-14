@@ -26,7 +26,6 @@
 #include "iresearch/formats/posting_meta.hpp"
 #include "iresearch/search/detail/posting_leaf.hpp"
 #include "iresearch/search/detail/window.hpp"
-#include "iresearch/store/data_input.hpp"
 #include "iresearch/utils/bit_utils.hpp"
 #include "iresearch/utils/type_limits.hpp"
 
@@ -38,7 +37,6 @@ class PostingFill : public PostingLeaf<InputType, kWindowShape> {
 
   using Base::_doc;
   using Base::_docs;
-  using Base::_hint;
   using Base::_last;
   using Base::_left_in_leaf;
   using Base::_left_in_list;
@@ -53,12 +51,12 @@ class PostingFill : public PostingLeaf<InputType, kWindowShape> {
  public:
   PostingFill() = default;
 
-  PostingFill(const PostingMeta& meta, const InputFile& doc_in,
+  PostingFill(const PostingMeta& meta, const duckdb::InputFile& doc_in,
               IndexFeatures layout, bool has_score_bounds, bool has_freq) {
     Prepare(meta, doc_in, layout, has_score_bounds, has_freq);
   }
 
-  void Prepare(const PostingMeta& meta, const InputFile& doc_in,
+  void Prepare(const PostingMeta& meta, const duckdb::InputFile& doc_in,
                IndexFeatures layout, bool has_score_bounds, bool has_freq) {
     SDB_ASSERT(meta.docs_count != 0);
     this->SetFreqLen(has_freq);
@@ -134,7 +132,7 @@ class PostingFill : public PostingLeaf<InputType, kWindowShape> {
     }
 
     [[maybe_unused]] const byte_type* at = nullptr;
-    if constexpr (InputType::kContiguous) {
+    if constexpr (InputType::CONTIGUOUS) {
       if (_left_in_list != 0) {
         at = In().Current();
       }
@@ -231,8 +229,8 @@ class PostingFill : public PostingLeaf<InputType, kWindowShape> {
  private:
   IRS_FORCE_INLINE block_io::FillLeaf ReadFill(const byte_type*& at,
                                                uint32_t len, doc_id_t base) {
-    _hint.Advance(In(), In().Position());
-    if constexpr (InputType::kContiguous) {
+    In().Advance();
+    if constexpr (InputType::CONTIGUOUS) {
       return block_io::FillView(In(), at, len, this->Holes(), _docs, base,
                                 len == this->_freq_len.value);
     } else {
@@ -242,7 +240,7 @@ class PostingFill : public PostingLeaf<InputType, kWindowShape> {
   }
 
   IRS_FORCE_INLINE void SkipFreqsAfterFill(uint32_t len) {
-    if constexpr (!InputType::kContiguous) {
+    if constexpr (!InputType::CONTIGUOUS) {
       SkipFreqs(len);
     }
   }
@@ -251,7 +249,7 @@ class PostingFill : public PostingLeaf<InputType, kWindowShape> {
     const auto len = std::min(_left_in_list, kBlock);
     _leaf_base = _last;
     [[maybe_unused]] const byte_type* at = nullptr;
-    if constexpr (InputType::kContiguous) {
+    if constexpr (InputType::CONTIGUOUS) {
       at = In().Current();
     }
     _leaf = ReadFill(at, len, _leaf_base);

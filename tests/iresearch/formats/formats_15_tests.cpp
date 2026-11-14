@@ -380,7 +380,7 @@ Format15TestCase::ReadMeta Format15TestCase::WriteReadMeta(
     .db = dir.Db(), .fs = dir.Fs(), .root = dir.Root(), .meta = meta};
 
   const auto in_file = dir.Open("attributes", duckdb::MappedFileAccess::NORMAL);
-  irs::IndexInput in{*in_file};
+  duckdb::InputFileReader in{*in_file};
   EXPECT_FALSE(!in);
   [[maybe_unused]] const auto tmp = irs::ReadString<std::string>(in);
 

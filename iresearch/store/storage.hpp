@@ -23,31 +23,13 @@
 #include <absl/functional/function_ref.h>
 
 #include <duckdb/common/file_system.hpp>
-#include <duckdb/common/memory_mapped_file.hpp>
 #include <duckdb/common/numeric_utils.hpp>
 #include <duckdb/common/query_context.hpp>
 #include <duckdb/main/database.hpp>
-#include <memory>
 #include <string>
 #include <string_view>
 
-#include "iresearch/store/data_input.hpp"
-
 namespace irs {
-
-enum class StorageKind : uint8_t {
-  Local,
-  Memory,
-  Remote,
-};
-
-StorageKind StorageKindOf(std::string_view location);
-
-std::string PathOf(std::string_view root, std::string_view name);
-
-std::unique_ptr<InputFile> OpenInput(duckdb::FileSystem& fs,
-                                     const std::string& path,
-                                     duckdb::MappedFileAccess access);
 
 duckdb::unique_ptr<duckdb::FileHandle> OpenWhole(duckdb::FileSystem& fs,
                                                  const std::string& path);
@@ -60,9 +42,17 @@ Bytes ReadWhole(duckdb::QueryContext context, duckdb::FileSystem& fs,
               typename Bytes::value_type{});
   if (!bytes.empty()) {
     handle->Read(context, bytes.data(), bytes.size(), 0);
+    return bytes;
+  }
+  typename Bytes::value_type buffer[4096];
+  while (const auto read = handle->Read(context, buffer, sizeof(buffer))) {
+    bytes.append(buffer, static_cast<size_t>(read));
   }
   return bytes;
 }
+
+void WriteWhole(duckdb::FileSystem& fs, const std::string& path,
+                std::string_view content, bool durable);
 
 void ForEach(duckdb::DatabaseInstance& db, std::string_view root, size_t count,
              absl::FunctionRef<void(size_t)> visit);

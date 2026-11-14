@@ -24,12 +24,12 @@
 
 #include <absl/functional/function_ref.h>
 
+#include <duckdb/storage/external_file_cache/external_file_cache.hpp>
 #include <memory>
 #include <span>
 
 #include "iresearch/formats/posting_meta.hpp"
 #include "iresearch/index/iterators.hpp"
-#include "iresearch/store/data_input.hpp"
 #include "iresearch/utils/attribute_provider.hpp"
 #include "iresearch/utils/conjunction_acceptor.hpp"
 #include "iresearch/utils/levenshtein_acceptor.hpp"
@@ -43,9 +43,9 @@ struct FieldMeta;
 // The files a posting list lives in; `pos` and `pay` are null for a field that
 // stores neither.
 struct PostingsHandles {
-  const InputFile* doc = nullptr;
-  const InputFile* pos = nullptr;
-  const InputFile* pay = nullptr;
+  const duckdb::InputFile* doc = nullptr;
+  const duckdb::InputFile* pos = nullptr;
+  const duckdb::InputFile* pay = nullptr;
 };
 
 struct TermReader : public AttributeProvider {

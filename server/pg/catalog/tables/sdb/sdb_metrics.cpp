@@ -23,11 +23,11 @@
 #include <duckdb/main/attached_database.hpp>
 #include <duckdb/main/client_context.hpp>
 #include <duckdb/main/database.hpp>
+#include <duckdb/main/database_file_opener.hpp>
 #include <duckdb/storage/buffer_manager.hpp>
 #include <duckdb/storage/external_file_cache/external_file_cache.hpp>
 #include <duckdb/storage/storage_manager.hpp>
 #include <duckdb/storage/write_ahead_log.hpp>
-#include <iresearch/store/file_output.hpp>
 #include <string_view>
 #include <vector>
 
@@ -133,7 +133,7 @@ SystemRows<Metric> LoadMetrics(SystemScan& scan) {
       "evicted blocks written to the temporary directory since start");
   add("external_file_cache_spill_reads", stats.spill_reads,
       "blocks read back from the temporary directory since start");
-  const auto uploads = irs::CurrentUploads();
+  const auto uploads = duckdb::DatabaseFileSystem::GetPendingUploads();
   add("index_uploads_pending", uploads.files,
       "index files being written to an object store whose upload has not "
       "completed");

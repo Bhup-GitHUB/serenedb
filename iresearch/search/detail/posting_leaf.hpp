@@ -37,7 +37,6 @@
 #include "iresearch/search/scorers/score_args.hpp"
 #include "iresearch/search/scorers/score_provider.hpp"
 #include "iresearch/search/scorers/scorer.hpp"
-#include "iresearch/store/data_input.hpp"
 #include "iresearch/utils/attribute_provider.hpp"
 #include "iresearch/utils/empty.hpp"
 #include "iresearch/utils/shared.hpp"
@@ -171,7 +170,7 @@ class PostingLeaf {
   }
 
  protected:
-  static constexpr bool kEnc = Shape.enc || !InputType::kContiguous;
+  static constexpr bool kEnc = Shape.enc || !InputType::CONTIGUOUS;
   static constexpr uint32_t kBlock = doc_limits::kBlockSize;
   static constexpr auto kBits = BitsRequired<uint64_t>();
 
@@ -214,7 +213,7 @@ class PostingLeaf {
 
   IRS_FORCE_INLINE const UnalignedWord* StableBitset(
     const block_io::FillLeaf& leaf) noexcept {
-    if constexpr (InputType::kContiguous) {
+    if constexpr (InputType::CONTIGUOUS) {
       return leaf.bitset;
     } else {
       if (!leaf.IsBitset()) {
@@ -228,16 +227,15 @@ class PostingLeaf {
     }
   }
 
-  void OpenInput(const PostingMeta& meta, const InputFile& doc_in,
+  void OpenInput(const PostingMeta& meta, const duckdb::InputFile& doc_in,
                  bool bounds) {
-    _in = OpenDocInput<InputType>(meta, doc_in);
+    _in = OpenDocInput<InputType>(meta, doc_in,
+                                  Shape.reads == LeafReads::Grows
+                                    ? duckdb::ReadAheadSteps::SKIPPING
+                                    : duckdb::ReadAheadSteps::NONE);
     auto& in = In();
     if constexpr (Shape.reads == LeafReads::Whole) {
-      PrefetchDocs(in, meta);
-    } else if constexpr (Shape.reads == LeafReads::Grows) {
-      if (const auto extent = DocExtent(meta); extent != 0) {
-        _hint.Arm(meta.doc_start, meta.doc_start + extent);
-      }
+      PrefetchDocs(doc_in, meta);
     }
     if (meta.docs_count <= kBlock) {
       SkipScoreBounds(bounds, in);
@@ -359,7 +357,7 @@ class PostingLeaf {
     }
     auto& in = In();
     if constexpr (Shape.reads == LeafReads::Grows) {
-      _hint.Advance(in, in.Position());
+      in.Advance();
     }
     if (_left_in_list >= kBlock) [[likely]] {
       block_io::ReadBlockDelta(in, Enc(), _docs, prev);
@@ -510,7 +508,7 @@ class PostingLeaf {
   IRS_FORCE_INLINE FillRead ReadLeafFill(doc_id_t prev) {
     static_assert(Shape.cursor && !Shape.delta);
     auto& in = In();
-    _hint.Advance(in, in.Position());
+    in.Advance();
     const auto len = std::min(_left_in_list, kBlock);
     const auto leaf =
       block_io::ReadTailForFill(len, in, Enc(), Holes(), _docs, prev);
@@ -538,8 +536,6 @@ class PostingLeaf {
     _provider;
   [[no_unique_address]] utils::Need<Shape.defer, LeafRecipe> _recipe;
   [[no_unique_address]] utils::Need<Shape.cursor, LeafCursor> _cursor;
-  [[no_unique_address]] utils::Need<Shape.reads == LeafReads::Grows,
-                                    GrowingHint> _hint;
   BlockCursor<InputType> _walk;
 };
 

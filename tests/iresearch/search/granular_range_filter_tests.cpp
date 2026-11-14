@@ -1853,8 +1853,8 @@ TEST_P(GranularRangeFilterTestCase, by_range_numeric_sequence) {
     while (!irs::doc_limits::eof(docs->Next())) {
       const auto doc = docs->Value();
       const auto bytes = values.Get(doc);
-      irs::BytesViewInput in;
-      in = irs::BytesViewInput{bytes};
+      duckdb::MemoryReader in;
+      in = duckdb::MemoryReader{bytes};
       actual.emplace(irs::ReadString<std::string>(in));
     }
     ASSERT_EQ(expected, actual);
@@ -1899,8 +1899,8 @@ TEST_P(GranularRangeFilterTestCase, by_range_numeric_sequence) {
     while (!irs::doc_limits::eof(docs->Next())) {
       const auto doc = docs->Value();
       const auto bytes = values.Get(doc);
-      irs::BytesViewInput in;
-      in = irs::BytesViewInput{bytes};
+      duckdb::MemoryReader in;
+      in = duckdb::MemoryReader{bytes};
       actual.emplace(irs::ReadString<std::string>(in));
     }
     ASSERT_EQ(expected, actual);
@@ -1948,8 +1948,8 @@ TEST_P(GranularRangeFilterTestCase, by_range_numeric_sequence) {
     while (!irs::doc_limits::eof(docs->Next())) {
       const auto doc = docs->Value();
       const auto bytes = values.Get(doc);
-      irs::BytesViewInput in;
-      in = irs::BytesViewInput{bytes};
+      duckdb::MemoryReader in;
+      in = duckdb::MemoryReader{bytes};
       actual.emplace(irs::ReadString<std::string>(in));
     }
     ASSERT_EQ(expected, actual);
@@ -1994,8 +1994,8 @@ TEST_P(GranularRangeFilterTestCase, by_range_numeric_sequence) {
     while (!irs::doc_limits::eof(docs->Next())) {
       const auto doc = docs->Value();
       const auto bytes = values.Get(doc);
-      irs::BytesViewInput in;
-      in = irs::BytesViewInput{bytes};
+      duckdb::MemoryReader in;
+      in = duckdb::MemoryReader{bytes};
       actual.emplace(irs::ReadString<std::string>(in));
     }
     ASSERT_EQ(expected, actual);

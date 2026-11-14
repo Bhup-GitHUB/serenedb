@@ -30,15 +30,15 @@
 #include "iresearch/formats/term_reader.hpp"
 #include "iresearch/index/file_names.hpp"
 #include "iresearch/index/index_meta.hpp"
-#include "iresearch/store/storage.hpp"
+#include "iresearch/utils/bytes_utils.hpp"
 
 namespace irs {
 
-inline std::unique_ptr<InputFile> PrepareInput(const ReaderState& state,
-                                               std::string_view ext) {
+inline duckdb::shared_ptr<duckdb::InputFile> PrepareInput(
+  const ReaderState& state, std::string_view ext) {
   const auto name = irs::FileName(state.meta.name, ext);
-  auto file = OpenInput(state.fs, PathOf(state.root, name),
-                        duckdb::MappedFileAccess::RANDOM);
+  auto file = state.fs.OpenInputFile(state.fs.JoinPath(state.root, name),
+                                     duckdb::MappedFileAccess::RANDOM);
   format_utils::ReadFooter(*file, name);
   return file;
 }
@@ -71,9 +71,9 @@ class PostingsReader final {
   static auto IteratorImpl(IndexFeatures field_features,
                            IndexFeatures required_features, Factory&& factory);
 
-  std::unique_ptr<InputFile> _doc_file;
-  std::unique_ptr<InputFile> _pos_file;
-  std::unique_ptr<InputFile> _pay_file;
+  duckdb::shared_ptr<duckdb::InputFile> _doc_file;
+  duckdb::shared_ptr<duckdb::InputFile> _pos_file;
+  duckdb::shared_ptr<duckdb::InputFile> _pay_file;
 };
 
 inline void PostingsReader::prepare(const ReaderState& state,

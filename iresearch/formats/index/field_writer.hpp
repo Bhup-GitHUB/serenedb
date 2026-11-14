@@ -107,7 +107,8 @@ class FieldWriter final {
   void Reset() noexcept;
 
   PostingsWriter _pw;
-  RecordOutput _record;
+  std::array<byte_type, kMaxRecordBytes> _record_bytes;
+  duckdb::MemoryStream _record{_record_bytes.data(), _record_bytes.size()};
   BlockBuilder _block;
   RangeWriter _ranges;
   bstring _inline;
@@ -129,7 +130,7 @@ class FieldWriter final {
   PostingMeta _single;
   std::array<byte_type, PostingMeta::kInlineBytes> _single_inline{};
   IdxWriter* _idx = nullptr;
-  DataOutput* _out = nullptr;
+  duckdb::WriteStream* _out = nullptr;
   uint64_t _docs = 0;
   uint64_t _terms = 0;
   uint64_t _first_page = 0;

@@ -62,7 +62,7 @@ struct AnalyzedField {
 
   irs::IndexFeatures GetIndexFeatures() const noexcept { return features; }
 
-  bool Write(irs::DataOutput& out) const {
+  bool Write(duckdb::WriteStream& out) const {
     out.WriteData(reinterpret_cast<const irs::byte_type*>(value.data()),
                   value.size());
     return true;

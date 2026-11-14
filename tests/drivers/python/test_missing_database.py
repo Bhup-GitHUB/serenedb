@@ -154,6 +154,38 @@ def test_missing_catalog_log(tmp_path: Path) -> None:
     assert any((datadir / "engine_v1").glob("*/data.db"))
 
 
+@pytest.mark.skipif(os.geteuid() == 0,
+                    reason="root reads a directory whatever its mode")
+def test_unreadable_database_directory(tmp_path: Path) -> None:
+    datadir = tmp_path / "data"
+    server = _Server(datadir)
+    try:
+        assert server.wait_ready(), server.output()
+        with server.connect() as conn:
+            conn.execute("CREATE TABLE kept(a INTEGER)")
+            conn.execute("INSERT INTO kept VALUES (1)")
+    finally:
+        server.stop()
+    engine = datadir / "engine_v1"
+    (engine / "catalog.wal").unlink()
+    databases = [path for path in engine.iterdir() if path.is_dir()]
+    assert databases
+    for database in databases:
+        database.chmod(0)
+
+    refused = _Server(datadir)
+    try:
+        assert not refused.wait_ready(timeout=30)
+        assert refused.proc.wait(timeout=30) != 0
+        assert "cannot list '" in refused.output()
+        assert "Permission denied" in refused.output()
+    finally:
+        refused.stop()
+        for database in databases:
+            database.chmod(0o700)
+    assert any(engine.glob("*/data.db"))
+
+
 def test_first_boot_leftovers(tmp_path: Path) -> None:
     datadir = tmp_path / "data"
     engine = datadir / "engine_v1"

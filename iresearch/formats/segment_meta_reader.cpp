@@ -52,7 +52,7 @@ void Read(duckdb::FileSystem& fs, std::string_view root, SegmentMeta& meta,
 
   std::string name{segment_name};
 
-  const auto handle = OpenWhole(fs, PathOf(root, filename));
+  const auto handle = OpenWhole(fs, fs.JoinPath(root, filename));
   const auto length = duckdb::NumericCast<size_t>(handle->GetFileSize());
   auto frozen = DocumentMask::AllocateFrozen(length);
   if (length != 0) {

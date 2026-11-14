@@ -28,6 +28,7 @@
 #include <chrono>
 #include <core_functions/array_kernels.hpp>
 #include <cstring>
+#include <duckdb/common/serializer/memory_stream.hpp>
 #include <duckdb/common/types/vector.hpp>
 #include <duckdb/common/vector/array_vector.hpp>
 #include <duckdb/parallel/task_scheduler.hpp>
@@ -47,9 +48,7 @@
 #include "iresearch/formats/ivf/clustering.hpp"
 #include "iresearch/index/docs_mask/docs_mask.hpp"
 #include "iresearch/index/index_reader.hpp"
-#include "iresearch/store/data_output.hpp"
 #include "iresearch/utils/assert.hpp"
-#include "iresearch/utils/bytes_output.hpp"
 #include "iresearch/utils/down_cast.hpp"
 #include "iresearch/utils/log.hpp"
 #include "iresearch/utils/misc.hpp"
@@ -1231,11 +1230,13 @@ HnswWriter::HnswWriter(AnnInfo info, HnswBases* bases)
 HnswWriter::~HnswWriter() = default;
 
 std::shared_ptr<const QuantizerStats> HnswWriter::SerializeStats() {
-  BytesOutput blob;
+  duckdb::MemoryStream blob;
   _qw->Serialize(blob);
   return MakeQuantizerStats(
     _info.quant.kind, _d,
-    std::span<const byte_type>{blob.Bytes()}.subspan(sizeof(uint64_t)),
+    std::span<const byte_type>{
+      irs::bytes_view{blob.GetData(), blob.GetPosition()}}
+      .subspan(sizeof(uint64_t)),
     EffectiveQuantMetric(_info.metric), /*row_major=*/true);
 }
 

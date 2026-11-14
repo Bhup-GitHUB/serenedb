@@ -292,11 +292,9 @@ uint64_t DirectoryBytes(std::string_view root) {
   auto& db = irs::DuckDBEngine::Instance().instance();
   auto& fs = duckdb::FileSystem::GetFileSystem(db);
   uint64_t total = 0;
-  irs::ListIndexFiles(fs, root, [&](std::string_view name) {
-    total += irs::OpenInput(fs, irs::PathOf(root, name),
-                            duckdb::MappedFileAccess::NORMAL)
-               ->Length();
-  });
+  for (const auto& name : irs::ListIndexFiles(fs, root)) {
+    total += fs.OpenInputFile(fs.JoinPath(root, name))->GetSize();
+  }
   return total;
 }
 

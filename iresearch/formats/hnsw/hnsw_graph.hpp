@@ -29,6 +29,8 @@
 #include <bit>
 #include <cmath>
 #include <cstdint>
+#include <duckdb/common/serializer/write_stream.hpp>
+#include <duckdb/storage/external_file_cache/input_file_reader.hpp>
 #include <limits>
 #include <mutex>
 #include <new>
@@ -37,8 +39,6 @@
 #include <vector>
 
 #include "iresearch/index/vector_distance.hpp"
-#include "iresearch/store/data_input.hpp"
-#include "iresearch/store/data_output.hpp"
 #include "iresearch/types.hpp"
 #include "iresearch/utils/assert.hpp"
 #include "iresearch/utils/huge_page_allocator.hpp"
@@ -293,8 +293,8 @@ class HnswGraph {
     return {_upper.data() + Upper(node, level), _m};
   }
 
-  void Serialize(DataOutput& out) const;
-  static HnswGraph Deserialize(IndexInput& in);
+  void Serialize(duckdb::WriteStream& out) const;
+  static HnswGraph Deserialize(duckdb::InputFileReader& in);
 
  private:
   friend class HnswGraphWriter;
@@ -371,7 +371,7 @@ class HnswGraphWriter {
     return _graph.Neighbors(node, level);
   }
 
-  void Serialize(DataOutput& out) const { _graph.Serialize(out); }
+  void Serialize(duckdb::WriteStream& out) const { _graph.Serialize(out); }
 
  private:
   HnswGraph _graph;

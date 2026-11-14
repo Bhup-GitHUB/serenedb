@@ -23,6 +23,8 @@
 
 #include "formats_test_case_base.hpp"
 
+#include <absl/crc/crc32c.h>
+
 #include <algorithm>
 #include <cstddef>
 #include <duckdb/common/serializer/binary_deserializer.hpp>
@@ -48,7 +50,6 @@
 #include <iresearch/index/norm.hpp>
 #include <iresearch/search/filters/term_filter.hpp>
 #include <iresearch/store/index_files.hpp>
-#include <iresearch/utils/crc.hpp>
 #include <iresearch/utils/duckdb_engine.hpp>
 #include <iresearch/utils/serialization.hpp>
 #include <iresearch/utils/type_limits.hpp>
@@ -93,8 +94,7 @@ void FormatTestCase::AssertNoDirectoryArtifacts(
 
   std::unordered_set<std::string> index_files(expect_additional.begin(),
                                               expect_additional.end());
-  if (const auto segment_file =
-        irs::index_meta::LastFile(dir.Fs(), dir.Root())) {
+  if (const auto segment_file = irs::index_meta::LastFile(dir.Files())) {
     irs::index_meta::Read(dir.Db(), dir.Fs(), dir.Root(), index_meta,
                           *segment_file);
 
@@ -282,8 +282,7 @@ TEST_P(FormatTestCase, unreferenced_files_removed) {
     std::unordered_set<std::string> reader_files;
     {
       irs::IndexMeta index_meta;
-      const auto segments_file =
-        irs::index_meta::LastFile(dir->Fs(), dir->Root());
+      const auto segments_file = irs::index_meta::LastFile(dir->Files());
       ASSERT_TRUE(segments_file);
 
       irs::index_meta::Read(dir->Db(), dir->Fs(), dir->Root(), index_meta,
@@ -400,7 +399,7 @@ TEST_P(FormatTestCase, unreferenced_files_removed) {
 
     // add invalid files
     {
-      std::unique_ptr<irs::FileOutput> tmp;
+      std::unique_ptr<duckdb::BufferedFileWriter> tmp;
       tmp = dir->Create("dummy.file.1");
       ASSERT_FALSE(!tmp);
       tmp->Close();
@@ -1132,12 +1131,13 @@ TEST_P(FormatTestCase, format_utils_footer) {
         value = meta.ReadProperty<uint32_t>(0, "value");
         data_size = size;
       });
-    irs::Crc32c crc;
-    crc.process_bytes(data.data(), data.size());
+    absl::crc32c_t crc{0};
+    crc = absl::ExtendCrc32c(
+      crc, {reinterpret_cast<const char*>(data.data()), data.size()});
     ASSERT_EQ(42, value);
     ASSERT_EQ(data.size(), data_size);
     ASSERT_EQ(data.size(), footer.data_len);
-    ASSERT_EQ(crc.checksum(), footer.data_expected_crc32c);
+    ASSERT_EQ(static_cast<uint32_t>(crc), footer.data_expected_crc32c);
   };
 
   write("file", kData);
@@ -1151,7 +1151,7 @@ TEST_P(FormatTestCase, format_utils_footer_damaged) {
   {
     auto stream = dir().Create("file");
     ASSERT_NE(nullptr, stream);
-    stream->WriteU64(7);
+    stream->Write<uint64_t>(7);
     irs::format_utils::WriteFooter(*stream, [](duckdb::BinarySerializer& meta) {
       meta.WriteProperty<uint32_t>(0, "value", 42);
     });
@@ -1161,10 +1161,10 @@ TEST_P(FormatTestCase, format_utils_footer_damaged) {
   irs::bstring bytes;
   {
     const auto file = dir().Open("file", duckdb::MappedFileAccess::NORMAL);
-    irs::IndexInput stream{*file};
+    duckdb::InputFileReader stream{*file};
     ASSERT_TRUE(stream);
-    bytes.resize(stream.Length());
-    stream.ReadData(0, bytes.data(), bytes.size());
+    bytes.resize(file->GetSize());
+    stream.ReadData(bytes.data(), bytes.size());
   }
 
   const auto write = [&](std::string_view name, irs::bytes_view data) {
@@ -1557,7 +1557,7 @@ TEST_P(FormatTestCase, columns_rw) {
     }
 
     // Multi-value f1: two WriteStrs per populated row, concatenated
-    // under one doc id. Read both back through a BytesViewInput on
+    // under one doc id. Read both back through a MemoryReader on
     // top of the blob.
     {
       const auto* col = r.Column(kF1);
@@ -1566,7 +1566,7 @@ TEST_P(FormatTestCase, columns_rw) {
       {
         const auto v = pr.FetchDoc(1);
         ASSERT_FALSE(v.empty());
-        irs::BytesViewInput in{v};
+        duckdb::MemoryReader in{v};
         EXPECT_EQ("field1_doc0", irs::ReadString<std::string>(in));
         EXPECT_EQ("field1_doc0_1", irs::ReadString<std::string>(in));
       }
@@ -1574,7 +1574,7 @@ TEST_P(FormatTestCase, columns_rw) {
       {
         const auto v = pr.FetchDoc(12);
         ASSERT_FALSE(v.empty());
-        irs::BytesViewInput in{v};
+        duckdb::MemoryReader in{v};
         EXPECT_EQ("field1_doc12_1", irs::ReadString<std::string>(in));
         EXPECT_EQ("field1_doc12_2", irs::ReadString<std::string>(in));
       }

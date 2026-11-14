@@ -84,14 +84,15 @@ class PrunedReqOpt : public Root {
  private:
   doc_id_t OptionalFirst(doc_id_t doc, doc_id_t last, size_t drivers,
                          LoserScoreCollector& collector) {
-    auto target = _optional.FirstOf(drivers, doc);
+    auto& driver = _optional.Driver(0);
+    auto target = _optional.FirstOf(driver, drivers, doc);
     while (target <= last) {
       const auto lead = _lead.Seek(target);
       if (lead != target) {
         if (lead > last) {
           return lead;
         }
-        target = _optional.FirstOf(drivers, lead);
+        target = _optional.FirstOf(driver, drivers, lead);
         continue;
       }
       _batch.docs[_batch.size] = target;
@@ -100,7 +101,7 @@ class PrunedReqOpt : public Root {
       if (++_batch.size == kChunk) {
         FlushBatch(collector);
       }
-      target = _optional.FirstOf(drivers, target + 1);
+      target = _optional.FirstOf(driver, drivers, target + 1);
     }
     return _lead.Seek(last + 1);
   }

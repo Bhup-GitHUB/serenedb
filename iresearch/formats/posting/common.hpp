@@ -30,6 +30,8 @@
 #include <algorithm>
 #include <bit>
 #include <cstdint>
+#include <duckdb/storage/external_file_cache/input_file_reader.hpp>
+#include <duckdb/storage/external_file_cache/memory_reader.hpp>
 #include <functional>
 #include <span>
 #include <utility>
@@ -38,10 +40,8 @@
 #include "iresearch/formats/posting/block_codec.hpp"
 #include "iresearch/formats/posting_meta.hpp"
 #include "iresearch/index/index_features.hpp"
-#include "iresearch/store/data_input.hpp"
 #include "iresearch/types.hpp"
 #include "iresearch/utils/bit_utils.hpp"
-#include "iresearch/utils/file_utils_ext.hpp"
 #include "iresearch/utils/lower_bound.hpp"
 #include "iresearch/utils/shared.hpp"
 #include "iresearch/utils/type_limits.hpp"
@@ -85,35 +85,40 @@ IRS_FORCE_INLINE constexpr bool FeaturesHaveFreq(
   return IndexFeatures::None != (features & IndexFeatures::Freq);
 }
 
+template<typename F>
+auto ResolveInput(const duckdb::InputFile& file, F&& f) {
+  if (file.IsMapped()) {
+    return f.template operator()<duckdb::MemoryReader>();
+  }
+  return f.template operator()<duckdb::InputFileReader>();
+}
+
+template<typename F>
+auto ResolveInput(const duckdb::InputFile& doc, const duckdb::InputFile& pos,
+                  const duckdb::InputFile* pay, F&& f) {
+  if (doc.IsMapped() && pos.IsMapped() && (!pay || pay->IsMapped())) {
+    return f.template operator()<duckdb::MemoryReader>();
+  }
+  return f.template operator()<duckdb::InputFileReader>();
+}
+
 // TODO(mbkkt) Make it overloads
 // Remove to many Readers implementations
 
 template<typename Input>
 void SkipScoreBounds(bool has_score_bounds, Input& in) {
   if (has_score_bounds) {
-    in.Skip(in.ReadByte());
+    in.Skip(in.template Read<byte_type>());
   }
-}
-
-inline constexpr uint64_t kMaxPrefetch = uint64_t{16} << 20;
-
-inline bool Hint(const InputFile& file, uint64_t offset,
-                 uint64_t size) noexcept {
-  return file.Hint(offset, size);
-}
-
-template<typename Input>
-bool Hint(const Input& in, uint64_t offset, uint64_t size) noexcept {
-  SDB_ASSERT(in.File());
-  return in.File()->Hint(offset, size);
 }
 
 inline uint64_t DocExtent(const PostingMeta& meta) noexcept {
   if (meta.inline_size != 0 || meta.docs_count <= 1) {
     return 0;
   }
-  return meta.docs_count > doc_limits::kBlockSize ? uint64_t{meta.doc_delta}
-                                                  : file_utils::kPage;
+  return meta.docs_count > doc_limits::kBlockSize
+           ? uint64_t{meta.doc_delta}
+           : duckdb::PageResidency::PAGE_SIZE;
 }
 
 inline uint64_t PosExtent(const PostingMeta& meta) noexcept {
@@ -128,89 +133,13 @@ inline uint64_t PayExtent(const PostingMeta& meta) noexcept {
            : 2 * (PosGroup::kHeaderBytes + 2 * block_codec::kMaxBlockBytes);
 }
 
-template<typename Input>
-void PrefetchDocs(const Input& in, const PostingMeta& meta) noexcept {
-  if (const auto extent = DocExtent(meta); extent > file_utils::kPage) {
-    Hint(in, meta.doc_start, std::min(extent, kMaxPrefetch));
+inline void PrefetchDocs(const duckdb::InputFile& file,
+                         const PostingMeta& meta) noexcept {
+  if (const auto extent = DocExtent(meta);
+      extent > duckdb::PageResidency::PAGE_SIZE) {
+    file.Hint(meta.doc_start, std::min(extent, duckdb::InputFile::MAX_HINTED));
   }
 }
-
-using FileRange = std::pair<uint64_t, uint64_t>;
-
-template<typename Ranges>
-void AppendRange(Ranges& ranges, uint64_t from, uint64_t to) {
-  SDB_ASSERT(from <= to);
-  if (!ranges.empty()) {
-    auto& last = ranges.back();
-    SDB_ASSERT(last.first <= from);
-    if (from <= last.second + file_utils::kPage) {
-      last.second = std::max(last.second, to);
-      return;
-    }
-  }
-  ranges.emplace_back(from, to);
-}
-
-template<typename Input>
-uint64_t HintRanges(const Input& in, std::span<const FileRange> ranges,
-                    uint64_t budget = kMaxPrefetch) {
-  for (const auto& [from, to] : ranges) {
-    if (budget == 0) {
-      break;
-    }
-    const auto size = std::min(to - from, budget);
-    Hint(in, from, size);
-    budget -= size;
-  }
-  return budget;
-}
-
-class GrowingHint {
- public:
-  void Arm(uint64_t at, uint64_t stop) noexcept {
-    _last = at;
-    _end = at;
-    _stop = stop;
-    _run = 0;
-    _skipped = 0;
-    _window = kFirst;
-  }
-
-  template<typename Input>
-  IRS_FORCE_INLINE void Advance(const Input& in, uint64_t at) noexcept {
-    if (at > _last) {
-      const auto gap = at - _last;
-      (gap < file_utils::kPage ? _run : _skipped) += gap;
-    }
-    _last = at;
-    if (at + _window / 2 >= _end && _end < _stop) [[unlikely]] {
-      Grow(in, at);
-    }
-  }
-
- private:
-  static constexpr uint64_t kFirst = file_utils::kPrefetchChunk;
-  static constexpr uint64_t kLast = file_utils::kMaxReadahead;
-
-  template<typename Input>
-  void Grow(const Input& in, uint64_t at) noexcept {
-    const auto from = std::max(at, _end);
-    if (_run < file_utils::kPage || 2 * _run < _skipped || from >= _stop) {
-      return;
-    }
-    const auto len = std::min(_window, _stop - from);
-    Hint(in, from, len);
-    _end = from + len;
-    _window = std::min(2 * _window, kLast);
-  }
-
-  uint64_t _last = 0;
-  uint64_t _end = 0;
-  uint64_t _stop = 0;
-  uint64_t _run = 0;
-  uint64_t _skipped = 0;
-  uint64_t _window = kFirst;
-};
 
 inline IRS_FORCE_INLINE void SetBitRange(uint64_t* IRS_RESTRICT words,
                                          uint64_t begin,

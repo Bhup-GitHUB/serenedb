@@ -31,13 +31,13 @@
 #include "iresearch/index/document_mask.hpp"
 #include "iresearch/index/file_names.hpp"
 #include "iresearch/index/index_meta.hpp"
-#include "iresearch/store/file_output.hpp"
+#include "iresearch/store/index_files.hpp"
 #include "iresearch/utils/string_utils.hpp"
 
 namespace irs::segment_meta {
 namespace {
 
-void WriteDocumentMask(DataOutput& out, const DocumentMask& mask,
+void WriteDocumentMask(duckdb::WriteStream& out, const DocumentMask& mask,
                        uint64_t size) {
   if (auto* buf = out.Reserve(size); buf != nullptr) {
     mask.WriteFrozen(reinterpret_cast<char*>(buf));
@@ -69,7 +69,7 @@ void Write(duckdb::FileSystem& fs, std::string_view root,
   const uint64_t mask_size = has_mask ? docs_mask->FrozenSize() : 0;
 
   meta_file = FileName(meta);
-  auto out = FileOutput::Open(fs, root, meta_file, observers, false);
+  auto out = OpenOutput(fs, root, meta_file, observers, false);
 
   if (has_mask) {
     WriteDocumentMask(*out, *docs_mask, mask_size);
@@ -86,7 +86,7 @@ void Write(duckdb::FileSystem& fs, std::string_view root,
     meta_out.WriteProperty<uint64_t>(kFieldByteSize, "byte_size",
                                      size_without_mask);
   });
-  out->Close();
+  CloseOutput(*out, observers);
 
   meta.docs_mask_size = mask_size;
   meta.byte_size = size_without_mask + mask_size;

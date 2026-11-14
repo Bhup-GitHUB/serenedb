@@ -20,8 +20,10 @@
 
 #include <absl/algorithm/container.h>
 #include <absl/cleanup/cleanup.h>
+#include <absl/crc/crc32c.h>
 #include <absl/strings/str_cat.h>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <duckdb/common/fault_points.hpp>
@@ -29,8 +31,10 @@
 #include <duckdb/common/vector/struct_vector.hpp>
 #include <duckdb/main/connection.hpp>
 #include <duckdb/storage/external_file_cache/external_file_cache.hpp>
+#include <duckdb/storage/external_file_cache/input_file_reader.hpp>
 #include <iresearch/formats/column/col_writer.hpp>
 #include <iresearch/formats/column/internal/gather_arms.hpp>
+#include <iresearch/formats/ivf/centroids.hpp>
 #include <iresearch/index/index_reader.hpp>
 #include <iresearch/index/index_writer.hpp>
 #include <iresearch/search/filters/boolean_filter.hpp>
@@ -38,7 +42,6 @@
 #include <iresearch/search/filters/prefix_filter.hpp>
 #include <iresearch/search/filters/term_filter.hpp>
 #include <iresearch/search/queries/posting_heads.hpp>
-#include <iresearch/utils/crc.hpp>
 #include <iresearch/utils/duckdb_engine.hpp>
 #include <string>
 #include <string_view>
@@ -281,7 +284,8 @@ constexpr uint64_t kBlock = duckdb::ExternalFileCache::DEFAULT_BLOCK_SIZE;
 constexpr uint64_t kPieceSize = 4 * 1024 * 1024;
 constexpr uint64_t kBlocks = 16;
 
-std::unique_ptr<irs::InputFile> WriteUncached(const tests::IndexDir& dir) {
+duckdb::shared_ptr<duckdb::InputFile> WriteUncached(
+  const tests::IndexDir& dir) {
   const std::vector<irs::byte_type> block(kBlock, 0x5A);
   {
     auto out = dir.Create("blocks");
@@ -300,9 +304,9 @@ TEST(ObjectStoreIndexTest, sequential_reads_fetch_ahead) {
   tests::ObjectStore();
   const tests::IndexDir dir{Db(), Root()};
   const auto file = WriteUncached(dir);
-  irs::IndexInput in{*file};
-  while (in.Position() < in.Length()) {
-    std::ignore = in.ReadByte();
+  duckdb::InputFileReader in{*file};
+  while (in.Position() < file->GetSize()) {
+    std::ignore = in.Read<irs::byte_type>();
   }
   EXPECT_EQ(4, tests::ObjectStore().Requests().get);
 }
@@ -311,7 +315,7 @@ TEST(ObjectStoreIndexTest, large_reads_fetch_their_range_at_once) {
   tests::ObjectStore();
   const tests::IndexDir dir{Db(), Root()};
   const auto file = WriteUncached(dir);
-  irs::IndexInput in{*file};
+  duckdb::InputFileReader in{*file};
   irs::bstring buf(kBlocks * kBlock, 0);
   in.ReadData(buf.data(), buf.size());
   EXPECT_EQ(1, tests::ObjectStore().Requests().get);
@@ -339,7 +343,7 @@ TEST(ObjectStoreIndexTest, large_reads_fetch_their_range_past_capped_hints) {
   };
   store.ResetRequests();
   file->Prefetch(0, kHinted);
-  irs::IndexInput in{*file};
+  duckdb::InputFileReader in{*file};
   in.Seek(kHinted);
   irs::bstring buf(kRead, 0);
   in.ReadData(buf.data(), buf.size());
@@ -433,9 +437,9 @@ TEST(ObjectStoreIndexTest, collected_column_blocks_serve_gathers) {
 
   const std::vector<uint64_t> rows{kRgSize + 10, kRgSize + 30000,
                                    2 * kRgSize + 5};
-  std::vector<duckdb::ExternalFileCacheRange> extents;
+  std::vector<duckdb::FileRange> extents;
   plain->CollectBlocks(rows.front(), rows.back(), extents);
-  std::vector<duckdb::ExternalFileCacheRange> expected;
+  std::vector<duckdb::FileRange> expected;
   for (const auto* column : {plain, plain->Validity()}) {
     const auto blocks = column->DataBlocks();
     for (size_t block = 0; block != blocks.size(); ++block) {
@@ -448,7 +452,7 @@ TEST(ObjectStoreIndexTest, collected_column_blocks_serve_gathers) {
     }
   }
   ASSERT_LT(4, expected.size());
-  const auto key = [](const duckdb::ExternalFileCacheRange& e) {
+  const auto key = [](const duckdb::FileRange& e) {
     return std::pair{e.offset, e.size};
   };
   ASSERT_EQ(expected.size(), extents.size());
@@ -464,7 +468,7 @@ TEST(ObjectStoreIndexTest, collected_column_blocks_serve_gathers) {
   auto& cache = duckdb::ExternalFileCache::Get(Db());
   DropCachedBlocks(cache);
   for (auto& extent : extents) {
-    reader.PrefetchExtents({&extent, 1});
+    reader.File()->Prefetch({&extent, 1});
   }
   const auto prefetched = cache.GetStatistics().misses;
 
@@ -490,6 +494,151 @@ TEST(ObjectStoreIndexTest, collected_column_blocks_serve_gathers) {
     }
   }
   EXPECT_EQ(prefetched, cache.GetStatistics().misses);
+}
+
+int64_t Mixed(uint64_t row) {
+  auto bits = static_cast<uint64_t>(Scrambled(row));
+  bits ^= bits >> 31;
+  bits *= 0xD6E8FEB86659FD93ULL;
+  return static_cast<int64_t>(bits ^ (bits >> 29));
+}
+
+void WriteMixedColumn(const tests::IndexDir& dir, irs::field_id id,
+                      uint32_t rg_size, uint64_t rows) {
+  irs::ColWriter writer{Db(), dir.Fs(), dir.Root(), dir.Observers(), "seg"};
+  auto& plain = writer.OpenColumn(id, duckdb::LogicalType::BIGINT,
+                                  /*skip_validity=*/true, rg_size);
+  for (uint64_t pos = 0; pos != rows; pos += STANDARD_VECTOR_SIZE) {
+    duckdb::Vector p{duckdb::LogicalType::BIGINT, STANDARD_VECTOR_SIZE};
+    auto* pd = duckdb::FlatVector::GetDataMutable<int64_t>(p);
+    for (duckdb::idx_t k = 0; k != STANDARD_VECTOR_SIZE; ++k) {
+      pd[k] = Mixed(pos + k);
+    }
+    duckdb::FlatVector::SetSize(p, STANDARD_VECTOR_SIZE);
+    plain.Append(p, STANDARD_VECTOR_SIZE);
+  }
+  writer.Commit(0);
+}
+
+TEST(ObjectStoreIndexTest, a_column_scan_fetches_ahead_in_one_request) {
+  constexpr uint32_t kRgSize = 16 * 1024;
+  constexpr uint64_t kRows = 32 * kRgSize;
+  constexpr irs::field_id kPlain = 1;
+  auto& store = tests::ObjectStore();
+  const tests::IndexDir dir{Db(), Root()};
+  WriteMixedColumn(dir, kPlain, kRgSize, kRows);
+  const irs::ColReader reader = irs::tests::OpenColReader(dir, "seg");
+  const auto* column = reader.Column(kPlain);
+  ASSERT_NE(nullptr, column);
+  const auto blocks = column->DataBlocks();
+  ASSERT_EQ(kRows / kRgSize, blocks.size());
+  for (const auto& block : blocks) {
+    ASSERT_LE(kRgSize * sizeof(int64_t), block.byte_size);
+    ASSERT_GT(kRgSize * sizeof(int64_t) + 4096, block.byte_size);
+  }
+
+  DropCachedBlocks(duckdb::ExternalFileCache::Get(Db()));
+  store.ResetRequests();
+  irs::ReadContext ctx{reader};
+  auto state = column->InitScan(ctx);
+  for (uint64_t pos = 0; pos != kRows; pos += STANDARD_VECTOR_SIZE) {
+    duckdb::Vector out{duckdb::LogicalType::BIGINT, STANDARD_VECTOR_SIZE};
+    column->Scan(state, out, STANDARD_VECTOR_SIZE);
+    out.Flatten(STANDARD_VECTOR_SIZE);
+    const auto* data = duckdb::FlatVector::GetData<int64_t>(out);
+    for (duckdb::idx_t k = 0; k != STANDARD_VECTOR_SIZE; ++k) {
+      ASSERT_EQ(Mixed(pos + k), data[k]) << pos + k;
+    }
+  }
+  EXPECT_EQ(3, store.Requests().get);
+}
+
+TEST(ObjectStoreIndexTest, a_centroid_layer_is_fetched_in_one_request) {
+  constexpr uint32_t kDim = 128;
+  constexpr size_t kNodes = 8;
+  constexpr size_t kChildren = 256;
+  auto& store = tests::ObjectStore();
+  const tests::IndexDir dir{Db(), Root()};
+  uint64_t root_size = 0;
+  {
+    irs::CentroidsNode root{1, kDim};
+    root.size = kNodes;
+    root.centroids.resize(kNodes * kDim);
+    for (size_t i = 0; i != kNodes; ++i) {
+      std::fill_n(root.centroids.begin() + i * kDim, kDim,
+                  static_cast<float>(i));
+      root.child_offsets.push_back(i * kChildren);
+    }
+    root.child_offsets.push_back(kNodes * kChildren);
+    irs::CentroidsNode leaves{0, kDim};
+    leaves.size = kNodes * kChildren;
+    leaves.centroids.resize(leaves.size * kDim);
+    for (size_t i = 0; i != leaves.size; ++i) {
+      std::fill_n(leaves.centroids.begin() + i * kDim, kDim,
+                  static_cast<float>(i) / kChildren);
+    }
+    auto out = dir.Create("centroids");
+    irs::IVFHeader{.metric = irs::VectorMetric::L2Sqr, .d = kDim}.Serialize(
+      *out);
+    out->Write<uint64_t>(root.level);
+    root.Serialize(*out);
+    root_size = out->Position();
+    leaves.Serialize(*out);
+    out->Close();
+  }
+  ASSERT_LT(root_size, kBlock);
+  const auto file = dir.Open("centroids", duckdb::MappedFileAccess::NORMAL);
+  ASSERT_LT(kNodes * kBlock, file->GetSize());
+  const auto tree = [&] {
+    duckdb::InputFileReader in{*file};
+    return irs::CentroidsTree::Deserialize(in, root_size);
+  }();
+  DropCachedBlocks(duckdb::ExternalFileCache::Get(Db()));
+  store.ResetRequests();
+  duckdb::InputFileReader in{*file};
+  const std::vector<float> query(kDim, 0.F);
+  std::vector<uint32_t> ids;
+  tree.Search(query, in, kNodes, ids, nullptr);
+  EXPECT_EQ(kNodes, ids.size());
+  EXPECT_EQ(2, store.Requests().get);
+}
+
+TEST(ObjectStoreIndexTest, gathers_read_column_blocks_across_cache_blocks) {
+  constexpr uint32_t kRgSize = 64 * 1024;
+  constexpr uint64_t kRows = 4 * kRgSize;
+  constexpr irs::field_id kPlain = 1;
+  tests::ObjectStore();
+  const tests::IndexDir dir{Db(), Root()};
+  WriteMixedColumn(dir, kPlain, kRgSize, kRows);
+  const irs::ColReader reader = irs::tests::OpenColReader(dir, "seg");
+  const auto* column = reader.Column(kPlain);
+  ASSERT_NE(nullptr, column);
+  const auto blocks = column->DataBlocks();
+  std::vector<uint64_t> rows;
+  for (size_t block = 0; block != blocks.size(); ++block) {
+    if (blocks[block].byte_size > reader.File()->BlockSize()) {
+      rows.push_back(column->DataBlockFirstRow(block) + 5);
+    }
+  }
+  ASSERT_LT(4, rows.size());
+
+  auto& cache = duckdb::ExternalFileCache::Get(Db());
+  const auto gather = [&] {
+    irs::ReadContext ctx{reader};
+    auto state = column->InitScan(ctx);
+    duckdb::Vector out{duckdb::LogicalType::BIGINT, STANDARD_VECTOR_SIZE};
+    irs::column_internal::GatherRows(*column, state, Rows{rows}, out, 0);
+    out.Flatten(rows.size());
+    const auto* data = duckdb::FlatVector::GetData<int64_t>(out);
+    for (size_t i = 0; i != rows.size(); ++i) {
+      EXPECT_EQ(Mixed(rows[i]), data[i]) << rows[i];
+    }
+  };
+  DropCachedBlocks(cache);
+  gather();
+  const auto fetches = cache.GetStatistics().fetches;
+  gather();
+  EXPECT_EQ(fetches, cache.GetStatistics().fetches);
 }
 
 TEST(ObjectStoreIndexTest, collected_variant_blocks_serve_gathers) {
@@ -520,13 +669,13 @@ TEST(ObjectStoreIndexTest, collected_variant_blocks_serve_gathers) {
 
   const std::vector<uint64_t> rows{kRgSize + 10, kRgSize + 30000,
                                    2 * kRgSize + 5};
-  std::vector<duckdb::ExternalFileCacheRange> extents;
+  std::vector<duckdb::FileRange> extents;
   column->CollectBlocks(rows.front(), rows.back(), extents);
   ASSERT_FALSE(extents.empty());
   auto& cache = duckdb::ExternalFileCache::Get(Db());
   DropCachedBlocks(cache);
   for (auto& extent : extents) {
-    reader.PrefetchExtents({&extent, 1});
+    reader.File()->Prefetch({&extent, 1});
   }
   const auto prefetched = cache.GetStatistics().misses;
 
@@ -545,16 +694,16 @@ TEST(ObjectStoreIndexTest, reads_past_the_end_are_refused) {
   const tests::IndexDir dir{Db(), Root()};
   {
     auto out = dir.Create("short");
-    out->WriteU32(42);
+    out->Write<uint32_t>(42);
     out->Close();
   }
   const auto file = dir.Open("short", duckdb::MappedFileAccess::NORMAL);
-  irs::IndexInput in{*file};
-  EXPECT_EQ(42, in.ReadI32());
-  EXPECT_THROW(in.ReadByte(), irs::SqlException);
+  duckdb::InputFileReader in{*file};
+  EXPECT_EQ(42, in.Read<int32_t>());
+  EXPECT_THROW(in.Read<irs::byte_type>(), duckdb::DataCorruptionException);
   in.Seek(2);
   irs::byte_type buf[8];
-  EXPECT_THROW(in.ReadData(buf, sizeof(buf)), irs::SqlException);
+  EXPECT_THROW(in.ReadData(buf, sizeof(buf)), duckdb::DataCorruptionException);
 }
 
 TEST(ObjectStoreIndexTest, a_listing_skips_nested_objects) {
@@ -626,12 +775,12 @@ TEST(ObjectStoreIndexTest, posting_heads_prefetch_every_clause) {
   auto& cache = duckdb::ExternalFileCache::Get(Db());
   DropCachedBlocks(cache);
   irs::PrefetchPostingHeads(*only_query, 2);
-  EXPECT_FALSE(words.doc->Resident(long_list.doc_start, 1));
+  EXPECT_FALSE(words.doc->IsResident(long_list.doc_start, 1));
   irs::PrefetchPostingHeads(*terms_query, 2);
-  EXPECT_TRUE(words.doc->Resident(long_list.doc_start, 1));
+  EXPECT_TRUE(words.doc->IsResident(long_list.doc_start, 1));
   EXPECT_TRUE(
-    words.doc->Resident(long_list.doc_start + long_list.doc_delta, 1));
-  EXPECT_TRUE(words.doc->Resident(short_list.doc_start, 1));
+    words.doc->IsResident(long_list.doc_start + long_list.doc_delta, 1));
+  EXPECT_TRUE(words.doc->IsResident(short_list.doc_start, 1));
 
   irs::ByPhrase phrase;
   *phrase.mutable_field_id() = kText;
@@ -643,10 +792,10 @@ TEST(ObjectStoreIndexTest, posting_heads_prefetch_every_clause) {
   const auto [text, quick] = meta(kText, "quick");
   ASSERT_NE(nullptr, text.pos);
   DropCachedBlocks(cache);
-  EXPECT_FALSE(text.pos->Resident(quick.pos_start, 1));
+  EXPECT_FALSE(text.pos->IsResident(quick.pos_start, 1));
   irs::PrefetchPostingHeads(*phrase_query, 1);
-  EXPECT_TRUE(text.doc->Resident(quick.doc_start, 1));
-  EXPECT_TRUE(text.pos->Resident(quick.pos_start, 1));
+  EXPECT_TRUE(text.doc->IsResident(quick.doc_start, 1));
+  EXPECT_TRUE(text.pos->IsResident(quick.pos_start, 1));
 
   irs::ByPrefix prefix;
   *prefix.mutable_field_id() = kWords;
@@ -654,9 +803,9 @@ TEST(ObjectStoreIndexTest, posting_heads_prefetch_every_clause) {
     irs::ViewCast<irs::byte_type>(std::string_view{"sh"});
   const auto prefix_query = prefix.PrepareSegment(segment, {});
   DropCachedBlocks(cache);
-  EXPECT_FALSE(words.doc->Resident(short_list.doc_start, 1));
+  EXPECT_FALSE(words.doc->IsResident(short_list.doc_start, 1));
   irs::PrefetchPostingHeads(*prefix_query, 1);
-  EXPECT_TRUE(words.doc->Resident(short_list.doc_start, 1));
+  EXPECT_TRUE(words.doc->IsResident(short_list.doc_start, 1));
 
   irs::ByPhrase variadic;
   *variadic.mutable_field_id() = kText;
@@ -666,25 +815,26 @@ TEST(ObjectStoreIndexTest, posting_heads_prefetch_every_clause) {
     irs::ViewCast<irs::byte_type>(std::string_view{"fox"});
   const auto variadic_query = variadic.PrepareSegment(segment, {});
   DropCachedBlocks(cache);
-  EXPECT_FALSE(text.pos->Resident(quick.pos_start, 1));
+  EXPECT_FALSE(text.pos->IsResident(quick.pos_start, 1));
   irs::PrefetchPostingHeads(*variadic_query, 1);
-  EXPECT_TRUE(text.doc->Resident(quick.doc_start, 1));
-  EXPECT_TRUE(text.pos->Resident(quick.pos_start, 1));
+  EXPECT_TRUE(text.doc->IsResident(quick.doc_start, 1));
+  EXPECT_TRUE(text.pos->IsResident(quick.pos_start, 1));
 }
 
 TEST(ObjectStoreIndexTest, random_reads_fetch_only_their_blocks) {
   tests::ObjectStore();
   const tests::IndexDir dir{Db(), Root()};
   const auto file = WriteUncached(dir);
-  irs::IndexInput in{*file};
+  duckdb::InputFileReader in{*file};
   for (uint64_t block = 0; block < kBlocks; block += 2) {
     in.Seek(block * kBlock);
-    std::ignore = in.ReadByte();
+    std::ignore = in.Read<irs::byte_type>();
   }
   EXPECT_EQ(kBlocks / 2, tests::ObjectStore().Requests().get);
 
   irs::bstring buf(2 * kBlock + 2, 0);
-  in.ReadData(3 * kBlock - 1, buf.data(), buf.size());
+  in.Seek(3 * kBlock - 1);
+  in.ReadData(buf.data(), buf.size());
   EXPECT_EQ(kBlocks / 2 + 1, tests::ObjectStore().Requests().get);
 }
 
@@ -703,9 +853,9 @@ TEST(ObjectStoreIndexTest, a_long_one_time_read_fetches_every_block_in_runs) {
   DropCachedBlocks(duckdb::ExternalFileCache::Get(Db()));
   const auto file = dir.Open("long", duckdb::MappedFileAccess::NORMAL);
   tests::ObjectStore().ResetRequests();
-  irs::IndexInput in{*file};
+  duckdb::InputFileReader in{*file};
   std::vector<irs::byte_type> read(kSize);
-  irs::ReadOnce(in, read.data(), kSize);
+  in.ReadOnce(read.data(), kSize);
   EXPECT_EQ(kSize, static_cast<uint64_t>(absl::c_count(read, 0x5A)));
   EXPECT_LE(tests::ObjectStore().Requests().get, 2 * kSize / kPieceSize);
 }
@@ -718,11 +868,11 @@ const irs::bstring& Chunk() {
   return chunk;
 }
 
-void WriteValues(irs::DataOutput& out, uint64_t from, uint64_t to) {
+void WriteValues(duckdb::WriteStream& out, uint64_t from, uint64_t to) {
   for (uint64_t i = from; i != to; ++i) {
-    out.WriteV64(i * 2654435761);
-    out.WriteU32(static_cast<uint32_t>(i));
-    out.WriteByte(static_cast<irs::byte_type>(i));
+    out.WriteVarint<uint64_t>(i * 2654435761);
+    out.Write<uint32_t>(static_cast<uint32_t>(i));
+    out.Write<irs::byte_type>(static_cast<irs::byte_type>(i));
     if (i % kChunkEvery == 0) {
       out.WriteData(Chunk().data(), Chunk().size());
     }
@@ -731,26 +881,27 @@ void WriteValues(irs::DataOutput& out, uint64_t from, uint64_t to) {
 
 void ReadValues(const tests::IndexDir& dir, uint32_t checksum) {
   const auto file = dir.Open("values", duckdb::MappedFileAccess::NORMAL);
-  irs::IndexInput in{*file};
+  duckdb::InputFileReader in{*file};
   irs::bstring read(Chunk().size(), irs::byte_type{0});
   for (uint64_t i = 0; i != kValues; ++i) {
-    ASSERT_EQ(i * 2654435761, ReadV64(in));
-    ASSERT_EQ(static_cast<int32_t>(i), in.ReadI32());
-    ASSERT_EQ(static_cast<irs::byte_type>(i), in.ReadByte());
+    ASSERT_EQ(i * 2654435761, irs::ReadV64(in));
+    ASSERT_EQ(static_cast<int32_t>(i), in.Read<int32_t>());
+    ASSERT_EQ(static_cast<irs::byte_type>(i), in.Read<irs::byte_type>());
     if (i % kChunkEvery == 0) {
       in.ReadData(read.data(), read.size());
       ASSERT_EQ(Chunk(), read);
     }
   }
   const auto body = in.Position();
-  ASSERT_EQ(static_cast<int64_t>(kValues), in.ReadI64());
-  ASSERT_EQ(in.Length(), in.Position());
-  irs::IndexInput whole{*file};
+  ASSERT_EQ(static_cast<int64_t>(kValues), in.Read<int64_t>());
+  ASSERT_EQ(file->GetSize(), in.Position());
+  duckdb::InputFileReader whole{*file};
   irs::bstring bytes(body, irs::byte_type{0});
   whole.ReadData(bytes.data(), bytes.size());
-  irs::Crc32c crc;
-  crc.process_bytes(bytes.data(), bytes.size());
-  EXPECT_EQ(crc.checksum(), checksum);
+  absl::crc32c_t crc{0};
+  crc = absl::ExtendCrc32c(
+    crc, {reinterpret_cast<const char*>(bytes.data()), bytes.size()});
+  EXPECT_EQ(static_cast<uint32_t>(crc), checksum);
 }
 
 TEST(ObjectStoreIndexTest, written_files_read_back_from_their_cache_blocks) {
@@ -761,7 +912,7 @@ TEST(ObjectStoreIndexTest, written_files_read_back_from_their_cache_blocks) {
     auto out = dir.Create("values");
     WriteValues(*out, 0, kValues);
     checksum = out->Checksum();
-    out->WriteU64(kValues);
+    out->Write<uint64_t>(kValues);
     out->Close();
   }
   tests::ObjectStore().ResetRequests();
@@ -785,7 +936,7 @@ TEST(ObjectStoreIndexTest, a_write_short_of_cache_blocks_uploads_every_byte) {
     ASSERT_TRUE(duckdb::FaultPoints::Arm("remote_write_cache_block"));
     WriteValues(*out, kValues / 2, kValues);
     checksum = out->Checksum();
-    out->WriteU64(kValues);
+    out->Write<uint64_t>(kValues);
     out->Close();
   }
   duckdb::FaultPoints::Clear();

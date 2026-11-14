@@ -21,10 +21,12 @@
 #pragma once
 
 #include <absl/container/inlined_vector.h>
-#include <absl/functional/function_ref.h>
 #include <absl/synchronization/mutex.h>
 
 #include <duckdb/common/file_system.hpp>
+#include <duckdb/common/serializer/buffered_file_writer.hpp>
+#include <memory>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -92,8 +94,15 @@ class RefTracker final : public FileObserver {
   Refs _tracked ABSL_GUARDED_BY(_mutex);
 };
 
-void ListIndexFiles(duckdb::FileSystem& fs, std::string_view root,
-                    absl::FunctionRef<void(std::string_view)> visitor);
+std::unique_ptr<duckdb::BufferedFileWriter> OpenOutput(
+  duckdb::FileSystem& fs, std::string_view root, std::string_view name,
+  const FileObservers& observers, bool keep_cached);
+
+void CloseOutput(duckdb::BufferedFileWriter& out,
+                 const FileObservers& observers);
+
+std::vector<std::string> ListIndexFiles(duckdb::FileSystem& fs,
+                                        std::string_view root);
 
 IndexFileRefs::ref_t Reference(duckdb::FileSystem& fs, std::string_view root,
                                IndexFileRefs& refs, std::string_view name);
@@ -102,6 +111,7 @@ void RemoveUnreferenced(duckdb::FileSystem& fs, std::string_view root,
                         IndexFileRefs& refs);
 
 void RemoveAllUnreferenced(duckdb::FileSystem& fs, std::string_view root,
-                           IndexFileRefs& refs);
+                           IndexFileRefs& refs,
+                           std::span<const std::string> files);
 
 }  // namespace irs

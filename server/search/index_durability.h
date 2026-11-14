@@ -44,6 +44,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 #include "connector/file_manifest.h"
 #include "search/maintenance.h"
@@ -134,7 +135,7 @@ class IndexDurability {
   void WritePayload(const irs::SourcePosition& position,
                     const FileManifest* manifest,
                     duckdb::BinarySerializer& out);
-  void ResolvePendingSave() const;
+  void ResolvePendingSave(std::vector<std::string>& files) const;
   bool PayloadChanged() const;
   bool CanPersist() const;
   uint64_t RunningCheckpoint(uint64_t generation) const;

@@ -95,42 +95,48 @@ void ResumeRemovals() {
   }
 }
 
-void CreateDirectory(const std::filesystem::path& path) {
+void CreateDirectory(const std::string& path) {
   if (!StorageFileSystem().CreateDirectoryExtended(
-        path.native(),
-        {.mode = duckdb::CreateDirectoryMode::RECURSIVE, .sync = true})) {
-    THROW_SQL_ERROR(ERR_CODE(ERRCODE_IO_ERROR),
-                    ERR_MSG("could not create directory \"", path.string(),
-                            "\": it already exists"));
+        path, {.mode = duckdb::CreateDirectoryMode::RECURSIVE, .sync = true})) {
+    THROW_SQL_ERROR(
+      ERR_CODE(ERRCODE_IO_ERROR),
+      ERR_MSG("could not create directory \"", path, "\": it already exists"));
+  }
+}
+
+void RemoveTreeOrThrow(const std::string& path) {
+  duckdb::TaskScheduler::BlockingScope blocking;
+  auto& fs = StorageFileSystem();
+  SDB_IF_FAILURE("pause_removal_midway") {
+    std::vector<std::string> files;
+    fs.ListFiles(path,
+                 [&](duckdb::OpenFileInfo& info) {
+                   files.push_back(std::move(info.path));
+                 },
+                 nullptr, {.recursive = true});
+    if (!files.empty()) {
+      fs.RemoveFile(fs.JoinPath(path, *absl::c_min_element(files)));
+    }
+    SDB_PARK_ONCE_ON_FAILURE("pause_removal_midway");
+  }
+  fs.RemoveDirectoryExtended(
+    path, {.mode = duckdb::RemoveDirectoryMode::RECURSIVE, .strict = true});
+  if (fs.DirectoryExists(path)) {
+    THROW_SQL_ERROR(
+      ERR_CODE(ERRCODE_IO_ERROR),
+      ERR_MSG("could not remove directory \"", path, "\": it is still there"));
   }
 }
 
 bool RemoveTree(const std::string& path) noexcept {
-  duckdb::TaskScheduler::BlockingScope blocking;
   try {
-    auto& fs = StorageFileSystem();
-    SDB_IF_FAILURE("pause_removal_midway") {
-      std::vector<std::string> files;
-      fs.ListFiles(path,
-                   [&](duckdb::OpenFileInfo& info) {
-                     files.push_back(std::move(info.path));
-                   },
-                   nullptr, {.recursive = true});
-      if (!files.empty()) {
-        fs.RemoveFile(fs.JoinPath(path, *absl::c_min_element(files)));
-      }
-      SDB_PARK_ONCE_ON_FAILURE("pause_removal_midway");
-    }
-    fs.RemoveDirectory(path);
-    if (!fs.DirectoryExists(path)) {
-      return true;
-    }
-    SDB_WARN(GENERAL, "could not remove '", path, "'");
+    RemoveTreeOrThrow(path);
+    return true;
   } catch (const std::exception& e) {
     SDB_WARN(GENERAL, "could not remove '", path,
              "': ", duckdb::ErrorData{e}.RawMessage());
+    return false;
   }
-  return false;
 }
 
 duckdb::FileSystem& StorageFileSystem() {
@@ -167,21 +173,25 @@ void StorageDirectory::MarkDropped(std::vector<std::string> beside) noexcept {
 std::vector<StorageEntry> ListStorages(const std::string& root) {
   std::vector<StorageEntry> found;
   StorageFileSystem().ListFiles(
-    root, [&](const std::string& name, bool is_directory) {
-      if (!is_directory) {
+    root,
+    [&](duckdb::OpenFileInfo& info) {
+      if (!duckdb::FileSystem::IsDirectory(info)) {
         return;
       }
-      if (const auto oid = OidFromName(name)) {
-        found.push_back({.oid = *oid, .path = absl::StrCat(root, "/", name)});
+      if (const auto oid = OidFromName(info.path)) {
+        found.push_back(
+          {.oid = *oid, .path = duckdb::FileSystem::JoinPath(root, info.path)});
       }
-    });
+    },
+    nullptr, {.strict = true});
   return found;
 }
 
 bool HoldsFiles(const StorageEntry& entry) {
   bool holds = false;
-  StorageFileSystem().ListFiles(
-    entry.path, [&](const std::string&, bool) { holds = true; });
+  StorageFileSystem().ListFiles(entry.path,
+                                [&](duckdb::OpenFileInfo&) { holds = true; },
+                                nullptr, {.strict = true});
   return holds;
 }
 
@@ -196,7 +206,7 @@ StorageSize StorageBytes(const std::string& directory) {
         (absl::StrContains(info.path, '/') ? size.nested : size.files) += bytes;
       }
     },
-    nullptr, {.recursive = true});
+    nullptr, {.recursive = true, .strict = true});
   return size;
 }
 
@@ -210,19 +220,18 @@ void RemoveUnowned(std::span<const StorageEntry> entries,
   }
 }
 
-DatabaseDirectory::DatabaseDirectory(duckdb::idx_t oid,
-                                     std::filesystem::path path,
+DatabaseDirectory::DatabaseDirectory(duckdb::idx_t oid, std::string path,
                                      std::string_view tablespace)
   : _oid{oid},
-    _path{std::move(path)},
     _tablespace{tablespace},
-    _storage{std::make_shared<StorageDirectory>(_path.string())} {}
+    _storage{std::make_shared<StorageDirectory>(std::move(path))} {}
 
 void DatabaseDirectory::MarkDropped() noexcept {
   std::vector<std::string> beside;
   const auto add = [&](std::string_view tablespace) {
-    auto directory = absl::StrCat(tablespace, "/", _oid);
-    if (directory != _path.native() && !absl::c_contains(beside, directory)) {
+    auto directory =
+      duckdb::FileSystem::JoinPath(tablespace, absl::StrCat(_oid));
+    if (directory != Path() && !absl::c_contains(beside, directory)) {
       beside.push_back(std::move(directory));
     }
   };
@@ -236,14 +245,15 @@ void DatabaseDirectory::MarkDropped() noexcept {
 }
 
 std::string DatabaseDirectory::DataFile() const {
-  return (_path / kDataFile).string();
+  return duckdb::FileSystem::JoinPath(Path(), kDataFile);
 }
 
 std::unique_ptr<StorageDirectory> DatabaseDirectory::StorageOf(
   std::string_view tablespace, duckdb::idx_t oid) const {
   return std::make_unique<StorageDirectory>(
-    tablespace.empty() ? absl::StrCat(_path.native(), "/", oid)
-                       : absl::StrCat(tablespace, "/", _oid, "/", oid),
+    tablespace.empty() ? duckdb::FileSystem::JoinPath(Path(), absl::StrCat(oid))
+                       : duckdb::FileSystem::JoinPath(
+                           tablespace, absl::StrCat(_oid), absl::StrCat(oid)),
     _storage);
 }
 

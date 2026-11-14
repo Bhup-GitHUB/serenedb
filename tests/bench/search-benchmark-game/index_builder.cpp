@@ -25,10 +25,10 @@
 
 #include <atomic>
 #include <cstdio>
+#include <duckdb/common/serializer/write_stream.hpp>
 #include <duckdb/main/database.hpp>
 #include <filesystem>
 #include <iresearch/search/scorers/bm25.hpp>
-#include <iresearch/store/data_output.hpp>
 #include <iresearch/utils/duckdb_engine.hpp>
 #include <iresearch/utils/index_utils.hpp>
 #include <memory>
@@ -221,7 +221,8 @@ void IndexBuilder::IndexFrom(LineSource& source, BatchHandlerFactory factory) {
           _writer->Compact(policy);
         }
 
-        irs::RemoveAllUnreferenced(_fs, _root, *_refs);
+        irs::RemoveAllUnreferenced(_fs, _root, *_refs,
+                                   irs::ListIndexFiles(_fs, _root));
       }
     });
   }
@@ -258,7 +259,8 @@ void IndexBuilder::IndexFrom(LineSource& source, BatchHandlerFactory factory) {
     std::fflush(stdout);
     Settle();
   } else if (_opts.compaction_threads) {
-    irs::RemoveAllUnreferenced(_fs, _root, *_refs);
+    irs::RemoveAllUnreferenced(_fs, _root, *_refs,
+                               irs::ListIndexFiles(_fs, _root));
   }
 }
 
@@ -266,7 +268,8 @@ void IndexBuilder::CompactAll() {
   _writer->Compact(
     irs::index_utils::MakePolicy(irs::index_utils::CompactionCount()));
   _writer->RefreshCommit();
-  irs::RemoveAllUnreferenced(_fs, _root, *_refs);
+  irs::RemoveAllUnreferenced(_fs, _root, *_refs,
+                             irs::ListIndexFiles(_fs, _root));
 }
 
 void IndexBuilder::Settle() {
@@ -281,11 +284,12 @@ void IndexBuilder::Settle() {
     }
     segments = left;
   }
-  irs::RemoveAllUnreferenced(_fs, _root, *_refs);
+  irs::RemoveAllUnreferenced(_fs, _root, *_refs,
+                             irs::ListIndexFiles(_fs, _root));
 }
 
-bool TextField::Write(irs::DataOutput& out) const {
-  out.WriteV32(static_cast<uint32_t>(text.size()));
+bool TextField::Write(duckdb::WriteStream& out) const {
+  out.WriteVarint<uint32_t>(static_cast<uint32_t>(text.size()));
   out.WriteData(reinterpret_cast<const irs::byte_type*>(text.data()),
                 text.size());
   return true;

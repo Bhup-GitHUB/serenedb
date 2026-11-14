@@ -91,7 +91,7 @@ class WordsField : public tests::FieldBase {
   std::string_view Value() const final { return _value; }
 
  private:
-  bool Write(irs::DataOutput&) const final { return false; }
+  bool Write(duckdb::WriteStream&) const final { return false; }
 
   std::string _value;
   mutable irs::analysis::DelimitedTokenizer _stream{" "};

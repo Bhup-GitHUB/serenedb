@@ -22,6 +22,7 @@
 
 #include <algorithm>
 #include <array>
+#include <duckdb/common/serializer/encoding_util.hpp>
 #include <limits>
 #include <memory>
 #include <span>
@@ -86,7 +87,7 @@ class PrunedLeafBase {
   PrunedLeafBase(PrunedLeafBase&&) = delete;
   PrunedLeafBase& operator=(PrunedLeafBase&&) = delete;
 
-  bool PrepareCommon(const PostingMeta& meta, const InputFile& doc_in,
+  bool PrepareCommon(const PostingMeta& meta, const duckdb::InputFile& doc_in,
                      IndexFeatures layout, const SubReader& segment,
                      const TermReader& field, const detail::ScoreArgs& args) {
     SDB_ASSERT(meta.docs_count != 0);
@@ -139,28 +140,27 @@ class PrunedLeafBase {
       return true;
     }
 
-    _in = OpenDocInput<InputType>(meta, doc_in);
+    _in =
+      OpenDocInput<InputType>(meta, doc_in, duckdb::ReadAheadSteps::SKIPPING);
     auto& in = In();
     *(std::end(_docs) - 1) = doc_limits::invalid();
     _left_in_list = meta.docs_count;
-    if (const auto extent = DocExtent(meta); extent != 0) {
-      _hint.Arm(meta.doc_start, meta.doc_start + extent);
-    }
 
     if (meta.docs_count > doc_limits::kBlockSize) {
       _cursor.Arm(meta, BlockIndexShapeOf(layout, true));
       _cursor.Load(in);
       _root_score = BoundScore(_cursor.Index().Root());
     } else {
-      const auto size = in.ReadByte();
-      if constexpr (InputType::kContiguous) {
-        _bound_source->Read(in.Pin(size).bytes);
-      } else if (const auto view = in.Peek(size); !view.empty()) {
-        _bound_source->Read(view);
+      const auto size = in.template Read<byte_type>();
+      if constexpr (InputType::CONTIGUOUS) {
+        _bound_source->Read({in.Current(), size});
+        in.Consume(size);
+      } else if (const auto* const view = in.Peek(size)) {
+        _bound_source->Read({view, size});
         in.Consume(size);
       } else {
         byte_type bound[std::numeric_limits<byte_type>::max() +
-                        bytes_io<uint32_t>::kMaxVSize];
+                        duckdb::EncodingUtil::MaxLEB128Size<uint32_t>()];
         in.ReadData(bound, size);
         _bound_source->Read({bound, size});
       }
@@ -311,7 +311,7 @@ class PrunedLeafBase {
 
   void ReadLeaf(doc_id_t prev) {
     auto& in = In();
-    _hint.Advance(in, in.Position());
+    in.Advance();
     const auto len = std::min(_left_in_list, doc_limits::kBlockSize);
     block_io::ReadTailDelta(len, in, _enc.data, _docs, prev);
     block_io::ReadTail<block_io::kFreqBias>(len, in, _enc.data, _freqs.data);
@@ -421,7 +421,6 @@ class PrunedLeafBase {
   detail::LeafProvider _provider;
   detail::LeafRecipe _recipe;
   BlockCursor<InputType> _cursor;
-  GrowingHint _hint;
   ScoreFunction _bound_func;
   ScoreBoundSource::ptr _bound_source;
   std::array<uint32_t, kCachedBlocks> _cached;

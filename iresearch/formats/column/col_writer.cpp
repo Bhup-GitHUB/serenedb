@@ -33,7 +33,6 @@
 #include "iresearch/formats/ann_writer.hpp"
 #include "iresearch/formats/format_utils.hpp"
 #include "iresearch/formats/index/idx_writer.hpp"
-#include "iresearch/store/file_output.hpp"
 #include "iresearch/utils/assert.hpp"
 #include "iresearch/utils/pg/sql_exception_macro.hpp"
 
@@ -102,7 +101,7 @@ void ColWriter::EnsureOut() {
   if (_out) {
     return;
   }
-  _out = FileOutput::Open(_fs, _root, _filename, _observers, true);
+  _out = OpenOutput(_fs, _root, _filename, _observers, true);
   _write_ctx = std::make_unique<WriteContext>(*_db, *_out);
 }
 
@@ -171,7 +170,7 @@ ColumnWriter& ColWriter::OpenColumn(field_id id, duckdb::LogicalType type,
 NormColumnWriter& ColWriter::AddNormColumn(field_id id,
                                            uint32_t row_group_size) {
   auto& writer = *_norms.emplace_back(std::make_unique<NormColumnWriter>(
-    id, row_group_size, [this]() -> DataOutput& {
+    id, row_group_size, [this]() -> duckdb::WriteStream& {
       EnsureOut();
       return *_out;
     }));
@@ -305,7 +304,7 @@ bool ColWriter::Commit(uint64_t target_row,
         });
     }
   });
-  _out->Close();
+  CloseOutput(*_out, _observers);
   _out.reset();
   _committed = true;
   return true;

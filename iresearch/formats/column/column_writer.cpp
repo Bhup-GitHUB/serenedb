@@ -52,7 +52,7 @@ namespace irs {
 namespace {
 
 void CaptureSegment(duckdb::ColumnSegment& segment, duckdb::idx_t segment_size,
-                    const uint8_t* bytes, DataOutput& out,
+                    const uint8_t* bytes, duckdb::WriteStream& out,
                     std::vector<ColumnBlockMeta>& sink) {
   const auto tuple_count = segment.count.load();
   if (tuple_count == 0) {
@@ -137,7 +137,9 @@ WriteContext& ColumnWriter::WriteCtx() const noexcept {
   return _owner->WriteCtx();
 }
 
-DataOutput& ColumnWriter::Out() const noexcept { return _owner->Out(); }
+duckdb::WriteStream& ColumnWriter::Out() const noexcept {
+  return _owner->Out();
+}
 
 duckdb::optional_ptr<const duckdb::CompressionFunction> ColumnWriter::PickCodec(
   const duckdb::LogicalType& codec_type, std::span<WriteChunk> chunks,

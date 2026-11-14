@@ -86,7 +86,7 @@ void CompactFiles(duckdb::FileSystem& fs, std::string_view root,
       SDB_IF_FAILURE("IndexWriter::CompactOutOfMemory") {
         throw duckdb::OutOfMemoryException("intentional debug error");
       }
-      fs.Compact(PathOf(root, file));
+      fs.Compact(fs.JoinPath(root, file));
     } catch (const duckdb::OutOfMemoryException& e) {
       SDB_DEBUG(IRESEARCH, "Keeping '", file,
                 "' in blocks: ", duckdb::ErrorData{e}.RawMessage());
@@ -211,13 +211,13 @@ Sync SyncOf(bool durable, bool meta_written) noexcept {
   return meta_written ? Sync::Meta : Sync::None;
 }
 
-uint64_t MaxSegmentId(duckdb::FileSystem& fs, std::string_view root) {
+uint64_t MaxSegmentId(std::span<const std::string> files) {
   uint64_t max_id = 0;
-  ListIndexFiles(fs, root, [&max_id](std::string_view name) {
+  for (const auto& name : files) {
     if (uint64_t id = 0; ParseSegmentId(name, id)) {
       max_id = std::max(max_id, id);
     }
-  });
+  }
   return max_id;
 }
 
@@ -729,7 +729,7 @@ IndexWriter::Transaction::FlushAndFsync() {
     files.emplace_back(entry.filename);
   }
   for (const auto& name : files) {
-    segment->fs.SyncFile(PathOf(segment->root, name));
+    segment->fs.SyncFile(segment->fs.JoinPath(segment->root, name));
   }
   segment->fs.SyncDirectory(segment->root);
   for (auto& entry : flushed) {
@@ -745,8 +745,8 @@ void IndexWriter::Transaction::Remove(KeyRemoval removal) {
 }
 
 void IndexWriter::Transaction::Adopt(std::string_view meta_file) {
-  auto adopted =
-    _writer->OpenAdopted(meta_file, _writer->GetSnapshotImpl()->Options());
+  auto adopted = _writer->OpenAdopted(
+    meta_file, _writer->GetSnapshotImpl()->Options(), "adopt");
   if (!adopted.reader) {
     return;
   }
@@ -1240,15 +1240,18 @@ IndexWriter::ptr IndexWriter::Make(duckdb::DatabaseInstance& db,
     options.reader_options.refs = std::make_shared<IndexFileRefs>();
   }
 
+  const auto files =
+    options.files ? std::move(*options.files) : ListIndexFiles(fs, root);
+
   // read from directory or create index metadata
   DirectoryMeta meta;
 
   {
-    auto last = index_meta::LastFile(fs, root);
+    auto last = index_meta::LastFile(files);
     if (kOmCreate == mode || ((kOmCreate | kOmAppend) == mode && !last)) {
       if (last) {
         meta.index_meta.gen = index_meta::ParseGeneration(*last);
-        meta.index_meta.seg_counter = MaxSegmentId(fs, root);
+        meta.index_meta.seg_counter = MaxSegmentId(files);
       }
     } else if (!last) {
       THROW_SQL_ERROR(ERR_CODE(ERRCODE_UNDEFINED_FILE),
@@ -1292,7 +1295,7 @@ IndexWriter::ptr IndexWriter::Make(duckdb::DatabaseInstance& db,
   }
   if (options.cleanup_on_open) {
     try {
-      RemoveAllUnreferenced(fs, root, *writer->_refs);
+      RemoveAllUnreferenced(fs, root, *writer->_refs, files);
     } catch (const std::exception& e) {
       SDB_WARN(IRESEARCH, "Failed to remove the unreferenced files of '", root,
                "': ", duckdb::ErrorData{e}.RawMessage());
@@ -1300,7 +1303,7 @@ IndexWriter::ptr IndexWriter::Make(duckdb::DatabaseInstance& db,
   } else {
     // Unreferenced segments are kept for a host WAL to adopt, so their ids are
     // still live and the committed seg_counter sits below them.
-    const auto max_id = MaxSegmentId(fs, root);
+    const auto max_id = MaxSegmentId(files);
     if (writer->_seg_counter.load(std::memory_order_relaxed) < max_id) {
       writer->_seg_counter.store(max_id, std::memory_order_relaxed);
     }
@@ -1576,7 +1579,8 @@ IndexWriter::CompactionFloorGuard IndexWriter::ArmCompactionFloor() {
 }
 
 IndexWriter::Queued::Adopted IndexWriter::OpenAdopted(
-  std::string_view meta_file, const IndexReaderOptions& options) const {
+  std::string_view meta_file, const IndexReaderOptions& options,
+  std::string_view use) const {
   Queued::Adopted adopted;
   auto& segment = adopted.segment;
   segment.filename = meta_file;
@@ -1585,9 +1589,10 @@ IndexWriter::Queued::Adopted IndexWriter::OpenAdopted(
     return adopted;
   }
   auto meta_ref = Reference(_fs, _root, *_refs, meta_file);
+  SDB_IF_FAILURE("IndexWriter::AdoptedMetaGone") { meta_ref = nullptr; }
   if (!meta_ref) {
     THROW_SQL_ERROR(ERR_CODE(ERRCODE_UNDEFINED_FILE),
-                    ERR_MSG("cannot adopt segment meta '", meta_file,
+                    ERR_MSG("cannot ", use, " segment meta '", meta_file,
                             "': it does not exist"));
   }
   adopted.reader =
@@ -1607,7 +1612,8 @@ void IndexWriter::ReplaceSegments(std::span<const SubReader* const> replaced,
   const auto snapshot = GetSnapshotImpl();
   std::vector<Queued::Adopted> adopted(replacements.size());
   ForEach(_db, _root, replacements.size(), [&](size_t i) {
-    adopted[i] = OpenAdopted(replacements[i].meta_file, snapshot->Options());
+    adopted[i] = OpenAdopted(replacements[i].meta_file, snapshot->Options(),
+                             "replace with");
   });
   std::vector<DocMap> maps;
   for (size_t i = 0; i != replacements.size(); ++i) {
@@ -1958,7 +1964,7 @@ void IndexWriter::ApplyFlush(PendingContext&& context) {
   context.files_to_sync.emplace_back(to_commit.filename);
 
   for (const auto& name : context.files_to_sync) {
-    _fs.SyncFile(PathOf(_root, name));
+    _fs.SyncFile(_fs.JoinPath(_root, name));
   }
 
   // Update file name so that directory reader holds a reference

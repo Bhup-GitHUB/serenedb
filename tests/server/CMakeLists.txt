@@ -19,6 +19,7 @@ add_executable(
     index_durability_test.cpp
     json_serde_test.cpp
     json_serde_types_test.cpp
+    lifecycle_test.cpp
     meta_transaction_snapshot_test.cpp
     metrics_test.cpp
     network_duck_executor_test.cpp

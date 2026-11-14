@@ -31,6 +31,7 @@
 #include <duckdb/common/vector_operations/unary_executor.hpp>
 #include <duckdb/function/scalar/generic_common.hpp>
 #include <duckdb/function/scalar_function.hpp>
+#include <duckdb/main/database_file_opener.hpp>
 #include <duckdb/planner/expression/bound_cast_expression.hpp>
 #include <duckdb/planner/expression/bound_comparison_expression.hpp>
 #include <duckdb/planner/expression/bound_conjunction_expression.hpp>
@@ -43,7 +44,6 @@
 #include <duckdb/planner/table_filter_set.hpp>
 #include <iresearch/index/directory_reader_impl.hpp>
 #include <iresearch/search/filters/all_filter.hpp>
-#include <iresearch/store/storage.hpp>
 #include <iresearch/utils/pg/errcodes.hpp>
 #include <iresearch/utils/pg/sql_exception_macro.hpp>
 
@@ -584,8 +584,7 @@ void InitScanState(ScanGlobalState& state, duckdb::ClientContext& context,
                     ? bind_data.relation.row_group_size
                     : DEFAULT_ROW_GROUP_SIZE;
   const auto& impl = state.snapshot->reader.GetImpl();
-  state.remote =
-    impl && irs::StorageKindOf(impl->Root()) == irs::StorageKind::Remote;
+  state.remote = impl && duckdb::DatabaseFileSystem::IsRemote(impl->Root());
 }
 
 void ClassifyColumnstoreProjections(ScanGlobalState& state,

@@ -30,6 +30,7 @@
 #include <cstddef>
 #include <cstring>
 #include <duckdb/common/file_system.hpp>
+#include <iresearch/store/storage.hpp>
 #include <iresearch/utils/assert.hpp>
 #include <iresearch/utils/pg/errcodes.hpp>
 #include <iresearch/utils/pg/sql_exception_macro.hpp>
@@ -37,7 +38,6 @@
 
 #include "catalog/database_directory.h"
 #include "pg/version.h"
-#include "utils/file_utils.h"
 
 namespace sdb::backup {
 namespace {
@@ -107,12 +107,12 @@ uint64_t ClockPosition() {
 
 }  // namespace
 
-std::optional<ControlState> ReadPgControl(
-  const std::filesystem::path& data_dir) {
-  const auto path = data_dir / kPgControlFile;
-  const auto handle = catalog::StorageFileSystem().OpenFile(
-    path.string(), duckdb::FileFlags::FILE_FLAGS_READ |
-                     duckdb::FileFlags::FILE_FLAGS_NULL_IF_NOT_EXISTS);
+std::optional<ControlState> ReadPgControl(const std::string& data_dir) {
+  auto& fs = catalog::StorageFileSystem();
+  const auto path = fs.JoinPath(data_dir, kPgControlFile);
+  const auto handle =
+    fs.OpenFile(path, duckdb::FileFlags::FILE_FLAGS_READ |
+                        duckdb::FileFlags::FILE_FLAGS_NULL_IF_NOT_EXISTS);
   if (!handle) {
     return std::nullopt;
   }
@@ -123,34 +123,31 @@ std::optional<ControlState> ReadPgControl(
       data.crc != ControlCrc(data)) {
     THROW_SQL_ERROR(
       ERR_CODE(ERRCODE_DATA_CORRUPTED),
-      ERR_MSG("\"", path.string(), "\" is not a valid SereneDB control file"));
+      ERR_MSG("\"", path, "\" is not a valid SereneDB control file"));
   }
   return ControlState{.system_identifier = data.system_identifier,
                       .checkpoint = data.check_point};
 }
 
-void WritePgControl(const std::filesystem::path& data_dir,
-                    const ControlState& state) {
-  const auto path = data_dir / kPgControlFile;
-  catalog::StorageFileSystem().CreateDirectoryExtended(
-    path.parent_path().native(),
+void WritePgControl(const std::string& data_dir, const ControlState& state) {
+  auto& fs = catalog::StorageFileSystem();
+  const auto path = fs.JoinPath(data_dir, kPgControlFile);
+  fs.CreateDirectoryExtended(
+    fs.JoinPath(path, ".."),
     {.mode = duckdb::CreateDirectoryMode::RECURSIVE, .sync = true});
   std::string buffer(kPgControlFileSize, '\0');
   const auto data = MakeControl(state);
   std::memcpy(buffer.data(), &data, sizeof(data));
-  utils::file_utils::ReplaceFile(catalog::StorageFileSystem(), path.string(),
-                                 buffer);
+  irs::WriteWhole(fs, path, buffer, true);
 }
 
-void EnsurePgVersion(const std::filesystem::path& data_dir) {
+void EnsurePgVersion(const std::string& data_dir) {
   auto& fs = catalog::StorageFileSystem();
-  const auto path = (data_dir / kPgVersionFile).string();
+  const auto path = fs.JoinPath(data_dir, kPgVersionFile);
   if (fs.FileExists(path)) {
     return;
   }
-  utils::file_utils::WriteFile(fs, path,
-                               absl::StrCat(pg::kPgMajorVersion, "\n"), true);
-  fs.SyncDirectory(data_dir.string());
+  irs::WriteWhole(fs, path, absl::StrCat(pg::kPgMajorVersion, "\n"), true);
 }
 
 PositionSource& PositionSource::Instance() {
@@ -158,7 +155,7 @@ PositionSource& PositionSource::Instance() {
   return gSource;
 }
 
-void PositionSource::Open(const std::filesystem::path& data_dir) {
+void PositionSource::Open(const std::string& data_dir) {
   absl::MutexLock lock{&_mutex};
   auto state = ReadPgControl(data_dir);
   if (!state) {

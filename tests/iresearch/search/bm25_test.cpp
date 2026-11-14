@@ -21,6 +21,7 @@
 /// @author Vasiliy Nabatchikov
 ////////////////////////////////////////////////////////////////////////////////
 
+#include <duckdb/common/serializer/memory_stream.hpp>
 #include <iresearch/index/index_features.hpp>
 #include <iresearch/index/norm.hpp>
 #include <iresearch/search/detail/column_collector.hpp>
@@ -34,7 +35,6 @@
 #include <iresearch/search/filters/term_filter.hpp>
 #include <iresearch/search/scorers/bm25.hpp>
 #include <iresearch/search/scorers/scorer.hpp>
-#include <iresearch/utils/bytes_output.hpp>
 
 #include "filter_test_case_base.hpp"
 #include "formats/column/test_cs_helpers.hpp"
@@ -164,7 +164,7 @@ void Bm25TestCase::TestQueryNorms() {
     std::multimap<irs::score_t, uint32_t, std::greater<>> sorted;
     constexpr std::array kExpected{7, 3, 0, 1, 5};
 
-    irs::BytesViewInput in;
+    duckdb::MemoryReader in;
     tests::PreparedFilter prepared_filter{filter, reader, &scorer, counter};
 
     fetcher.Clear();
@@ -177,7 +177,7 @@ void Bm25TestCase::TestQueryNorms() {
       docs->FetchScoreArgs(0);
       irs::score_t score_value{};
       score.Score(&score_value, 1);
-      in = irs::BytesViewInput{values.Get(docs->Value())};
+      in = duckdb::MemoryReader{values.Get(docs->Value())};
 
       auto str_seq = irs::ReadString<std::string>(in);
       auto seq = strtoull(str_seq.c_str(), nullptr, 10);
@@ -212,7 +212,7 @@ void Bm25TestCase::TestQueryNorms() {
     std::multimap<irs::score_t, uint32_t, std::greater<>> sorted;
     const auto expected = std::array{0, 7, 5, 3, 2, 1};
 
-    irs::BytesViewInput in;
+    duckdb::MemoryReader in;
     tests::PreparedFilter prepared_filter{filter, reader, &scorer, counter};
 
     fetcher.Clear();
@@ -225,7 +225,7 @@ void Bm25TestCase::TestQueryNorms() {
       docs->FetchScoreArgs(0);
       irs::score_t score_value{};
       score.Score(&score_value, 1);
-      in = irs::BytesViewInput{values.Get(docs->Value())};
+      in = duckdb::MemoryReader{values.Get(docs->Value())};
 
       auto str_seq = irs::ReadString<std::string>(in);
       auto seq = strtoull(str_seq.c_str(), nullptr, 10);
@@ -507,8 +507,8 @@ TEST_P(Bm25TestCase, test_phrase) {
       docs->FetchScoreArgs(0);
       irs::score_t score_value{};
       score.Score(&score_value, 1);
-      irs::BytesViewInput in;
-      in = irs::BytesViewInput{values.Get(docs->Value())};
+      duckdb::MemoryReader in;
+      in = duckdb::MemoryReader{values.Get(docs->Value())};
       sorted.emplace(score_value, irs::ReadString<std::string>(in));
     }
 
@@ -569,8 +569,8 @@ TEST_P(Bm25TestCase, test_phrase) {
       docs->FetchScoreArgs(0);
       irs::score_t score_value{};
       score.Score(&score_value, 1);
-      irs::BytesViewInput in;
-      in = irs::BytesViewInput{values.Get(docs->Value())};
+      duckdb::MemoryReader in;
+      in = duckdb::MemoryReader{values.Get(docs->Value())};
       sorted.emplace(score_value, irs::ReadString<std::string>(in));
     }
 
@@ -629,7 +629,7 @@ TEST_P(Bm25TestCase, test_query) {
     std::multimap<irs::score_t, uint32_t, std::greater<>> sorted;
     constexpr std::array kExpected{0, 1, 5, 7};
 
-    irs::BytesViewInput in;
+    duckdb::MemoryReader in;
     tests::PreparedFilter prepared_filter{filter, reader, &scorer, counter};
     fetcher.Clear();
     auto docs = prepared_filter.ExecuteScored(0, fetcher);
@@ -641,7 +641,7 @@ TEST_P(Bm25TestCase, test_query) {
 
       irs::score_t score_value{};
       score.Score(&score_value, 1);
-      in = irs::BytesViewInput{values.Get(docs->Value())};
+      in = duckdb::MemoryReader{values.Get(docs->Value())};
 
       auto str_seq = irs::ReadString<std::string>(in);
       auto seq = strtoull(str_seq.c_str(), nullptr, 10);
@@ -732,7 +732,7 @@ TEST_P(Bm25TestCase, test_query) {
       5      // segment 1
     };
 
-    irs::BytesViewInput in;
+    duckdb::MemoryReader in;
     tests::PreparedFilter prepared_filter{filter, reader, &scorer, counter};
 
     irs::ColumnArgsFetcher fetcher;
@@ -749,7 +749,7 @@ TEST_P(Bm25TestCase, test_query) {
         docs->FetchScoreArgs(0);
         irs::score_t score_value{};
         score.Score(&score_value, 1);
-        in = irs::BytesViewInput{values.Get(docs->Value())};
+        in = duckdb::MemoryReader{values.Get(docs->Value())};
 
         auto str_seq = irs::ReadString<std::string>(in);
         auto seq = strtoull(str_seq.c_str(), nullptr, 10);
@@ -857,7 +857,7 @@ TEST_P(Bm25TestCase, test_query) {
       0, 2, 5  // same value in 3 documents
     };
 
-    irs::BytesViewInput in;
+    duckdb::MemoryReader in;
     tests::PreparedFilter prepared_filter{filter, reader, &scorer, counter};
 
     for (size_t i = 0; auto& segment : reader) {
@@ -873,7 +873,7 @@ TEST_P(Bm25TestCase, test_query) {
         docs->FetchScoreArgs(0);
         irs::score_t score_value{};
         score.Score(&score_value, 1);
-        in = irs::BytesViewInput{values.Get(docs->Value())};
+        in = duckdb::MemoryReader{values.Get(docs->Value())};
 
         auto str_seq = irs::ReadString<std::string>(in);
         auto seq = strtoull(str_seq.c_str(), nullptr, 10);
@@ -969,7 +969,7 @@ TEST_P(Bm25TestCase, test_query) {
                // smaller tfidf() + reverse)
     };
 
-    irs::BytesViewInput in;
+    duckdb::MemoryReader in;
     tests::PreparedFilter prepared_filter{filter, reader, &scorer, counter};
 
     irs::ColumnArgsFetcher fetcher;
@@ -986,7 +986,7 @@ TEST_P(Bm25TestCase, test_query) {
         docs->FetchScoreArgs(0);
         irs::score_t score_value{};
         score.Score(&score_value, 1);
-        in = irs::BytesViewInput{values.Get(docs->Value())};
+        in = duckdb::MemoryReader{values.Get(docs->Value())};
 
         auto str_seq = irs::ReadString<std::string>(in);
         auto seq = strtoull(str_seq.c_str(), nullptr, 10);
@@ -1023,7 +1023,7 @@ TEST_P(Bm25TestCase, test_query) {
     std::multimap<irs::score_t, uint32_t, std::greater<>> sorted;
     constexpr std::array kExpected{0, 1, 5, 7};
 
-    irs::BytesViewInput in;
+    duckdb::MemoryReader in;
     tests::PreparedFilter prepared_filter{filter, reader, &scorer, counter};
     fetcher.Clear();
     auto docs = prepared_filter.ExecuteScored(0, fetcher);
@@ -1034,7 +1034,7 @@ TEST_P(Bm25TestCase, test_query) {
       docs->FetchScoreArgs(0);
       irs::score_t score_value{};
       score.Score(&score_value, 1);
-      in = irs::BytesViewInput{values.Get(docs->Value())};
+      in = duckdb::MemoryReader{values.Get(docs->Value())};
 
       auto str_seq = irs::ReadString<std::string>(in);
       auto seq = strtoull(str_seq.c_str(), nullptr, 10);
@@ -1069,7 +1069,7 @@ TEST_P(Bm25TestCase, test_query) {
     std::multimap<irs::score_t, uint32_t, std::greater<>> sorted;
     constexpr std::array kExpected{3, 7};
 
-    irs::BytesViewInput in;
+    duckdb::MemoryReader in;
     tests::PreparedFilter prepared_filter{filter, reader, &scorer, counter};
     fetcher.Clear();
     auto docs = prepared_filter.ExecuteScored(0, fetcher);
@@ -1080,7 +1080,7 @@ TEST_P(Bm25TestCase, test_query) {
       docs->FetchScoreArgs(0);
       irs::score_t score_value{};
       score.Score(&score_value, 1);
-      in = irs::BytesViewInput{values.Get(docs->Value())};
+      in = duckdb::MemoryReader{values.Get(docs->Value())};
 
       auto str_seq = irs::ReadString<std::string>(in);
       auto seq = strtoull(str_seq.c_str(), nullptr, 10);
@@ -1115,7 +1115,7 @@ TEST_P(Bm25TestCase, test_query) {
     std::multimap<irs::score_t, uint32_t, std::greater<>> sorted;
     constexpr std::array kExpected{7, 3, 0, 1, 5};
 
-    irs::BytesViewInput in;
+    duckdb::MemoryReader in;
     tests::PreparedFilter prepared_filter{filter, reader, &scorer, counter};
     fetcher.Clear();
     auto docs = prepared_filter.ExecuteScored(0, fetcher);
@@ -1126,7 +1126,7 @@ TEST_P(Bm25TestCase, test_query) {
       docs->FetchScoreArgs(0);
       irs::score_t score_value{};
       score.Score(&score_value, 1);
-      in = irs::BytesViewInput{values.Get(docs->Value())};
+      in = duckdb::MemoryReader{values.Get(docs->Value())};
 
       auto str_seq = irs::ReadString<std::string>(in);
       auto seq = strtoull(str_seq.c_str(), nullptr, 10);
@@ -1161,7 +1161,7 @@ TEST_P(Bm25TestCase, test_query) {
     std::multimap<irs::score_t, uint32_t, std::greater<>> sorted;
     constexpr std::array kExpected{7, 0, 5, 3, 2, 1};
 
-    irs::BytesViewInput in;
+    duckdb::MemoryReader in;
     tests::PreparedFilter prepared_filter{filter, reader, &scorer, counter};
     fetcher.Clear();
     auto docs = prepared_filter.ExecuteScored(0, fetcher);
@@ -1172,7 +1172,7 @@ TEST_P(Bm25TestCase, test_query) {
       docs->FetchScoreArgs(0);
       irs::score_t score_value{};
       score.Score(&score_value, 1);
-      in = irs::BytesViewInput{values.Get(docs->Value())};
+      in = duckdb::MemoryReader{values.Get(docs->Value())};
 
       auto str_seq = irs::ReadString<std::string>(in);
       auto seq = strtoull(str_seq.c_str(), nullptr, 10);
@@ -1207,7 +1207,7 @@ TEST_P(Bm25TestCase, test_query) {
       {-1, 7},
     };
 
-    irs::BytesViewInput in;
+    duckdb::MemoryReader in;
     tests::PreparedFilter prepared_filter{filter, reader, &scorer, counter};
     fetcher.Clear();
     auto docs = prepared_filter.ExecuteScored(0, fetcher);
@@ -1218,7 +1218,7 @@ TEST_P(Bm25TestCase, test_query) {
       docs->FetchScoreArgs(0);
       irs::score_t score_value{};
       score.Score(&score_value, 1);
-      in = irs::BytesViewInput{values.Get(docs->Value())};
+      in = duckdb::MemoryReader{values.Get(docs->Value())};
 
       auto str_seq = irs::ReadString<std::string>(in);
       auto seq = strtoull(str_seq.c_str(), nullptr, 10);
@@ -1392,7 +1392,7 @@ TEST_P(Bm25TestCase, test_order) {
         std::multimap<irs::score_t, uint32_t, std::greater<>> sorted;
         constexpr std::array kExpected{0, 1, 5, 7};
 
-        irs::BytesViewInput in;
+        duckdb::MemoryReader in;
         query.SetBoost(boost);
         tests::PreparedFilter prepared{query, reader, &sort, counter};
         fetcher.Clear();
@@ -1404,7 +1404,7 @@ TEST_P(Bm25TestCase, test_order) {
           irs::score_t score_value{};
           score.Score(&score_value, 1);
 
-          in = irs::BytesViewInput{values.Get(docs->Value())};
+          in = duckdb::MemoryReader{values.Get(docs->Value())};
 
           auto str_seq = irs::ReadString<std::string>(in);
           seq = strtoull(str_seq.c_str(), nullptr, 10);

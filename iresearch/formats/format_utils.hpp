@@ -25,10 +25,10 @@
 #include <absl/functional/function_ref.h>
 
 #include <duckdb/common/constants.hpp>
+#include <duckdb/common/serializer/buffered_file_writer.hpp>
+#include <duckdb/storage/external_file_cache/external_file_cache.hpp>
 
 #include "iresearch/formats/flush_state.hpp"
-#include "iresearch/store/data_input.hpp"
-#include "iresearch/store/file_output.hpp"
 
 namespace irs::format_utils {
 
@@ -43,18 +43,18 @@ using FooterWriter = absl::FunctionRef<void(duckdb::BinarySerializer&)>;
 using FooterReader =
   absl::FunctionRef<void(duckdb::BinaryDeserializer&, uint64_t)>;
 
-void WriteFooter(FileOutput& out);
+void WriteFooter(duckdb::BufferedFileWriter& out);
 
-void WriteFooter(FileOutput& out, FooterWriter write);
+void WriteFooter(duckdb::BufferedFileWriter& out, FooterWriter write);
 
-Footer ReadFooter(const InputFile& file, std::string_view name);
+Footer ReadFooter(const duckdb::InputFile& file, std::string_view name);
 
-Footer ReadFooter(const InputFile& file, std::string_view name,
+Footer ReadFooter(const duckdb::InputFile& file, std::string_view name,
                   FooterReader read);
 
 Footer ReadFooter(bytes_view file, std::string_view name, FooterReader read);
 
-std::unique_ptr<FileOutput> PrepareOutput(const FlushState& state,
-                                          std::string_view ext);
+std::unique_ptr<duckdb::BufferedFileWriter> PrepareOutput(
+  const FlushState& state, std::string_view ext);
 
 }  // namespace irs::format_utils

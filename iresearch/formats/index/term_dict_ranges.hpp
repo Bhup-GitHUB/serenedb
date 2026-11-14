@@ -32,6 +32,10 @@ namespace irs::term_dict {
 
 class RangeWriter final {
  public:
+  RangeWriter() = default;
+  RangeWriter(const RangeWriter&) = delete;
+  RangeWriter& operator=(const RangeWriter&) = delete;
+
   bool Active() const noexcept { return _pw != nullptr; }
   DocTee Tee() noexcept;
   void Begin(PostingsWriter& pw, uint64_t docs) noexcept;
@@ -79,7 +83,8 @@ class RangeWriter final {
 
   std::array<Level, kMaxRangeLevels> _levels;
   PostingsWriter* _pw = nullptr;
-  RecordOutput _record;
+  std::array<byte_type, kMaxRecordBytes> _record_bytes;
+  duckdb::MemoryStream _record{_record_bytes.data(), _record_bytes.size()};
   uint64_t _heavy = 0;
   size_t _height = 0;
 };

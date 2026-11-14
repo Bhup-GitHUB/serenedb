@@ -60,7 +60,7 @@ class FieldReader final {
   size_t size() const noexcept { return _dicts.size(); }
 
   const PostingsReader& Postings() const noexcept { return _pr; }
-  const InputFile& Input() const noexcept { return *_in; }
+  const duckdb::InputFile& Input() const noexcept { return *_in; }
   const byte_type* Base() const noexcept { return _base; }
   const duckdb_fsst_decoder_t* Fsst() const noexcept { return _fsst.get(); }
   uint32_t BlockCount() const noexcept { return _block_count; }
@@ -112,7 +112,7 @@ class FieldReader final {
   containers::FlatHashMap<field_id, FieldDicts> _by_id;
   std::vector<field_id> _ids;
   PostingsReader _pr;
-  const InputFile* _in = nullptr;
+  const duckdb::InputFile* _in = nullptr;
   const byte_type* _base = nullptr;
   std::vector<SpanningBlock> _spans;
   Separators _separators;

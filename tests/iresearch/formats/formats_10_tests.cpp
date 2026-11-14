@@ -113,7 +113,7 @@ class Format10TestCase : public tests::FormatTestCase {
 
       const auto in_file =
         dir->Open("attributes", duckdb::MappedFileAccess::NORMAL);
-      irs::IndexInput in{*in_file};
+      duckdb::InputFileReader in{*in_file};
       ASSERT_FALSE(!in);
       const auto tmp = irs::ReadString<std::string>(in);
 
@@ -342,7 +342,7 @@ TEST_P(Format10TestCase, postings_read_write_single_doc) {
 
     const auto in_file =
       dir().Open("attributes", duckdb::MappedFileAccess::NORMAL);
-    irs::IndexInput in{*in_file};
+    duckdb::InputFileReader in{*in_file};
     ASSERT_FALSE(!in);
 
     // prepare reader
@@ -485,7 +485,7 @@ TEST_P(Format10TestCase, postings_read_write) {
 
     const auto in_file =
       dir().Open("attributes", duckdb::MappedFileAccess::NORMAL);
-    irs::IndexInput in{*in_file};
+    duckdb::InputFileReader in{*in_file};
     ASSERT_FALSE(!in);
 
     // prepare reader
@@ -1012,7 +1012,7 @@ TEST_P(Format10TestCase, position_reset_with_offsets) {
 
         const auto in_file =
           dir->Open("attributes", duckdb::MappedFileAccess::NORMAL);
-        irs::IndexInput in{*in_file};
+        duckdb::InputFileReader in{*in_file};
         ASSERT_FALSE(!in);
         const auto tmp = irs::ReadString<std::string>(in);
 

@@ -165,8 +165,8 @@ void AssertQuantizedPath(const ::tests::IndexDir& dir,
   const auto idx_file =
     dir.Open(irs::FileName(segment.Meta().name, irs::kIdxFormatExt),
              duckdb::MappedFileAccess::RANDOM);
-  ASSERT_NE(nullptr, idx_file);
-  irs::IndexInput idx_in{*idx_file};
+  ASSERT_TRUE(idx_file);
+  duckdb::InputFileReader idx_in{*idx_file};
   const std::vector<float> query(kDim, 0.f);
   ASSERT_NE(nullptr,
             irs::ReadQuantizerCodebook(

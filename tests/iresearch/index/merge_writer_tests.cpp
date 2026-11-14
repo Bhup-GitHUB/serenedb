@@ -1522,11 +1522,11 @@ TEST_P(MergeWriterTestCase, test_merge_writer_columns) {
                     (std::string_view{reinterpret_cast<const char*>(p), len}));
         }
 
-        // doc_int blob: WriteZV32 layout. Decode via BytesViewInput.
+        // doc_int blob: WriteZV32 layout. Decode via MemoryReader.
         const auto ib = int_reader.Get(doc);
         ASSERT_FALSE(ib.empty());
         {
-          irs::BytesViewInput in{ib};
+          duckdb::MemoryReader in{ib};
           EXPECT_EQ(kInts[global], irs::ReadZV32(in));
         }
 
@@ -1601,7 +1601,7 @@ TEST_P(MergeWriterTestCase, test_merge_writer_columns) {
     const bool ok_int = irs::tests::VisitBlobColumn(
       *merged.GetColReader(), *int_col,
       [&](irs::doc_id_t doc, irs::bytes_view payload) {
-        irs::BytesViewInput in{payload};
+        duckdb::MemoryReader in{payload};
         return seen_ints.emplace(irs::ReadZV32(in), doc).second;
       });
     EXPECT_TRUE(ok_int);
@@ -1676,7 +1676,7 @@ TEST_P(MergeWriterTestCase, test_merge_writer_columns) {
       const auto ib = int_reader.Get(doc);
       ASSERT_FALSE(ib.empty());
       {
-        irs::BytesViewInput in{ib};
+        duckdb::MemoryReader in{ib};
         walked_ints.emplace(irs::ReadZV32(in));
       }
 
@@ -1828,7 +1828,7 @@ TEST_P(MergeWriterTestCase, test_merge_writer_columns_remove) {
 
         const auto ib = ir.Get(doc);
         ASSERT_FALSE(ib.empty());
-        irs::BytesViewInput in{ib};
+        duckdb::MemoryReader in{ib};
         const auto v = irs::ReadZV32(in);
 
         EXPECT_EQ(expected.count(s), 1u);
@@ -1871,7 +1871,7 @@ TEST_P(MergeWriterTestCase, test_merge_writer_columns_remove) {
       EXPECT_EQ(kStrings[1], got);
       const auto ib = ir.Get(live_doc);
       ASSERT_FALSE(ib.empty());
-      irs::BytesViewInput in{ib};
+      duckdb::MemoryReader in{ib};
       EXPECT_EQ(kInts[1], irs::ReadZV32(in));
     }
   }
@@ -1924,7 +1924,7 @@ TEST_P(MergeWriterTestCase, test_merge_writer_columns_remove) {
       std::string s(reinterpret_cast<const char*>(p), len);
 
       const auto ib = ir.Get(doc);
-      irs::BytesViewInput in{ib};
+      duckdb::MemoryReader in{ib};
       const auto v = irs::ReadZV32(in);
 
       seen.emplace(std::move(s), v);
@@ -1956,7 +1956,7 @@ TEST_P(MergeWriterTestCase, test_merge_writer_columns_remove) {
     const bool ok_int = irs::tests::VisitBlobColumn(
       *merged.GetColReader(), *int_col,
       [&](irs::doc_id_t doc, irs::bytes_view payload) {
-        irs::BytesViewInput in{payload};
+        duckdb::MemoryReader in{payload};
         return visited_ints.emplace(irs::ReadZV32(in), doc).second;
       });
     EXPECT_TRUE(ok_int);
@@ -2100,7 +2100,7 @@ TEST_P(MergeWriterTestCase, test_merge_writer_columns_remove) {
       strings.emplace(reinterpret_cast<const char*>(p), len);
 
       const auto ib = ir.Get(doc);
-      irs::BytesViewInput iin{ib};
+      duckdb::MemoryReader iin{ib};
       ints.emplace(irs::ReadZV32(iin));
 
       const auto ab = ar.Get(doc);

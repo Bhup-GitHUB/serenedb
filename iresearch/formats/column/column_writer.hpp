@@ -21,6 +21,7 @@
 #pragma once
 
 #include <cstdint>
+#include <duckdb/common/serializer/write_stream.hpp>
 #include <duckdb/common/types.hpp>
 #include <duckdb/common/types/hyperloglog.hpp>
 #include <duckdb/common/types/selection_vector.hpp>
@@ -32,7 +33,6 @@
 
 #include "iresearch/formats/column/column_reader.hpp"
 #include "iresearch/formats/column/internal/write_context.hpp"
-#include "iresearch/store/data_output.hpp"
 #include "iresearch/types.hpp"
 
 namespace irs {
@@ -128,7 +128,7 @@ class ColumnWriter final {
                   duckdb::CompressionType forced, ColumnMeta& meta);
 
   WriteContext& WriteCtx() const noexcept;
-  DataOutput& Out() const noexcept;
+  duckdb::WriteStream& Out() const noexcept;
 
   ColWriter* _owner;
   field_id _id;

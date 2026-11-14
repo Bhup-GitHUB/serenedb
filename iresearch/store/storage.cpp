@@ -20,52 +20,26 @@
 
 #include "iresearch/store/storage.hpp"
 
+#include <absl/cleanup/cleanup.h>
 #include <absl/strings/str_cat.h>
 
-#include <duckdb/common/memory_file_system.hpp>
-#include <duckdb/common/numeric_utils.hpp>
+#include <duckdb/common/error_data.hpp>
 #include <duckdb/common/open_file_info.hpp>
-#include <duckdb/common/path.hpp>
 #include <duckdb/common/types/value.hpp>
+#include <duckdb/main/database_file_opener.hpp>
 #include <duckdb/parallel/task_executor.hpp>
 #include <duckdb/parallel/task_scheduler.hpp>
+#include <exception>
+#include <utility>
+
+#include "iresearch/utils/log.hpp"
 
 namespace irs {
-
-StorageKind StorageKindOf(std::string_view location) {
-  const auto path = duckdb::Path::FromString(location);
-  if (path.GetScheme() == duckdb::MemoryFileSystem::PREFIX) {
-    return StorageKind::Memory;
-  }
-  return path.IsRemote() ? StorageKind::Remote : StorageKind::Local;
-}
-
-std::string PathOf(std::string_view root, std::string_view name) {
-  if (root.ends_with('/')) {
-    return absl::StrCat(root, name);
-  }
-  return absl::StrCat(root, "/", name);
-}
-
-std::unique_ptr<InputFile> OpenInput(duckdb::FileSystem& fs,
-                                     const std::string& path,
-                                     duckdb::MappedFileAccess access) {
-  if (auto blocks = fs.OpenBlockFile(path)) {
-    return std::make_unique<InputFile>(std::move(blocks));
-  }
-  auto mapping =
-    fs.MemoryMapFile(duckdb::OpenFileInfo{path},
-                     duckdb::FileFlags::FILE_FLAGS_READ, duckdb::MMapOptions{});
-  if (access != duckdb::MappedFileAccess::NORMAL) {
-    mapping->Advise(access);
-  }
-  return std::make_unique<InputFile>(std::move(mapping));
-}
 
 duckdb::unique_ptr<duckdb::FileHandle> OpenWhole(duckdb::FileSystem& fs,
                                                  const std::string& path) {
   duckdb::OpenFileInfo file{path};
-  if (StorageKindOf(path) == StorageKind::Remote) {
+  if (duckdb::DatabaseFileSystem::IsRemote(path)) {
     file.extended_info =
       duckdb::make_shared_ptr<duckdb::ExtendedOpenFileInfo>();
     file.extended_info->options.emplace("force_full_download",
@@ -74,9 +48,41 @@ duckdb::unique_ptr<duckdb::FileHandle> OpenWhole(duckdb::FileSystem& fs,
   return fs.OpenFile(file, duckdb::FileFlags::FILE_FLAGS_READ);
 }
 
+void WriteWhole(duckdb::FileSystem& fs, const std::string& path,
+                std::string_view content, bool durable) {
+  const auto target = durable ? absl::StrCat(path, ".tmp") : path;
+  fs.TryRemoveFile(target);
+  {
+    const auto handle =
+      fs.OpenFile(target, duckdb::FileFlags::FILE_FLAGS_WRITE |
+                            duckdb::FileFlags::FILE_FLAGS_FILE_CREATE |
+                            duckdb::FileFlags::FILE_FLAGS_PRIVATE);
+    handle->Write(duckdb::QueryContext{}, const_cast<char*>(content.data()),
+                  content.size(), 0);
+    if (durable) {
+      handle->Sync();
+    }
+    handle->Close();
+  }
+  if (!durable) {
+    return;
+  }
+  absl::Cleanup drop_temp = [&]() noexcept {
+    try {
+      fs.TryRemoveFile(target);
+    } catch (const std::exception& e) {
+      SDB_WARN(GENERAL, "could not remove '", target,
+               "': ", duckdb::ErrorData{e}.RawMessage());
+    }
+  };
+  fs.MoveFile(target, path);
+  std::move(drop_temp).Cancel();
+  fs.SyncDirectory(fs.JoinPath(path, ".."));
+}
+
 void ForEach(duckdb::DatabaseInstance& db, std::string_view root, size_t count,
              absl::FunctionRef<void(size_t)> visit) {
-  if (StorageKindOf(root) != StorageKind::Remote || count < 2) {
+  if (count < 2 || !duckdb::DatabaseFileSystem::IsRemote(root)) {
     for (size_t i = 0; i != count; ++i) {
       visit(i);
     }
@@ -85,8 +91,7 @@ void ForEach(duckdb::DatabaseInstance& db, std::string_view root, size_t count,
   duckdb::TaskExecutor executor{duckdb::TaskScheduler::GetScheduler(db),
                                 duckdb::TaskSchedulerType::ASYNC};
   for (size_t i = 0; i != count; ++i) {
-    executor.ScheduleTask(duckdb::make_uniq<duckdb::FunctionExecutorTask>(
-      executor, [visit, i] { visit(i); }, "StorageForEach"));
+    executor.ScheduleTask([visit, i] { visit(i); }, "StorageForEach");
   }
   executor.WorkOnTasks();
 }

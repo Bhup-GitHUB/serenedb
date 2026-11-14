@@ -32,6 +32,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <duckdb/common/local_file_system.hpp>
+#include <iresearch/store/storage.hpp>
 #include <iresearch/utils/assert.hpp>
 #include <iresearch/utils/crash_handler.hpp>
 #include <iresearch/utils/log.hpp>
@@ -42,8 +43,6 @@
 
 #define ZLIB_COMPAT
 #include <functable.h>
-
-#include "file_utils.h"
 
 namespace sdb::app {
 namespace {
@@ -77,7 +76,7 @@ void CheckMaxMapCount() {
   if (!fs.FileExists(kPath)) {
     return;
   }
-  const auto s = utils::file_utils::ReadFile(fs, kPath);
+  const auto s = irs::ReadWhole<std::string>(duckdb::QueryContext{}, fs, kPath);
   const auto trimmed = absl::StripAsciiWhitespace(s);
   uint64_t actual = 0;
   if (auto [p, ec] = fast_float::from_chars(

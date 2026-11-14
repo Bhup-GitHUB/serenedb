@@ -20,10 +20,24 @@
 
 #include "index_dir.hpp"
 
+#include <duckdb/common/memory_file_system.hpp>
+#include <duckdb/main/database_file_opener.hpp>
+
 namespace tests {
+namespace {
+
+StorageKind KindOf(std::string_view root) {
+  if (root.starts_with(duckdb::MemoryFileSystem::PREFIX)) {
+    return StorageKind::Memory;
+  }
+  return duckdb::DatabaseFileSystem::IsRemote(root) ? StorageKind::Remote
+                                                    : StorageKind::Local;
+}
+
+}  // namespace
 
 IndexDir::State::~State() {
-  if (kind != irs::StorageKind::Memory) {
+  if (kind != StorageKind::Memory) {
     return;
   }
   try {
@@ -37,30 +51,34 @@ IndexDir::IndexDir(duckdb::DatabaseInstance& db, std::string_view root)
 
 IndexDir::IndexDir(duckdb::DatabaseInstance& db, duckdb::FileSystem& fs,
                    std::string_view root)
-  : _state{std::make_shared<State>(db, fs, std::string{root},
-                                   irs::StorageKindOf(root),
+  : _state{std::make_shared<State>(db, fs, std::string{root}, KindOf(root),
                                    std::make_shared<irs::IndexFileRefs>())} {}
 
-std::unique_ptr<irs::FileOutput> IndexDir::Create(std::string_view name) const {
-  return irs::FileOutput::Open(Fs(), Root(), name, _observers, true);
+std::unique_ptr<duckdb::BufferedFileWriter> IndexDir::Create(
+  std::string_view name) const {
+  return irs::OpenOutput(Fs(), Root(), name, _observers, true);
 }
 
-std::unique_ptr<irs::InputFile> IndexDir::Open(
+void IndexDir::Close(duckdb::BufferedFileWriter& out) const {
+  irs::CloseOutput(out, _observers);
+}
+
+duckdb::shared_ptr<duckdb::InputFile> IndexDir::Open(
   std::string_view name, duckdb::MappedFileAccess access) const {
-  return irs::OpenInput(Fs(), irs::PathOf(Root(), name), access);
+  return Fs().OpenInputFile(Fs().JoinPath(Root(), name), access);
 }
 
 irs::bstring IndexDir::ReadWhole(std::string_view name) const {
   return irs::ReadWhole<irs::bstring>(duckdb::QueryContext{}, Fs(),
-                                      irs::PathOf(Root(), name));
+                                      Fs().JoinPath(Root(), name));
 }
 
 bool IndexDir::Has(std::string_view name) const {
-  return Fs().FileExists(irs::PathOf(Root(), name));
+  return Fs().FileExists(Fs().JoinPath(Root(), name));
 }
 
 bool IndexDir::Remove(std::string_view name) const {
-  if (!Fs().TryRemoveFile(irs::PathOf(Root(), name))) {
+  if (!Fs().TryRemoveFile(Fs().JoinPath(Root(), name))) {
     return false;
   }
   for (auto* observer : _observers) {
@@ -70,7 +88,7 @@ bool IndexDir::Remove(std::string_view name) const {
 }
 
 void IndexDir::Rename(std::string_view src, std::string_view dst) const {
-  Fs().MoveFile(irs::PathOf(Root(), src), irs::PathOf(Root(), dst));
+  Fs().MoveFile(Fs().JoinPath(Root(), src), Fs().JoinPath(Root(), dst));
   for (auto* observer : _observers) {
     observer->Renamed(src, dst);
   }
@@ -78,16 +96,22 @@ void IndexDir::Rename(std::string_view src, std::string_view dst) const {
 
 void IndexDir::Sync(std::span<const std::string_view> names) const {
   for (const auto name : names) {
-    Fs().SyncFile(irs::PathOf(Root(), name));
+    Fs().SyncFile(Fs().JoinPath(Root(), name));
   }
 }
 
 void IndexDir::Compact(std::string_view name) const {
-  Fs().Compact(irs::PathOf(Root(), name));
+  Fs().Compact(Fs().JoinPath(Root(), name));
+}
+
+std::vector<std::string> IndexDir::Files() const {
+  return irs::ListIndexFiles(Fs(), Root());
 }
 
 void IndexDir::Visit(absl::FunctionRef<void(std::string_view)> visitor) const {
-  irs::ListIndexFiles(Fs(), Root(), visitor);
+  for (const auto& name : Files()) {
+    visitor(name);
+  }
 }
 
 irs::IndexReaderOptions IndexDir::ReaderOptions(

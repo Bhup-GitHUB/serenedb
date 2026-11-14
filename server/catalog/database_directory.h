@@ -24,7 +24,6 @@
 #include <duckdb/common/file_system.hpp>
 #include <duckdb/common/typedefs.hpp>
 #include <duckdb/storage/storage_extension.hpp>
-#include <filesystem>
 #include <iresearch/utils/containers/flat_hash_set.hpp>
 #include <memory>
 #include <optional>
@@ -40,7 +39,8 @@ inline constexpr std::string_view kCatalogLog = "catalog.wal";
 inline constexpr std::string_view kDataFile = "data.db";
 
 duckdb::FileSystem& StorageFileSystem();
-void CreateDirectory(const std::filesystem::path& path);
+void CreateDirectory(const std::string& path);
+void RemoveTreeOrThrow(const std::string& path);
 bool RemoveTree(const std::string& path) noexcept;
 // While a backup runs, removals of dropped storages wait for ResumeRemovals.
 void DeferRemovals() noexcept;
@@ -84,11 +84,11 @@ class StorageDirectory final {
 
 class DatabaseDirectory final : public duckdb::StorageExtensionInfo {
  public:
-  DatabaseDirectory(duckdb::idx_t oid, std::filesystem::path path,
+  DatabaseDirectory(duckdb::idx_t oid, std::string path,
                     std::string_view tablespace = {});
 
   duckdb::idx_t Oid() const noexcept { return _oid; }
-  const std::filesystem::path& Path() const noexcept { return _path; }
+  const std::string& Path() const noexcept { return _storage->Path(); }
   std::string_view Tablespace() const noexcept { return _tablespace; }
   std::string DataFile() const;
   std::unique_ptr<StorageDirectory> StorageOf(std::string_view tablespace,
@@ -101,7 +101,6 @@ class DatabaseDirectory final : public duckdb::StorageExtensionInfo {
 
  private:
   duckdb::idx_t _oid;
-  std::filesystem::path _path;
   std::string _tablespace;
   std::shared_ptr<StorageDirectory> _storage;
   std::vector<std::string> _tablespaces;

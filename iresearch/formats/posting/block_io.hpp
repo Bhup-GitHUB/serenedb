@@ -21,12 +21,11 @@
 #pragma once
 
 #include <cstring>
+#include <duckdb/common/serializer/write_stream.hpp>
 #include <string_view>
 
 #include "iresearch/formats/posting/block_codec.hpp"
 #include "iresearch/formats/posting/common.hpp"
-#include "iresearch/store/data_input.hpp"
-#include "iresearch/store/data_output.hpp"
 #include "iresearch/types.hpp"
 #include "iresearch/utils/bit_utils.hpp"
 #include "iresearch/utils/system_compiler.hpp"
@@ -69,7 +68,7 @@ const byte_type* FetchStraddling(InputType& in, uint32_t* buf, Prefix&& prefix,
                                  Size&& size) {
   SDB_ASSERT(buf != nullptr);
   auto* const data = reinterpret_cast<byte_type*>(buf);
-  data[0] = in.ReadByte();
+  data[0] = in.template Read<byte_type>();
   data[1] = 0;
   data[2] = 0;
   const uint32_t head = prefix(data[0]);
@@ -88,10 +87,10 @@ const byte_type* FetchStraddling(InputType& in, uint32_t* buf, Prefix&& prefix,
 template<typename InputType, typename Prefix, typename Size>
 IRS_FORCE_INLINE Encoded<InputType> Begin(InputType& in, uint32_t* buf,
                                           Prefix&& prefix, Size&& size) {
-  if constexpr (InputType::kContiguous) {
+  if constexpr (InputType::CONTIGUOUS) {
     return {in.Current(), &in};
-  } else if (const auto window = in.Peek(kEncBytes); !window.empty()) {
-    return {window.data(), &in};
+  } else if (const auto* const window = in.Peek(kEncBytes)) {
+    return {window, &in};
   } else {
     return {FetchStraddling(in, buf, std::forward<Prefix>(prefix),
                             std::forward<Size>(size)),
@@ -112,7 +111,7 @@ IRS_FORCE_INLINE Encoded<InputType> BeginDelta(InputType& in, uint32_t* buf,
 template<typename InputType>
 IRS_FORCE_INLINE void End(Encoded<InputType> encoded,
                           const byte_type* end) noexcept {
-  if constexpr (InputType::kContiguous) {
+  if constexpr (InputType::CONTIGUOUS) {
     PrefetchStream(end);
   }
   if (encoded.in) {
@@ -122,10 +121,10 @@ IRS_FORCE_INLINE void End(Encoded<InputType> encoded,
 
 template<typename InputType, typename Prefix, typename Size>
 IRS_FORCE_INLINE void Pass(InputType& in, Prefix&& prefix, Size&& size) {
-  if constexpr (InputType::kContiguous) {
+  if constexpr (InputType::CONTIGUOUS) {
     in.Consume(size(in.Current()));
-  } else if (const auto window = in.Peek(kEncBytes); !window.empty()) {
-    in.Consume(size(window.data()));
+  } else if (const auto* const window = in.Peek(kEncBytes)) {
+    in.Consume(size(window));
   } else {
     uint32_t buf[kEncWords];
     FetchStraddling(in, buf, std::forward<Prefix>(prefix),
@@ -133,12 +132,13 @@ IRS_FORCE_INLINE void Pass(InputType& in, Prefix&& prefix, Size&& size) {
   }
 }
 
-inline void WriteSlack(DataOutput& out) {
+inline void WriteSlack(duckdb::WriteStream& out) {
   static constexpr byte_type kZeros[block_codec::kInSlack]{};
   out.WriteData(kZeros, sizeof(kZeros));
 }
 
-IRS_FORCE_INLINE inline void WriteTailDelta(uint32_t len, DataOutput& out,
+IRS_FORCE_INLINE inline void WriteTailDelta(uint32_t len,
+                                            duckdb::WriteStream& out,
                                             const uint32_t* in, uint32_t prev,
                                             uint32_t* buf) {
   SDB_ASSERT(1 <= len && len <= kBlock);
@@ -159,7 +159,7 @@ IRS_FORCE_INLINE inline uint32_t EncodeBlock(
 }
 
 IRS_FORCE_INLINE inline void WriteTail(
-  uint32_t len, DataOutput& out, const uint32_t* in, uint32_t* buf,
+  uint32_t len, duckdb::WriteStream& out, const uint32_t* in, uint32_t* buf,
   const block_codec::EncodeOptions& options = {}) {
   SDB_ASSERT(1 <= len && len <= kBlock);
   auto* const bytes = reinterpret_cast<byte_type*>(buf);
@@ -377,7 +377,7 @@ IRS_FORCE_INLINE FillLeaf ReadTailForFill(uint32_t len, InputType& in,
   return leaf;
 }
 
-IRS_FORCE_INLINE inline FillLeaf FillView(BytesViewInput& view,
+IRS_FORCE_INLINE inline FillLeaf FillView(duckdb::MemoryReader& view,
                                           const byte_type*& at, uint32_t len,
                                           uint64_t* holes, uint32_t* out,
                                           uint32_t prev, bool freqs) {

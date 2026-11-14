@@ -27,7 +27,6 @@
 #include <chrono>
 #include <duckdb/common/local_file_system.hpp>
 #include <filesystem>
-#include <iresearch/store/file_output.hpp>
 #include <iresearch/store/index_files.hpp>
 #include <iresearch/utils/duckdb_engine.hpp>
 #include <thread>
@@ -60,7 +59,7 @@ void BmCreateWhileCleaning(benchmark::State& state) {
   for (auto _ : state) {
     for (int i = 0; i != kUnused; ++i) {
       const auto name = absl::StrCat("unused_", round, "_", i);
-      irs::FileOutput::Open(fs, path, name, {}, false)->Close();
+      irs::OpenOutput(fs, path, name, {}, false)->Close();
       refs.add(name);
     }
     absl::Notification started;
@@ -73,7 +72,7 @@ void BmCreateWhileCleaning(benchmark::State& state) {
     started.WaitForNotification();
     absl::SleepFor(absl::FromChrono(kRemoveLatency / 3));
     const auto began = std::chrono::steady_clock::now();
-    irs::FileOutput::Open(fs, path, absl::StrCat("new_", round), tracked, false)
+    irs::OpenOutput(fs, path, absl::StrCat("new_", round), tracked, false)
       ->Close();
     state.SetIterationTime(
       std::chrono::duration<double>(std::chrono::steady_clock::now() - began)

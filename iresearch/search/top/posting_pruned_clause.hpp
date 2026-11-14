@@ -35,7 +35,6 @@ class PostingPrunedClause : public PrunedLeafBase<InputType, false> {
   using Base::_docs;
   using Base::_enc;
   using Base::_freqs;
-  using Base::_hint;
   using Base::_left_in_list;
   using Base::_max_in_leaf;
   using Base::_needs_reposition;
@@ -50,7 +49,7 @@ class PostingPrunedClause : public PrunedLeafBase<InputType, false> {
 
   PostingPrunedClause() = default;
 
-  void Prepare(const PostingMeta& meta, const InputFile& doc_in,
+  void Prepare(const PostingMeta& meta, const duckdb::InputFile& doc_in,
                IndexFeatures layout, const SubReader& segment,
                const TermReader& field, const detail::ScoreArgs& args) {
     _leaf.Single();
@@ -60,7 +59,7 @@ class PostingPrunedClause : public PrunedLeafBase<InputType, false> {
     }
   }
 
-  PostingPrunedClause(const PostingMeta& meta, const InputFile& doc_in,
+  PostingPrunedClause(const PostingMeta& meta, const duckdb::InputFile& doc_in,
                       IndexFeatures layout, const SubReader& segment,
                       const TermReader& field, const detail::ScoreArgs& args) {
     Prepare(meta, doc_in, layout, segment, field, args);
@@ -82,7 +81,7 @@ class PostingPrunedClause : public PrunedLeafBase<InputType, false> {
 
   IRS_FORCE_INLINE void FetchScoreArgs(uint32_t slot) noexcept {
     SDB_ASSERT(slot < kScoreBlock);
-    if constexpr (InputType::kContiguous) {
+    if constexpr (InputType::CONTIGUOUS) {
       if (_lazy != nullptr) {
         DecodeFreqs();
       }
@@ -108,20 +107,20 @@ class PostingPrunedClause : public PrunedLeafBase<InputType, false> {
   void ReadFill(doc_id_t prev) {
     ++_reads;
     auto& in = In();
-    _hint.Advance(in, in.Position());
+    in.Advance();
     const auto len = std::min(_left_in_list, kBlock);
     const auto leaf =
       block_io::ReadTailForFill(len, in, _enc.data, nullptr, _docs, prev);
     _left_in_list -= len;
     const auto* bitset = leaf.bitset;
-    if constexpr (!InputType::kContiguous) {
+    if constexpr (!InputType::CONTIGUOUS) {
       if (leaf.IsBitset()) {
         std::memcpy(std::begin(_docs), leaf.bitset,
                     size_t{leaf.words} * sizeof(uint64_t));
         bitset = reinterpret_cast<const UnalignedWord*>(std::begin(_docs));
       }
     }
-    if constexpr (InputType::kContiguous) {
+    if constexpr (InputType::CONTIGUOUS) {
       _lazy = in.Current();
       block_io::SkipTail(len, in);
     } else {

@@ -70,7 +70,8 @@ class ClusterCatalog final : public duckdb::DuckCatalog {
   void OpenCatalogLog(duckdb::unique_ptr<duckdb::WriteAheadLog> log,
                       bool compactable);
   void MaybeCompactCatalogLog();
-  duckdb::idx_t SnapshotCatalogLog(const std::filesystem::path& link);
+  duckdb::idx_t SnapshotCatalogLog(const std::string& directory,
+                                   std::string_view name);
 
   duckdb::unique_ptr<duckdb::InCatalogEntry> MakeRoleEntry(
     duckdb::CreateRoleInfo& info) final;

@@ -54,6 +54,7 @@ std::vector<Key> RemoveUnused(irs::RefCounter<Key>& refs) {
   refs.RemoveUnused([&](std::span<const Key> unused) {
     removed.assign(unused.begin(), unused.end());
     absl::c_sort(removed);
+    return std::vector<Key>{};
   });
   return removed;
 }
@@ -170,6 +171,7 @@ TEST_F(RefCounterTests, test_ref_counter_waits_only_for_keys_being_removed) {
     refs.RemoveUnused([&](std::span<const int>) {
       removing.Notify();
       proceed.WaitForNotification();
+      return std::vector<int>{};
     });
   });
   removing.WaitForNotification();
@@ -195,11 +197,22 @@ TEST_F(RefCounterTests, test_ref_counter_keeps_keys_a_failed_removal_claimed) {
   refs.add(1);
   refs.add(2);
 
-  ASSERT_THROW(refs.RemoveUnused([](std::span<const int>) {
+  ASSERT_THROW(refs.RemoveUnused([](std::span<const int>) -> std::vector<int> {
     throw std::runtime_error{"injected"};
   }),
                std::runtime_error);
   ASSERT_EQ((std::vector<int>{1, 2}), RemoveUnused(refs));
+  ASSERT_TRUE(RemoveUnused(refs).empty());
+}
+
+TEST_F(RefCounterTests, test_ref_counter_keeps_the_keys_a_removal_returns) {
+  irs::RefCounter<int> refs;
+  refs.add(1);
+  refs.add(2);
+  refs.add(3);
+
+  refs.RemoveUnused([](std::span<const int>) { return std::vector<int>{2}; });
+  ASSERT_EQ(std::vector<int>{2}, RemoveUnused(refs));
   ASSERT_TRUE(RemoveUnused(refs).empty());
 }
 

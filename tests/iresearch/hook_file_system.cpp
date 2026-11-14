@@ -53,23 +53,37 @@ class HookFileWriter final : public duckdb::FileWriter {
                  const std::string& path)
     : _fs{fs}, _inner{std::move(inner)}, _path{path} {}
 
+  ~HookFileWriter() final { HookFileWriter::Abort(); }
+
   duckdb::FileWriteWindow Window() final { return _inner->Window(); }
 
   void Commit(duckdb::idx_t nr_bytes, uint32_t crc32c) final {
     _inner->Commit(nr_bytes, crc32c);
   }
 
+  bool Append(duckdb::const_data_ptr_t data, duckdb::idx_t nr_bytes) final {
+    return _inner->Append(data, nr_bytes);
+  }
+
   void Close() final {
     _fs.OnClose(Name(_path));
     _inner->Close();
+    _settled = true;
   }
 
-  void Abort() noexcept final { _inner->Abort(); }
+  void Abort() noexcept final {
+    if (std::exchange(_settled, true)) {
+      return;
+    }
+    _inner->Abort();
+    _fs.OnAbort(Name(_path));
+  }
 
  private:
   HookFileSystem& _fs;
   duckdb::unique_ptr<duckdb::FileWriter> _inner;
   std::string _path;
+  bool _settled = false;
 };
 
 duckdb::FileHandle& Inner(duckdb::FileHandle& handle) {
@@ -107,21 +121,18 @@ duckdb::unique_ptr<duckdb::MemoryMappedFile> HookFileSystem::MemoryMapFile(
   return _inner.MemoryMapFile(path, flags, options, opener);
 }
 
-duckdb::shared_ptr<duckdb::ExternalFileCacheFile> HookFileSystem::OpenBlockFile(
+duckdb::shared_ptr<duckdb::InputFile> HookFileSystem::OpenBlockFile(
   const std::string& path) {
   OnOpen(Name(path));
   return _inner.OpenBlockFile(path);
 }
 
 duckdb::unique_ptr<duckdb::FileWriter> HookFileSystem::OpenFileWriter(
-  const std::string& path, bool keep_cached) {
+  const std::string& path, bool keep_cached,
+  duckdb::optional_ptr<duckdb::FileOpener> opener) {
   OnCreate(Name(path));
-  auto inner = _inner.OpenFileWriter(path, keep_cached);
-  if (!inner) {
-    return nullptr;
-  }
-  auto writer =
-    duckdb::make_uniq<HookFileWriter>(*this, std::move(inner), path);
+  auto writer = duckdb::make_uniq<HookFileWriter>(
+    *this, _inner.OpenFileWriter(path, keep_cached, opener), path);
   OnCreated(Name(path));
   return writer;
 }

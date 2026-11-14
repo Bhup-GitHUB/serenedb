@@ -25,7 +25,6 @@
 #include "iresearch/formats/posting_meta.hpp"
 #include "iresearch/search/detail/posting_batch.hpp"
 #include "iresearch/search/docs/root.hpp"
-#include "iresearch/store/data_input.hpp"
 #include "iresearch/utils/type_limits.hpp"
 
 namespace irs::docs {
@@ -41,7 +40,7 @@ class Posting : public Root, public detail::PostingBatch<InputType, false> {
   using Base::SkipFreqs;
 
  public:
-  void Prepare(const PostingMeta& meta, const InputFile& doc_in,
+  void Prepare(const PostingMeta& meta, const duckdb::InputFile& doc_in,
                IndexFeatures layout, bool has_score_bounds, bool has_freq) {
     SDB_ASSERT(meta.docs_count > 1, "a single document has its own root");
     this->OpenInput(meta, doc_in, has_score_bounds);

@@ -140,7 +140,7 @@ IndexFileRefs::ref_t LoadNewestIndexMeta(duckdb::DatabaseInstance& db,
                                          MetaPayloadReader payload) {
   IndexFileRefs::ref_t ref;
   while (!ref) {
-    const auto filename = index_meta::LastFile(fs, root);
+    const auto filename = index_meta::LastFile(ListIndexFiles(fs, root));
     if (!filename) {
       return nullptr;
     }

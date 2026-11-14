@@ -23,8 +23,8 @@
 #include <absl/synchronization/mutex.h>
 
 #include <cstdint>
-#include <filesystem>
 #include <optional>
+#include <string>
 #include <string_view>
 
 namespace sdb::backup {
@@ -39,23 +39,21 @@ struct ControlState {
   uint64_t checkpoint = 0;
 };
 
-std::optional<ControlState> ReadPgControl(
-  const std::filesystem::path& data_dir);
-void WritePgControl(const std::filesystem::path& data_dir,
-                    const ControlState& state);
-void EnsurePgVersion(const std::filesystem::path& data_dir);
+std::optional<ControlState> ReadPgControl(const std::string& data_dir);
+void WritePgControl(const std::string& data_dir, const ControlState& state);
+void EnsurePgVersion(const std::string& data_dir);
 
 class PositionSource final {
  public:
   static PositionSource& Instance();
 
-  void Open(const std::filesystem::path& data_dir);
+  void Open(const std::string& data_dir);
   uint64_t SystemIdentifier();
   uint64_t Issue();
 
  private:
   absl::Mutex _mutex;
-  std::filesystem::path _data_dir ABSL_GUARDED_BY(_mutex);
+  std::string _data_dir ABSL_GUARDED_BY(_mutex);
   std::optional<ControlState> _state ABSL_GUARDED_BY(_mutex);
 };
 

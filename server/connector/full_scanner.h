@@ -49,8 +49,8 @@ class FullScanner {
   FullScanner& operator=(const FullScanner&) = delete;
 
   // The exclusive end row this scanner has advanced to (max start_row + count
-  // over Scan calls). The column cursors only move forward, so a Scan below
-  // this row is invalid -- the caller rebuilds the scanner instead (see
+  // over Filter calls). The column cursors only move forward, so a Filter
+  // below this row is invalid -- the caller rebuilds the scanner instead (see
   // ColScanLocalState::StartUnit, where a scan order can hand out units of one
   // segment out of row order).
   uint64_t ScannedEnd() const noexcept { return _scanned_end; }
@@ -61,10 +61,13 @@ class FullScanner {
     return _filters.Empty() ? 0 : _filters.DeadUntil(row);
   }
 
-  duckdb::idx_t Scan(uint64_t start_row, duckdb::idx_t count,
-                     duckdb::DataChunk& output,
-                     const duckdb::SelectionVector* live = nullptr,
-                     duckdb::idx_t live_count = 0);
+  duckdb::idx_t Filter(uint64_t start_row, duckdb::idx_t count,
+                       duckdb::DataChunk& output,
+                       const duckdb::SelectionVector* live = nullptr,
+                       duckdb::idx_t live_count = 0);
+
+  void Project(uint64_t start_row, duckdb::idx_t count, duckdb::idx_t survivors,
+               duckdb::DataChunk& output);
 
   const duckdb::SelectionVector* Selection() const noexcept {
     return _selection;

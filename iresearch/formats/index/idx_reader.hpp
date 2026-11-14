@@ -23,6 +23,7 @@
 #include <cstdint>
 #include <duckdb/common/file_system.hpp>
 #include <duckdb/common/serializer/serialization_traits.hpp>
+#include <duckdb/storage/external_file_cache/external_file_cache.hpp>
 #include <memory>
 #include <string_view>
 #include <utility>
@@ -31,7 +32,6 @@
 #include "iresearch/formats/index/term_dict_meta.hpp"
 #include "iresearch/index/column_info.hpp"
 #include "iresearch/index/index_features.hpp"
-#include "iresearch/store/data_input.hpp"
 #include "iresearch/types.hpp"
 #include "iresearch/utils/bytes_utils.hpp"  // bstring
 #include "iresearch/utils/containers/flat_hash_map.hpp"
@@ -84,10 +84,10 @@ class IdxReader final {
     return std::exchange(_terms, {});
   }
 
-  const InputFile* File() const noexcept { return _file.get(); }
+  const duckdb::InputFile* File() const noexcept { return _file.get(); }
 
  private:
-  std::unique_ptr<InputFile> _file;
+  duckdb::shared_ptr<duckdb::InputFile> _file;
   containers::FlatHashMap<field_id, std::unique_ptr<AnnIndex>> _anns;
   term_dict::TermsMeta _terms;
 };

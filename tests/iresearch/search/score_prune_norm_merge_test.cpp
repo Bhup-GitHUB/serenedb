@@ -113,7 +113,7 @@ class NormField final : public tests::Ifield {
   irs::IndexFeatures GetIndexFeatures() const noexcept final {
     return irs::IndexFeatures::Freq | irs::IndexFeatures::Norm;
   }
-  bool Write(irs::DataOutput& out) const final {
+  bool Write(duckdb::WriteStream& out) const final {
     tests::WriteStr(out, _value);
     return true;
   }
@@ -137,7 +137,7 @@ class IdField final : public tests::Ifield {
   irs::IndexFeatures GetIndexFeatures() const noexcept final {
     return irs::IndexFeatures::None;
   }
-  bool Write(irs::DataOutput& out) const final {
+  bool Write(duckdb::WriteStream& out) const final {
     tests::WriteStr(out, _value);
     return true;
   }

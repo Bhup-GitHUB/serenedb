@@ -132,7 +132,7 @@ struct StoredField {
   irs::IndexFeatures GetIndexFeatures() const {
     return irs::IndexFeatures::None;
   }
-  bool Write(irs::DataOutput& out) const {
+  bool Write(duckdb::WriteStream& out) const {
     tests::WriteStr(out, value_);
     return true;
   }
@@ -211,7 +211,7 @@ TEST_F(SegmentWriterTests, memory_index_store_field_unsorted) {
     std::string_view Value() const { return "true"; }
     std::string_view Name() const { return "indexed_field"; }
     irs::field_id Id() const noexcept { return 1; }
-    bool Write(irs::DataOutput& out) const {
+    bool Write(duckdb::WriteStream& out) const {
       tests::WriteStr(out, std::string_view{"hello"});
       return true;
     }

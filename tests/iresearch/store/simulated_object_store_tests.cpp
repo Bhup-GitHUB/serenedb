@@ -201,11 +201,11 @@ TEST(SimulatedObjectStoreTest, prefixes_list_move_and_remove) {
 TEST(SimulatedObjectStoreTest, index_files_on_the_store) {
   auto& store = tests::ObjectStore();
   tests::IndexDir files{irs::DuckDBEngine::Instance().instance(), Root()};
-  ASSERT_EQ(irs::StorageKind::Remote, files.Kind());
+  ASSERT_EQ(tests::StorageKind::Remote, files.Kind());
   {
     auto out = files.Create("segment");
     for (uint32_t i = 0; i != 100000; ++i) {
-      out->WriteU32(i);
+      out->Write<uint32_t>(i);
     }
     out->Close();
   }
@@ -213,10 +213,10 @@ TEST(SimulatedObjectStoreTest, index_files_on_the_store) {
 
   store.ResetRequests();
   const auto in_file = files.Open("segment", duckdb::MappedFileAccess::NORMAL);
-  ASSERT_FALSE(in_file->Contiguous());
-  irs::IndexInput in{*in_file};
+  ASSERT_FALSE(in_file->IsMapped());
+  duckdb::InputFileReader in{*in_file};
   for (uint32_t i = 0; i != 100000; ++i) {
-    ASSERT_EQ(i, static_cast<uint32_t>(in.ReadI32()));
+    ASSERT_EQ(i, in.Read<uint32_t>());
   }
   EXPECT_LE(store.Requests().get, 2);
 
@@ -241,16 +241,16 @@ TEST(SimulatedObjectStoreTest, files_this_process_wrote_open_without_requests) {
   {
     auto out = files.Create("written");
     for (uint32_t i = 0; i != 100000; ++i) {
-      out->WriteU32(i);
+      out->Write<uint32_t>(i);
     }
     out->Close();
   }
 
   store.ResetRequests();
   const auto in_file = files.Open("written", duckdb::MappedFileAccess::NORMAL);
-  irs::IndexInput in{*in_file};
+  duckdb::InputFileReader in{*in_file};
   for (uint32_t i = 0; i != 100000; ++i) {
-    ASSERT_EQ(i, static_cast<uint32_t>(in.ReadI32()));
+    ASSERT_EQ(i, in.Read<uint32_t>());
   }
   EXPECT_EQ(0, store.Requests().head);
   EXPECT_EQ(0, store.Requests().get);
@@ -264,7 +264,7 @@ TEST(SimulatedObjectStoreTest,
   {
     auto out = files.Create("written");
     for (uint32_t i = 0; i != 100000; ++i) {
-      out->WriteU32(i);
+      out->Write<uint32_t>(i);
     }
     out->Close();
   }
@@ -272,13 +272,13 @@ TEST(SimulatedObjectStoreTest,
   store.ResetRequests();
   const auto in_file = files.Open("written", duckdb::MappedFileAccess::NORMAL);
   EXPECT_EQ(0, store.Requests().head);
-  store.Publish(irs::PathOf(files.Root(), "written"),
+  store.Publish(files.Fs().JoinPath(files.Root(), "written"),
                 std::string(400000, '\0'));
   duckdb::ExternalFileCache::Get(db).SetEnabled(false);
   duckdb::ExternalFileCache::Get(db).SetEnabled(true);
 
-  irs::IndexInput in{*in_file};
-  const auto error = Error([&] { in.ReadI32(); });
+  duckdb::InputFileReader in{*in_file};
+  const auto error = Error([&] { in.Read<uint32_t>(); });
   EXPECT_NE(std::string::npos,
             error.RawMessage().find("changed after it was opened"))
     << error.RawMessage();
@@ -287,7 +287,7 @@ TEST(SimulatedObjectStoreTest,
 TEST(SimulatedObjectStoreTest, for_each_rethrows_what_a_visit_threw) {
   tests::ObjectStore();
   tests::IndexDir files{irs::DuckDBEngine::Instance().instance(), Root()};
-  ASSERT_EQ(irs::StorageKind::Remote, files.Kind());
+  ASSERT_EQ(tests::StorageKind::Remote, files.Kind());
   ASSERT_SQL_ERROR(irs::ForEach(files.Db(), files.Root(), 4,
                                 [](size_t i) {
                                   if (i == 2) {

@@ -28,9 +28,8 @@
 #include <cstdint>
 #include <cstdio>
 #include <duckdb/common/file_system.hpp>
+#include <duckdb/storage/external_file_cache/input_file_reader.hpp>
 #include <iresearch/search/filters/filter_optimizer.hpp>
-#include <iresearch/store/data_input.hpp>
-#include <iresearch/store/file_output.hpp>
 #include <iresearch/store/index_files.hpp>
 #include <iresearch/store/storage.hpp>
 #include <iresearch/utils/duckdb_engine.hpp>
@@ -100,16 +99,14 @@ std::string OpenIndex(std::string_view path, std::string_view memory) {
   constexpr std::string_view kCopy = "memory://search-benchmark-game";
   auto& db = irs::DuckDBEngine::Instance().instance();
   auto& fs = duckdb::FileSystem::GetFileSystem(db);
-  std::vector<std::string> names;
-  irs::ListIndexFiles(fs, path,
-                      [&](std::string_view name) { names.emplace_back(name); });
+  const auto names = irs::ListIndexFiles(fs, path);
   std::vector<irs::byte_type> buffer(1 << 20);
   for (const auto& name : names) {
-    const auto file = irs::OpenInput(fs, irs::PathOf(path, name),
-                                     duckdb::MappedFileAccess::SEQUENTIAL);
-    irs::IndexInput in{*file};
-    auto out = irs::FileOutput::Open(fs, kCopy, name, {}, false);
-    for (auto left = in.Length(); left != 0;) {
+    const auto file = fs.OpenInputFile(fs.JoinPath(path, name),
+                                       duckdb::MappedFileAccess::SEQUENTIAL);
+    duckdb::InputFileReader in{*file};
+    auto out = irs::OpenOutput(fs, kCopy, name, {}, false);
+    for (auto left = file->GetSize(); left != 0;) {
       const auto chunk = std::min<uint64_t>(left, buffer.size());
       in.ReadData(buffer.data(), chunk);
       out->WriteData(buffer.data(), chunk);
@@ -117,7 +114,7 @@ std::string OpenIndex(std::string_view path, std::string_view memory) {
     }
     out->Close();
     if (memory == "compacted") {
-      fs.Compact(irs::PathOf(kCopy, name));
+      fs.Compact(fs.JoinPath(kCopy, name));
     }
   }
   return std::string{kCopy};

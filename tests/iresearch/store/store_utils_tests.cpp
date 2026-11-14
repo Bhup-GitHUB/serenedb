@@ -21,7 +21,7 @@
 /// @author Vasiliy Nabatchikov
 ////////////////////////////////////////////////////////////////////////////////
 
-#include <iresearch/utils/bytes_output.hpp>
+#include <duckdb/common/serializer/memory_stream.hpp>
 #include <iresearch/utils/bytes_utils.hpp>
 #include <unordered_set>
 
@@ -32,31 +32,29 @@ using namespace irs;
 
 namespace tests::detail {
 
-using irs::DataOutput;
-using irs::IndexInput;
-
 template<typename T>
 void ReadWriteCore(const std::vector<T>& src,
-                   const std::function<T(IndexInput&)>& reader,
-                   const std::function<void(DataOutput&, T)>& writer) {
-  irs::BytesOutput out;
+                   const std::function<T(duckdb::InputFileReader&)>& reader,
+                   const std::function<void(duckdb::WriteStream&, T)>& writer) {
+  duckdb::MemoryStream out;
   std::for_each(src.begin(), src.end(),
                 [&out, &writer](const T& v) { writer(out, v); });
 
-  IndexInput in{out.Bytes()};
+  duckdb::InputFileReader in{irs::bytes_view{out.GetData(), out.GetPosition()}};
   std::for_each(src.begin(), src.end(),
                 [&in, &reader](const T& v) { ASSERT_EQ(v, reader(in)); });
 }
 
 // Since NaN != NaN according to the ieee754
 template<typename T>
-void ReadWriteCoreNan(const std::function<T(IndexInput&)>& reader,
-                      const std::function<void(DataOutput&, T)>& writer) {
-  irs::BytesOutput out;
+void ReadWriteCoreNan(
+  const std::function<T(duckdb::InputFileReader&)>& reader,
+  const std::function<void(duckdb::WriteStream&, T)>& writer) {
+  duckdb::MemoryStream out;
   writer(out, std::numeric_limits<T>::quiet_NaN());
   writer(out, std::numeric_limits<T>::signaling_NaN());
 
-  IndexInput in{out.Bytes()};
+  duckdb::InputFileReader in{irs::bytes_view{out.GetData(), out.GetPosition()}};
   ASSERT_TRUE(std::isnan(reader(in)));
   ASSERT_TRUE(std::isnan(reader(in)));
 }
@@ -64,13 +62,12 @@ void ReadWriteCoreNan(const std::function<T(IndexInput&)>& reader,
 template<typename T>
 void VencodeFromArray(T expected_value, size_t expected_length) {
   ASSERT_EQ(expected_length, irs::bytes_io<T>::vsize(expected_value));
-  irs::byte_type buf[irs::bytes_io<T>::kMaxVSize]{};
+  irs::byte_type buf[duckdb::EncodingUtil::MaxLEB128Size<T>()]{};
 
   // write data
   {
-    auto* ptr = buf;
-    irs::WriteVarint<T>(expected_value, ptr);
-    ASSERT_EQ(expected_length, std::distance(buf, ptr));
+    ASSERT_EQ(expected_length,
+              duckdb::EncodingUtil::EncodeUnsignedLEB128(buf, expected_value));
   }
 
   // read data
@@ -169,8 +166,12 @@ TEST(store_utils_tests, zvdouble_read_write) {
                                             tests::WriteZvdouble);
 }
 
-static void WriteSize(DataOutput& out, size_t size) { out.WriteU64(size); }
-static size_t ReadSize(IndexInput& in) { return in.ReadI64(); }
+static void WriteSize(duckdb::WriteStream& out, size_t size) {
+  out.Write<uint64_t>(size);
+}
+static size_t ReadSize(duckdb::InputFileReader& in) {
+  return in.Read<uint64_t>();
+}
 
 TEST(store_utils_tests, size_read_write) {
   static_assert(sizeof(uint64_t) == sizeof(size_t));
@@ -198,7 +199,7 @@ TEST(store_utils_tests, zvint_read_write) {
       -911728376,
       -10725017,
     },
-    irs::ReadZV32<IndexInput>, irs::WriteZV32);
+    irs::ReadZV32<duckdb::InputFileReader>, irs::WriteZV32);
 }
 
 TEST(store_utils_tests, std_string_read_write) {
@@ -211,7 +212,8 @@ TEST(store_utils_tests, std_string_read_write) {
       std::string("lazy p1230142hlds"),
       std::string("dob  sdofjasoufdsa"),
     },
-    irs::ReadString<std::string, IndexInput>, tests::WriteStr<std::string>);
+    irs::ReadString<std::string, duckdb::InputFileReader>,
+    tests::WriteStr<std::string>);
 }
 
 TEST(store_utils_tests, bytes_read_write) {
@@ -223,5 +225,6 @@ TEST(store_utils_tests, bytes_read_write) {
       bstring(irs::ViewCast<byte_type>(std::string_view("102174174010"))),
       bstring(irs::ViewCast<byte_type>(std::string_view("0182ljdskfaof"))),
     },
-    irs::ReadString<bstring, IndexInput>, tests::WriteStr<bstring>);
+    irs::ReadString<bstring, duckdb::InputFileReader>,
+    tests::WriteStr<bstring>);
 }

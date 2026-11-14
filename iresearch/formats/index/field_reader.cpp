@@ -22,6 +22,7 @@
 
 #include <absl/algorithm/container.h>
 
+#include <duckdb/storage/external_file_cache/input_file_reader.hpp>
 #include <limits>
 #include <string_view>
 #include <utility>
@@ -46,7 +47,9 @@ bytes_view FieldReader::Load(uint64_t offset, uint64_t size) {
   auto& copy = it->second;
   if (inserted) {
     copy = _buffers->GetBufferAllocator().Allocate(size);
-    IndexInput{*_in}.ReadData(offset, copy.get(), size);
+    duckdb::InputFileReader in{*_in};
+    in.Seek(offset);
+    in.ReadData(copy.get(), size);
   }
   SDB_ASSERT(copy.GetSize() == size);
   return {copy.get(), size};
@@ -90,9 +93,10 @@ void FieldReader::FillCopies() {
     }
     _in->Prefetch(begin, end - begin);
   }
-  IndexInput in{*_in};
+  duckdb::InputFileReader in{*_in};
   for (const auto& copy : _pending) {
-    in.ReadData(copy.offset, copy.data, copy.size);
+    in.Seek(copy.offset);
+    in.ReadData(copy.data, copy.size);
   }
   _pending.clear();
   _pending.shrink_to_fit();
@@ -146,7 +150,7 @@ void FieldReader::Bind(const TermsMeta& terms) {
     Corrupted("inline starts");
   }
   if (_inline_size != 0) {
-    if (InlineEnd() > _in->Length() || _in->Length() - InlineEnd() < kSlack) {
+    if (InlineEnd() > _in->GetSize() || _in->GetSize() - InlineEnd() < kSlack) {
       Corrupted("inline postings");
     }
     _inline_pages =
@@ -167,7 +171,7 @@ void FieldReader::prepare(const ReaderState& state) {
     return;
   }
 
-  _base = _in->Span().data();
+  _base = _in->Data();
   _buffers = &duckdb::BufferManager::GetBufferManager(state.db);
   const auto& heads = terms.fields;
   if (!heads.empty()) {

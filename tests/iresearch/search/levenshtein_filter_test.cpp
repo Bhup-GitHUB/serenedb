@@ -519,7 +519,7 @@ TEST_P(ByEditDistanceTestCase, bm25) {
         irs::IndexFeatures::Freq | irs::IndexFeatures::Norm;
     }
 
-    bool Write(irs::DataOutput&) const noexcept final { return true; }
+    bool Write(duckdb::WriteStream&) const noexcept final { return true; }
 
     irs::analysis::Tokenizer& GetTokens() const final { return *_analyzer; }
 

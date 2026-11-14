@@ -124,7 +124,7 @@ struct TextField {
     return kTextIndexFeatures;
   }
 
-  bool Write(irs::DataOutput& out) const;
+  bool Write(duckdb::WriteStream& out) const;
 };
 
 struct Document {

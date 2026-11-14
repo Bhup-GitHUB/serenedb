@@ -22,6 +22,7 @@
 
 #include <cstdint>
 #include <duckdb/common/file_system.hpp>
+#include <duckdb/common/serializer/write_stream.hpp>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -30,8 +31,6 @@
 #include "iresearch/formats/index/idx_reader.hpp"
 #include "iresearch/formats/index/term_dict_meta.hpp"
 #include "iresearch/index/column_info.hpp"
-#include "iresearch/store/data_output.hpp"
-#include "iresearch/store/file_output.hpp"
 #include "iresearch/store/index_files.hpp"
 #include "iresearch/types.hpp"
 
@@ -55,7 +54,7 @@ class IdxWriter final {
   IdxWriter(const IdxWriter&) = delete;
   IdxWriter& operator=(const IdxWriter&) = delete;
 
-  DataOutput& BlocksOut();
+  duckdb::WriteStream& BlocksOut();
 
   void AddIvf(field_id id, IvfCentroidMeta meta);
 
@@ -73,7 +72,7 @@ class IdxWriter final {
   std::string _root;
   FileObservers _observers;
   std::string _filename;
-  std::unique_ptr<FileOutput> _out;
+  std::unique_ptr<duckdb::BufferedFileWriter> _out;
   std::vector<IvfCentroidEntry> _ivf_entries;
   std::vector<HnswEntry> _hnsw_entries;
   term_dict::TermsMeta _terms;

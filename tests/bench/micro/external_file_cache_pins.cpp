@@ -31,7 +31,7 @@ namespace {
 constexpr duckdb::idx_t kBlocks = 64;
 constexpr duckdb::idx_t kRangeBlocks = 4;
 
-duckdb::shared_ptr<duckdb::ExternalFileCacheFile> gFile;
+duckdb::shared_ptr<duckdb::InputFile> gFile;
 
 duckdb::ExternalFileCache& Cache() {
   return duckdb::ExternalFileCache::Get(

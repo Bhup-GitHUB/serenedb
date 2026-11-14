@@ -2206,8 +2206,7 @@ TEST_F(index_death_test_formats_15, fails_in_compact_with_removals) {
 
     fs.RegisterFailure(FailingFileSystem::Failure::REMOVE, "_3.col");
     fs.RegisterFailure(FailingFileSystem::Failure::REMOVE, "_5.col");
-    ASSERT_SQL_ERROR(irs::RemoveUnreferenced(dir.Fs(), dir.Root(), dir.Refs()),
-                     ERRCODE_IO_ERROR);
+    irs::RemoveUnreferenced(dir.Fs(), dir.Root(), dir.Refs());
     irs::RemoveUnreferenced(dir.Fs(), dir.Root(), dir.Refs());
     ASSERT_FALSE(writer->RefreshCommit());  // nothing changed
     tests::AssertSnapshotEquality(

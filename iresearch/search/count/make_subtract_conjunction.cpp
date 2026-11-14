@@ -35,7 +35,8 @@ Root::ptr MakeSubtractConjunction(std::span<const detail::PostingClause> terms,
                                   const SubReader& segment,
                                   const Context& ctx) {
   SDB_ASSERT(terms.size() + filters.size() == 2);
-  const InputFile* doc = nullptr;
+  SDB_ASSERT(!ctx.table);
+  const duckdb::InputFile* doc = nullptr;
   if (!detail::WindowTerms(terms, filters, nullptr, doc)) {
     return {};
   }
@@ -46,8 +47,9 @@ Root::ptr MakeSubtractConjunction(std::span<const detail::PostingClause> terms,
     return {};
   }
   return memory::make_managed<Subtract>(
-    MakeSum(MakeTermCount(terms.front()), MakeTermCount(terms.back())),
-    std::move(disjunction));
+    MakeSum(MakeTermCount(terms.front(), ctx.partial),
+            MakeTermCount(terms.back(), ctx.partial)),
+    std::move(disjunction), ctx.partial);
 }
 
 }  // namespace irs::count

@@ -44,8 +44,6 @@
 #include <memory>
 #include <ranges>
 
-#include "server/utils/file_utils.h"
-
 namespace sdb::network::pg::hba {
 namespace {
 
@@ -957,7 +955,7 @@ std::optional<std::string> WriteConfigFile(std::string_view text) {
     SDB_IF_FAILURE("hba_config_write_fails") {
       THROW_SQL_ERROR(ERR_MSG("intentional debug error"));
     }
-    utils::file_utils::ReplaceFile(fs, path, text);
+    irs::WriteWhole(fs, path, text, true);
   } catch (const std::exception& e) {
     return absl::StrCat("could not write hba config file '", path,
                         "': ", duckdb::ErrorData{e}.RawMessage());

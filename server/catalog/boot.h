@@ -25,7 +25,6 @@
 #include <duckdb/common/types.hpp>
 #include <duckdb/main/attached_database.hpp>
 #include <duckdb/storage/storage_extension.hpp>
-#include <filesystem>
 #include <string>
 #include <string_view>
 
@@ -43,14 +42,13 @@ namespace sdb::catalog {
 struct DataDirectory final : duckdb::StorageExtensionInfo {
   explicit DataDirectory(std::string directory);
 
-  std::filesystem::path EngineDir() const;
   std::string CatalogLogFile() const;
-  std::filesystem::path DatabaseDir(duckdb::idx_t oid) const;
-  std::filesystem::path StorageDir(duckdb::idx_t database,
-                                   duckdb::idx_t oid) const;
+  std::string DatabaseDir(duckdb::idx_t oid) const;
+  std::string StorageDir(duckdb::idx_t database, duckdb::idx_t oid) const;
   std::string DatabaseFile(duckdb::idx_t oid) const;
 
   std::string directory;
+  std::string engine;
 };
 
 void RequestSereneDBStorageVersion(duckdb::AttachOptions& options);

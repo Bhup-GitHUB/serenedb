@@ -1,0 +1,62 @@
+# An IVF index whose `.idx` footer was written by a release that still stored the
+# byte sizes of the centroid tree and of the quantizer statistics opens and
+# answers ANN queries, before and after a restart.
+
+control substitution on
+
+statement ok retry $RETRY_ATTEMPTS backoff $BACKOFF_DURATION
+CREATE TABLE lf(id BIGINT PRIMARY KEY, vec FLOAT[3])
+  WITH (storage = 'search', compaction_interval = 0);
+
+statement ok
+CREATE INDEX lf_idx ON lf USING inverted (vec ivf(metric='l2'));
+
+statement ok
+SET sdb_faults = 'ivf_footer_byte_sizes';
+
+statement ok
+INSERT INTO lf VALUES
+  (1, array_value(1::FLOAT, 2::FLOAT, 3::FLOAT)),
+  (2, array_value(10::FLOAT, 10::FLOAT, 10::FLOAT)),
+  (3, array_value(0::FLOAT, 0::FLOAT, 0::FLOAT));
+
+statement ok
+VACUUM (REFRESH_TABLE) lf;
+
+query
+SELECT id FROM lf_idx
+ORDER BY vec <-> array_value(1::FLOAT, 2::FLOAT, 3::FLOAT) LIMIT 2;
+----
+id
+1
+3
+
+statement ok
+SET sdb_faults = 'crash_on_packet';
+
+statement error connection closed
+SELECT 1;
+
+connection after_crash
+query ok retry $RETRY_ATTEMPTS backoff $BACKOFF_DURATION
+SELECT id FROM lf_idx
+ORDER BY vec <-> array_value(1::FLOAT, 2::FLOAT, 3::FLOAT) LIMIT 2;
+----
+id
+1
+3
+
+connection after_crash
+query
+EXPLAIN SELECT id FROM lf_idx
+ORDER BY vec <-> array_value(1::FLOAT, 2::FLOAT, 3::FLOAT) LIMIT 2;
+----
+QUERY PLAN
+╭─ IRESEARCH_SCAN ──────────────────╮
+│ Index: lf_idx                     │
+│ Lookup: search                    │
+│ Score: l2_distance(vec, FLOAT[3]) │
+│ Top: 2                            │
+│ Projections: id                   │
+│ ~3 rows                           │
+╰───────────────────────────────────╯

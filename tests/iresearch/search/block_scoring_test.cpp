@@ -133,9 +133,9 @@ class DelimitedField : public tests::FieldBase {
 
   std::string_view Value() const final { return _value; }
 
-  bool Write(irs::DataOutput& o) const final {
+  bool Write(duckdb::WriteStream& o) const final {
     // TODO(gnusi): fix
-    o.WriteByte(1);
+    o.Write<irs::byte_type>(1);
     return true;
   }
 

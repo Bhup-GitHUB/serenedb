@@ -36,6 +36,7 @@
 #include <duckdb/common/memory_file_system.hpp>
 #include <duckdb/common/path.hpp>
 #include <duckdb/main/attached_database.hpp>
+#include <duckdb/main/database_file_opener.hpp>
 #include <duckdb/main/database_manager.hpp>
 #include <duckdb/parser/parsed_data/alter_table_info.hpp>
 #include <duckdb/parser/parsed_data/drop_info.hpp>
@@ -45,7 +46,6 @@
 #include <duckdb/transaction/duck_transaction_manager.hpp>
 #include <duckdb/transaction/meta_transaction.hpp>
 #include <filesystem>
-#include <iresearch/store/storage.hpp>
 #include <iresearch/utils/duckdb_engine.hpp>
 #include <iresearch/utils/log.hpp>
 #include <iresearch/utils/pg/errcodes.hpp>
@@ -147,7 +147,7 @@ class BuiltinTablespaces final : public duckdb::DefaultGenerator {
 
 void ClusterCatalog::Initialize(bool load_builtin) {
   duckdb::DuckCatalog::Initialize(load_builtin);
-  _default_directory = ClusterLayout(GetAttached()).EngineDir().string();
+  _default_directory = ClusterLayout(GetAttached()).engine;
   GetCatalogSet(duckdb::CatalogType::TABLESPACE_ENTRY)
     .SetDefaultGenerator(
       duckdb::make_uniq<BuiltinTablespaces>(*this, _default_directory));
@@ -158,12 +158,15 @@ duckdb::unique_ptr<duckdb::InCatalogEntry> ClusterCatalog::MakeDatabaseEntry(
   if (info.oid == 0) {
     info.oid = GetDatabase().GetDatabaseManager().NextOid();
   }
+  if (info.tablespace_oid == 0) {
+    info.tablespace_oid = pg::kPgDefaultTablespace;
+  }
   const auto& tablespace =
     TablespaceDirectoryOf(transaction, info.tablespace_oid);
-  std::filesystem::path path =
-    irs::StorageKindOf(tablespace) == irs::StorageKind::Remote
-      ? ClusterLayout(GetAttached()).DatabaseDir(info.oid)
-      : std::filesystem::path{tablespace} / absl::StrCat(info.oid);
+  auto path = duckdb::FileSystem::JoinPath(
+    duckdb::DatabaseFileSystem::IsRemote(tablespace) ? _default_directory
+                                                     : tablespace,
+    absl::StrCat(info.oid));
   return duckdb::make_uniq<DatabaseCatalogEntry>(
     *this, info,
     std::make_shared<DatabaseDirectory>(info.oid, std::move(path), tablespace));
@@ -176,9 +179,10 @@ duckdb::unique_ptr<duckdb::InCatalogEntry> ClusterCatalog::MakeTablespaceEntry(
   }
   return duckdb::make_uniq<TablespaceCatalogEntry>(
     *this, info,
-    absl::StrCat(info.location, "/",
-                 backup::PositionSource::Instance().SystemIdentifier(), "/",
-                 kEngineDir));
+    duckdb::FileSystem::JoinPath(
+      info.location,
+      absl::StrCat(backup::PositionSource::Instance().SystemIdentifier()),
+      kEngineDir));
 }
 
 TablespaceCatalogEntry& ClusterCatalog::Tablespace(
@@ -416,7 +420,8 @@ void ClusterCatalog::MaybeCompactCatalogLog() {
 void ClusterCatalog::CompactCatalogLog() {
   auto& storage = GetAttached().GetStorageManager();
   auto& fs = duckdb::FileSystem::Get(GetAttached());
-  const auto path = ClusterLayout(GetAttached()).CatalogLogFile();
+  const auto& layout = ClusterLayout(GetAttached());
+  const auto path = layout.CatalogLogFile();
   const auto rewrite_path = path + ".rewrite";
   fs.TryRemoveFile(rewrite_path);
   auto rewrite =
@@ -451,17 +456,17 @@ void ClusterCatalog::CompactCatalogLog() {
   }
   _live_bytes.store(size, std::memory_order_relaxed);
   try {
-    StorageFileSystem().SyncDirectory(
-      std::filesystem::path{path}.parent_path().string());
+    StorageFileSystem().SyncDirectory(layout.engine);
   } catch (const std::exception& e) {
     SDB_FATAL(GENERAL,
               "catalog log rewrite: ", duckdb::ErrorData{e}.RawMessage());
   }
 }
 
-duckdb::idx_t ClusterCatalog::SnapshotCatalogLog(
-  const std::filesystem::path& link) {
+duckdb::idx_t ClusterCatalog::SnapshotCatalogLog(const std::string& directory,
+                                                 std::string_view name) {
   auto& fs = StorageFileSystem();
+  const auto link = fs.JoinPath(directory, name);
   duckdb::idx_t size = 0;
   {
     auto lock = GetAttached().GetStorageManager().GetCommitLock();
@@ -471,13 +476,12 @@ duckdb::idx_t ClusterCatalog::SnapshotCatalogLog(
     std::filesystem::create_hard_link(log->GetPath(), link, ec);
     if (ec) {
       THROW_SQL_ERROR(ERR_CODE(irs::pg::ErrcodeForFileAccess(ec.value())),
-                      ERR_MSG("could not snapshot the catalog log as \"",
-                              link.string(), "\": ", ec.message()));
+                      ERR_MSG("could not snapshot the catalog log as \"", link,
+                              "\": ", ec.message()));
     }
-    size = fs.OpenFile(link.string(), duckdb::FileFlags::FILE_FLAGS_READ)
-             ->GetFileSize();
+    size = fs.OpenFile(link, duckdb::FileFlags::FILE_FLAGS_READ)->GetFileSize();
   }
-  fs.SyncDirectory(link.parent_path().string());
+  fs.SyncDirectory(directory);
   return size;
 }
 

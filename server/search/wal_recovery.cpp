@@ -88,18 +88,17 @@ void SyncWal(duckdb::AttachedDatabase& db) {
 
 std::optional<MissingStorage> OpenSearchStorages(
   std::span<const duckdb::reference<catalog::SereneDBCatalog>> catalogs) {
+  absl::Mutex mutex;
+  std::optional<MissingStorage> missing;
   duckdb::TaskExecutor executor{duckdb::TaskScheduler::GetScheduler(
                                   irs::DuckDBEngine::Instance().instance()),
                                 duckdb::TaskSchedulerType::ASYNC};
-  absl::Mutex mutex;
-  std::optional<MissingStorage> missing;
   const auto open = [&](const duckdb::CatalogEntry& entry,
                         std::shared_ptr<Store> storage) {
     if (storage->Opened()) {
       return;
     }
-    executor.ScheduleTask(duckdb::make_uniq<duckdb::FunctionExecutorTask>(
-      executor,
+    executor.ScheduleTask(
       [&mutex, &missing, &entry, storage = std::move(storage)] {
         if (storage->Open()) {
           return;
@@ -109,7 +108,7 @@ std::optional<MissingStorage> OpenSearchStorages(
           missing = MissingStorage{.entry = entry, .path = storage->Path()};
         }
       },
-      "SearchOpenStorage"));
+      "SearchOpenStorage");
   };
   for (auto& catalog : catalogs) {
     catalog::ForEachSearchStorage(
@@ -156,13 +155,12 @@ void RecoverSearchStorages(
   for (auto& db : databases) {
     SyncWal(db);
   }
-  duckdb::TaskExecutor executor{duckdb::TaskScheduler::GetScheduler(
-    irs::DuckDBEngine::Instance().instance())};
   std::atomic_size_t replayed{0};
   std::atomic_size_t replayed_tables{0};
+  duckdb::TaskExecutor executor{duckdb::TaskScheduler::GetScheduler(
+    irs::DuckDBEngine::Instance().instance())};
   for (auto& [index, storage] : recovering) {
-    executor.ScheduleTask(duckdb::make_uniq<duckdb::FunctionExecutorTask>(
-      executor,
+    executor.ScheduleTask(
       [&replayed, index = std::move(index), storage]() mutable {
         if (index && (*index)->FinishReplay()) {
           replayed.fetch_add(1, std::memory_order_relaxed);
@@ -172,11 +170,10 @@ void RecoverSearchStorages(
                    "' after WAL replay failed: ", status.message());
         }
       },
-      "SearchFinishReplay"));
+      "SearchFinishReplay");
   }
   for (auto& table : tables) {
-    executor.ScheduleTask(duckdb::make_uniq<duckdb::FunctionExecutorTask>(
-      executor,
+    executor.ScheduleTask(
       [&replayed_tables, table] {
         if (table->FinishReplay()) {
           replayed_tables.fetch_add(1, std::memory_order_relaxed);
@@ -186,7 +183,7 @@ void RecoverSearchStorages(
                    "' after WAL replay failed: ", status.message());
         }
       },
-      "SearchFinishReplay"));
+      "SearchFinishReplay");
   }
   executor.WorkOnTasks();
   for (const auto& db : attached) {

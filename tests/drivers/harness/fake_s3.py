@@ -5,8 +5,8 @@ the x-amz-meta-* metadata a single upload sets, ranged reads, ListObjectsV2,
 server-side copies, single and batched deletes.
 Requests are not authenticated. It counts requests by kind, accepted
 connections and the most part uploads in flight at once; `latency` delays every request, `trickle`
-sends the bodies of reads at that many bytes a second, and the part numbers in `failing_parts` are
-refused with a 500. The next `throttle` requests are refused with 503 SlowDown, and the next
+sends the bodies of reads at that many bytes a second, `hold_read` holds a ranged read in the
+middle of its body, and the part numbers in `failing_parts` are refused with a 500. The next `throttle` requests are refused with 503 SlowDown, and the next
 `drop[kind]` requests of a kind (PUT, COMPLETE_UPLOAD, COPY) take effect but get no response: the
 connection closes, and their keys are listed in `dropped`. `stall(kind, key)` holds the next
 request of a kind (PUT_PART, COPY, DELETE) whose key contains `key` before it takes effect, sets
@@ -211,7 +211,8 @@ class _Handler(Handler):
 
     def _reply(self, status: int, body: bytes = b"",
                headers: dict[str, str] | None = None,
-               content_length: int | None = None, trickle: bool = False) -> None:
+               content_length: int | None = None, trickle: bool = False,
+               held: str | None = None) -> None:
         self.send_response(status)
         for name, value in (headers or {}).items():
             self.send_header(name, value)
@@ -223,6 +224,8 @@ class _Handler(Handler):
         self.end_headers()
         if not body or self.command == "HEAD":
             return
+        if held is not None:
+            body = self._send_held(held, body)
         rate = self.fake.trickle if trickle else 0
         if not rate:
             self.wfile.write(body)
@@ -415,7 +418,7 @@ class _Handler(Handler):
             self._xml(416, "<Error><Code>InvalidRange</Code></Error>")
             return
         headers["Content-Range"] = part[1]
-        self._reply(206, part[0], headers, trickle=True)
+        self._reply(206, part[0], headers, trickle=True, held=key)
 
     def _list(self, bucket: str, query: dict[str, list[str]]) -> None:
         prefix = query.get("prefix", [""])[0]

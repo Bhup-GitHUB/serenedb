@@ -29,7 +29,6 @@
 #include "iresearch/search/queries/prepared_state_visitor.hpp"
 #include "iresearch/search/queries/term_state.hpp"
 #include "iresearch/utils/containers/flat_hash_map.hpp"
-#include "iresearch/utils/file_utils_ext.hpp"
 
 namespace irs {
 namespace {
@@ -69,7 +68,7 @@ class PostingHeads final : public PreparedStateVisitor {
       return;
     }
     for (auto& [file, extents] : _extents) {
-      file->PrefetchExtents(extents);
+      file->Prefetch(extents);
     }
   }
 
@@ -88,21 +87,22 @@ class PostingHeads final : public PreparedStateVisitor {
     if (handles.doc && DocExtent(meta) != 0) {
       ++_lists;
       auto& extents = _extents[handles.doc];
-      extents.push_back({.offset = meta.doc_start, .size = file_utils::kPage});
+      extents.push_back(
+        {.offset = meta.doc_start, .size = duckdb::PageResidency::PAGE_SIZE});
       if (meta.docs_count > doc_limits::kBlockSize) {
         extents.push_back({.offset = meta.doc_start + meta.doc_delta,
-                           .size = file_utils::kPage});
+                           .size = duckdb::PageResidency::PAGE_SIZE});
       }
     }
     if (positions && handles.pos && meta.docs_count != 0) {
       ++_lists;
       _extents[handles.pos].push_back(
-        {.offset = meta.pos_start, .size = file_utils::kPage});
+        {.offset = meta.pos_start, .size = duckdb::PageResidency::PAGE_SIZE});
     }
   }
 
-  containers::FlatHashMap<const InputFile*,
-                          std::vector<duckdb::ExternalFileCacheRange>>
+  containers::FlatHashMap<const duckdb::InputFile*,
+                          std::vector<duckdb::FileRange>>
     _extents;
   uint32_t _lists = 0;
 };

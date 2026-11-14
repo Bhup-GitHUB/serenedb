@@ -43,7 +43,7 @@ struct WildcardField final {
 
   std::string_view Value() const noexcept { return value; }
 
-  bool Write(irs::DataOutput& out) const {
+  bool Write(duckdb::WriteStream& out) const {
     irs::ValueAnalyzer value_analyzer;
     irs::ValueTokens tokens;
     if (value_analyzer.Analyze(*analyzer, tests::ToStringT(value), tokens) &&

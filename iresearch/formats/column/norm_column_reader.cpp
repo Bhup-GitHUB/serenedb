@@ -23,15 +23,13 @@
 #include <algorithm>
 #include <bit>
 
-#include "iresearch/store/data_input.hpp"
-#include "iresearch/utils/file_utils_ext.hpp"
 #include "iresearch/utils/pg/sql_exception_macro.hpp"
 
 namespace irs {
 namespace {
 
 constexpr uint32_t kPageShift =
-  static_cast<uint32_t>(std::countr_zero(file_utils::kPage));
+  static_cast<uint32_t>(std::countr_zero(duckdb::PageResidency::PAGE_SIZE));
 
 }  // namespace
 
@@ -59,18 +57,19 @@ void NormRegion::Corrupt(doc_id_t doc) const {
     ERR_MSG(".col reader: norm exception for doc ", doc, " is missing"));
 }
 
-const byte_type* NormColumnReader::Map(const InputFile& file, uint64_t offset,
-                                       uint64_t size) {
+const byte_type* NormColumnReader::Map(const duckdb::InputFile& file,
+                                       uint64_t offset, uint64_t size) {
   auto pinned = file.Pin(offset, size);
-  if (pinned.pin.IsValid()) {
-    _pins.push_back(std::move(pinned.pin));
+  const auto* const bytes = pinned.Ptr();
+  if (pinned.IsValid()) {
+    _pins.push_back(std::move(pinned));
   }
-  return pinned.bytes.data();
+  return bytes;
 }
 
 NormColumnReader::NormColumnReader(field_id id, const NormColumnMeta& meta,
-                                   const InputFile& file)
-  : _id{id}, _row_count{meta.row_count}, _paged{file.Paged()} {
+                                   const duckdb::InputFile& file)
+  : _file{&file}, _id{id}, _row_count{meta.row_count}, _paged{file.IsPaged()} {
   for (const auto& m : meta.regions) {
     if (m.bits != 0 && m.exceptions != 0) {
       file.Prefetch(m.table_offset,

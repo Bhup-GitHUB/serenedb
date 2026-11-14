@@ -81,7 +81,7 @@ TEST(index_meta_tests, read_write) {
   irs::IndexMeta meta_read;
   std::string payload;
   {
-    const auto segments_file = irs::index_meta::LastFile(dir.Fs(), dir.Root());
+    const auto segments_file = irs::index_meta::LastFile(dir.Files());
     ASSERT_TRUE(segments_file);
     irs::index_meta::Read(dir.Db(), dir.Fs(), dir.Root(), meta_read,
                           *segments_file, [&](duckdb::BinaryDeserializer& in) {
@@ -139,7 +139,7 @@ TEST(index_meta_tests, last_generation) {
     out->Close();
   }
 
-  const auto last_seg_file = irs::index_meta::LastFile(dir.Fs(), dir.Root());
+  const auto last_seg_file = irs::index_meta::LastFile(dir.Files());
   ASSERT_TRUE(last_seg_file);
   EXPECT_EQ("segments_" + std::to_string(max), *last_seg_file);
 }

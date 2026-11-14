@@ -26,11 +26,11 @@
 #include <array>
 #include <bit>
 #include <cstdint>
+#include <duckdb/common/serializer/memory_stream.hpp>
 #include <limits>
 #include <string_view>
 
 #include "iresearch/formats/posting/block_codec.hpp"
-#include "iresearch/store/data_output.hpp"
 #include "iresearch/types.hpp"
 #include "iresearch/utils/assert.hpp"
 #include "iresearch/utils/pg/sql_exception_macro.hpp"
@@ -60,23 +60,9 @@ constexpr uint32_t ColumnWidth(uint32_t max) noexcept {
 
 inline constexpr size_t kMaxRecordBytes = 128;
 
-class RecordOutput final : public DataOutput {
- public:
-  RecordOutput() noexcept {
-    _begin = _pos = _bytes.data();
-    _end = _bytes.data() + _bytes.size();
-  }
-
-  bytes_view View() const noexcept {
-    return {_begin, static_cast<size_t>(_pos - _begin)};
-  }
-  void Clear() noexcept { _pos = _begin; }
-
- private:
-  void Overflow(const byte_type* data, size_t size) final;
-
-  std::array<byte_type, kMaxRecordBytes> _bytes;
-};
+inline bytes_view Written(const duckdb::MemoryStream& stream) noexcept {
+  return {stream.GetData(), stream.GetPosition()};
+}
 
 constexpr uint64_t RecordGroups(uint64_t count) noexcept {
   return (count + kRecordInterval - 1) / kRecordInterval;

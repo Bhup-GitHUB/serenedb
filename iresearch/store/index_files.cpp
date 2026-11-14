@@ -20,9 +20,12 @@
 
 #include "iresearch/store/index_files.hpp"
 
+#include <absl/cleanup/cleanup.h>
+
+#include <duckdb/common/error_data.hpp>
 #include <duckdb/parallel/task_scheduler.hpp>
 
-#include "iresearch/store/storage.hpp"
+#include "iresearch/utils/log.hpp"
 
 namespace irs {
 
@@ -87,24 +90,51 @@ void RefTracker::Clear() {
   _tracked.clear();
 }
 
-void ListIndexFiles(duckdb::FileSystem& fs, std::string_view root,
-                    absl::FunctionRef<void(std::string_view)> visitor) {
+std::unique_ptr<duckdb::BufferedFileWriter> OpenOutput(
+  duckdb::FileSystem& fs, std::string_view root, std::string_view name,
+  const FileObservers& observers, bool keep_cached) {
+  for (auto* observer : observers) {
+    observer->Created(name);
+  }
+  absl::Cleanup abandon = [&] {
+    for (auto* observer : observers) {
+      observer->Removed(name);
+    }
+  };
+  auto path = fs.JoinPath(root, name);
+  auto writer = fs.OpenFileWriter(path, keep_cached);
+  auto out = std::make_unique<duckdb::BufferedFileWriter>(fs, std::move(path),
+                                                          std::move(writer));
+  std::move(abandon).Cancel();
+  return out;
+}
+
+void CloseOutput(duckdb::BufferedFileWriter& out,
+                 const FileObservers& observers) {
+  const auto size = out.Position();
+  out.Close();
+  for (auto* observer : observers) {
+    observer->Written(size);
+  }
+}
+
+std::vector<std::string> ListIndexFiles(duckdb::FileSystem& fs,
+                                        std::string_view root) {
+  std::vector<std::string> files;
   fs.ListFiles(std::string{root},
-               [&](const std::string& name, bool is_directory) {
-                 if (!is_directory) {
-                   visitor(name);
+               [&](duckdb::OpenFileInfo& info) {
+                 if (!duckdb::FileSystem::IsDirectory(info)) {
+                   files.push_back(std::move(info.path));
                  }
-               });
+               },
+               nullptr, {.strict = true});
+  return files;
 }
 
 IndexFileRefs::ref_t Reference(duckdb::FileSystem& fs, std::string_view root,
                                IndexFileRefs& refs, std::string_view name) {
-  const auto path = PathOf(root, name);
-  if (!fs.FileExists(path)) {
-    return nullptr;
-  }
   auto ref = refs.add(name);
-  if (!fs.FileExists(path)) {
+  if (!fs.FileExists(fs.JoinPath(root, name))) {
     return nullptr;
   }
   return ref;
@@ -113,22 +143,41 @@ IndexFileRefs::ref_t Reference(duckdb::FileSystem& fs, std::string_view root,
 void RemoveUnreferenced(duckdb::FileSystem& fs, std::string_view root,
                         IndexFileRefs& refs) {
   refs.RemoveUnused([&](std::span<const std::string> names) {
+    std::vector<std::string> kept;
     if (names.empty()) {
-      return;
+      return kept;
     }
     duckdb::vector<std::string> paths;
     paths.reserve(names.size());
     for (const auto& name : names) {
-      paths.push_back(PathOf(root, name));
+      paths.push_back(fs.JoinPath(root, name));
     }
-    fs.RemoveFiles(paths);
+    try {
+      fs.RemoveFiles(paths);
+      return kept;
+    } catch (const std::exception& e) {
+      SDB_WARN(IRESEARCH, "Failed to remove unreferenced files of '", root,
+               "': ", duckdb::ErrorData{e}.RawMessage());
+    }
+    const auto left = ListIndexFiles(fs, root);
+    const containers::FlatHashSet<std::string_view> present{left.begin(),
+                                                            left.end()};
+    for (const auto& name : names) {
+      if (present.contains(name)) {
+        kept.push_back(name);
+      }
+    }
+    return kept;
   });
 }
 
 void RemoveAllUnreferenced(duckdb::FileSystem& fs, std::string_view root,
-                           IndexFileRefs& refs) {
+                           IndexFileRefs& refs,
+                           std::span<const std::string> files) {
   duckdb::TaskScheduler::BlockingScope blocking;
-  ListIndexFiles(fs, root, [&](std::string_view name) { refs.add(name); });
+  for (const auto& name : files) {
+    refs.add(name);
+  }
   RemoveUnreferenced(fs, root, refs);
 }
 

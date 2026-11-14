@@ -26,6 +26,8 @@
 #include <absl/strings/str_cat.h>
 
 #include <algorithm>
+#include <duckdb/common/serializer/memory_stream.hpp>
+#include <duckdb/common/serializer/write_stream.hpp>
 #include <iostream>
 #include <iresearch/analysis/token_attributes.hpp>
 #include <iresearch/analysis/token_sinks.hpp>
@@ -42,9 +44,7 @@
 #include <iresearch/search/lead/make.hpp>
 #include <iresearch/search/queries/term_state.hpp>
 #include <iresearch/search/scorers/tfidf.hpp>
-#include <iresearch/store/data_output.hpp>
 #include <iresearch/utils/bit_utils.hpp>
-#include <iresearch/utils/bytes_output.hpp>
 #include <iresearch/utils/down_cast.hpp>
 #include <iresearch/utils/type_limits.hpp>
 #include <unordered_set>
@@ -169,9 +169,9 @@ void IndexSegment::compute_features() {}
 
 void IndexSegment::insert_sorted(const Ifield* f) {
   if (f) {
-    irs::BytesOutput out;
+    duckdb::MemoryStream out;
     if (f->Write(out)) {
-      _buf = out.Bytes();
+      _buf = irs::bytes_view{out.GetData(), out.GetPosition()};
       _sort.emplace_back(std::move(_buf), doc(), _empty_count);
       _empty_count = 0;
     } else {
@@ -183,11 +183,11 @@ void IndexSegment::insert_sorted(const Ifield* f) {
 }
 
 void IndexSegment::insert_stored(const Ifield& f) {
-  irs::BytesOutput out;
+  duckdb::MemoryStream out;
   if (!f.Write(out)) {
     return;
   }
-  _buf = out.Bytes();
+  _buf = irs::bytes_view{out.GetData(), out.GetPosition()};
 
   const size_t id = _columns.size();
   EXPECT_LE(id, std::numeric_limits<irs::field_id>::max());

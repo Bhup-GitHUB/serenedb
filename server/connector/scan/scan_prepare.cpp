@@ -30,7 +30,7 @@ namespace sdb::connector {
 const irs::QueryBuilder& EnsureSegmentQuery(ScanGlobalState& g,
                                             ScanLocalState& l,
                                             uint32_t seg_idx) {
-  g.Segment(seg_idx).prepare.Call([&] {
+  g.Segment(seg_idx).prepare.Call(g.remote, [&] {
     irs::PrepareCollector* collector = nullptr;
     if (g.collector) {
       if (l.thread_slot == std::numeric_limits<uint32_t>::max()) {

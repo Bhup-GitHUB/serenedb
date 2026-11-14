@@ -32,7 +32,6 @@
 #include "iresearch/formats/format_utils.hpp"
 #include "iresearch/formats/index_meta_writer.hpp"
 #include "iresearch/formats/segment_meta_reader.hpp"
-#include "iresearch/store/index_files.hpp"
 #include "iresearch/store/storage.hpp"
 #include "iresearch/utils/pg/sql_exception_macro.hpp"
 #include "iresearch/utils/serialization.hpp"
@@ -49,25 +48,24 @@ uint64_t ParseGeneration(std::string_view file,
   return index_gen_limits::invalid();
 }
 
-std::optional<std::string> LastFile(duckdb::FileSystem& fs,
-                                    std::string_view root,
+std::optional<std::string> LastFile(std::span<const std::string> files,
                                     std::string_view prefix) {
   uint64_t max_gen = index_gen_limits::invalid();
-  std::optional<std::string> last;
-  ListIndexFiles(fs, root, [&](std::string_view name) {
+  const std::string* last = nullptr;
+  for (const auto& name : files) {
     if (const uint64_t gen = ParseGeneration(name, prefix); gen > max_gen) {
-      last = name;
+      last = &name;
       max_gen = gen;
     }
-  });
-  return last;
+  }
+  return last ? std::optional{*last} : std::nullopt;
 }
 
 uint64_t ReadFile(duckdb::FileSystem& fs, std::string_view root,
                   std::string_view filename, MetaPayloadReader& payload,
                   std::vector<IndexSegment>* segments) {
   const auto bytes =
-    ReadWhole<bstring>(duckdb::QueryContext{}, fs, PathOf(root, filename));
+    ReadWhole<bstring>(duckdb::QueryContext{}, fs, fs.JoinPath(root, filename));
 
   uint64_t cnt = 0;
   format_utils::ReadFooter(
@@ -116,14 +114,12 @@ uint64_t ParsePendingGeneration(std::string_view file) noexcept {
   return ParseGeneration(file, kPendingPrefix);
 }
 
-std::optional<std::string> LastFile(duckdb::FileSystem& fs,
-                                    std::string_view root) {
-  return LastFile(fs, root, kPrefix);
+std::optional<std::string> LastFile(std::span<const std::string> files) {
+  return LastFile(files, kPrefix);
 }
 
-std::optional<std::string> LastPendingFile(duckdb::FileSystem& fs,
-                                           std::string_view root) {
-  return LastFile(fs, root, kPendingPrefix);
+std::optional<std::string> LastPendingFile(std::span<const std::string> files) {
+  return LastFile(files, kPendingPrefix);
 }
 
 void Read(duckdb::DatabaseInstance& db, duckdb::FileSystem& fs,

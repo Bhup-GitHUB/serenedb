@@ -62,7 +62,7 @@ struct BodyField {
     return irs::IndexFeatures::Freq | irs::IndexFeatures::Norm;
   }
 
-  bool Write(irs::DataOutput&) const { return true; }
+  bool Write(duckdb::WriteStream&) const { return true; }
 
   std::string value;
   mutable irs::analysis::DelimitedTokenizer stream{" "};

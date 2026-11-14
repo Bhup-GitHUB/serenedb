@@ -102,8 +102,9 @@ std::string StorageRoot(duckdb::AttachedDatabase& database,
                         const catalog::StorageDirectory* storage,
                         duckdb::idx_t id, bool is_new) {
   if (database.GetStorageManager().InMemory()) {
-    return absl::StrCat(duckdb::MemoryFileSystem::PREFIX, database.oid, "/",
-                        id);
+    return duckdb::FileSystem::JoinPath(
+      absl::StrCat(duckdb::MemoryFileSystem::PREFIX, database.oid),
+      absl::StrCat(id));
   }
   SDB_ASSERT(storage);
   if (is_new) {

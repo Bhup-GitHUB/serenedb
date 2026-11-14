@@ -28,6 +28,7 @@
 #include <duckdb/common/file_system.hpp>
 #include <duckdb/main/database.hpp>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 
@@ -43,11 +44,9 @@ uint64_t ParseGeneration(std::string_view file) noexcept;
 
 uint64_t ParsePendingGeneration(std::string_view file) noexcept;
 
-std::optional<std::string> LastFile(duckdb::FileSystem& fs,
-                                    std::string_view root);
+std::optional<std::string> LastFile(std::span<const std::string> files);
 
-std::optional<std::string> LastPendingFile(duckdb::FileSystem& fs,
-                                           std::string_view root);
+std::optional<std::string> LastPendingFile(std::span<const std::string> files);
 
 void Read(duckdb::DatabaseInstance& db, duckdb::FileSystem& fs,
           std::string_view root, IndexMeta& meta, std::string_view filename,

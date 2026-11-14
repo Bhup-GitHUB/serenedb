@@ -63,7 +63,6 @@
 #include <duckdb/storage/storage_manager.hpp>
 #include <duckdb/storage/write_ahead_log.hpp>
 #include <duckdb/transaction/meta_transaction.hpp>
-#include <filesystem>
 #include <iresearch/utils/assert.hpp>
 #include <iresearch/utils/pg/errcodes.hpp>
 #include <iresearch/utils/pg/sql_exception_macro.hpp>
@@ -108,13 +107,13 @@ std::string_view StorageKind(const duckdb::CatalogEntry& entry) {
                                                         : "inverted index";
 }
 
-void RefuseTablespace(const std::filesystem::path& directory,
+void RefuseTablespace(const std::string& directory,
                       const duckdb::CatalogEntry& entry,
                       duckdb::idx_t tablespace) {
   if (tablespace != 0) {
     THROW_SQL_ERROR(
       ERR_CODE(ERRCODE_FEATURE_NOT_SUPPORTED),
-      ERR_MSG("cannot attach \"", directory.string(),
+      ERR_MSG("cannot attach \"", directory,
               "\" read-only: ", StorageKind(entry), " \"",
               entry.name.GetIdentifierName(), "\" is placed in a tablespace"));
   }
@@ -663,7 +662,7 @@ void SereneDBCatalog::FinalizeLoad(
   }
   SDB_ASSERT(context);
   const auto& path = _directory->Path();
-  const auto log_path = (path.parent_path() / kCatalogLog).string();
+  const auto log_path = duckdb::FileSystem::JoinPath(path, "..", kCatalogLog);
   _catalog_log_lock =
     duckdb::FileSystem::Get(GetAttached())
       .OpenFile(log_path, duckdb::FileFlags::FILE_FLAGS_READ |
@@ -702,7 +701,7 @@ void SereneDBCatalog::OpenStorages() {
   if (GetAttached().IsReadOnly()) {
     THROW_SQL_ERROR(
       ERR_CODE(ERRCODE_UNDEFINED_FILE),
-      ERR_MSG("cannot attach \"", _directory->Path().string(),
+      ERR_MSG("cannot attach \"", _directory->Path(),
               "\" read-only: the files of ", StorageKind(entry), " \"", name,
               "\" are missing"),
       ERR_HINT("A database created in a tablespace on an object store keeps "

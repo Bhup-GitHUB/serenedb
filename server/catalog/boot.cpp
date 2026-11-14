@@ -44,7 +44,6 @@
 #include <duckdb/storage/storage_manager.hpp>
 #include <duckdb/storage/write_ahead_log.hpp>
 #include <duckdb/transaction/duck_transaction_manager.hpp>
-#include <filesystem>
 #include <iresearch/utils/duckdb_engine.hpp>
 #include <iresearch/utils/log.hpp>
 #include <span>
@@ -87,6 +86,15 @@ std::vector<StorageEntry> ListStoragesOrDie(const std::string& directory) {
     return ListStorages(directory);
   } catch (const std::exception& e) {
     SDB_FATAL(STARTUP, "cannot list '", directory,
+              "': ", duckdb::ErrorData{e}.RawMessage());
+  }
+}
+
+bool HoldsFilesOrDie(const StorageEntry& entry) {
+  try {
+    return HoldsFiles(entry);
+  } catch (const std::exception& e) {
+    SDB_FATAL(STARTUP, "cannot list '", entry.path,
               "': ", duckdb::ErrorData{e}.RawMessage());
   }
 }
@@ -190,7 +198,8 @@ void ApplyMissingDatabasePolicy(const DatabaseCatalogEntry& database) {
 }  // namespace
 
 DataDirectory::DataDirectory(std::string directory_p)
-  : directory{std::move(directory_p)} {}
+  : directory{std::move(directory_p)},
+    engine{duckdb::FileSystem::JoinPath(directory, kEngineDir)} {}
 
 void RequestSereneDBStorageVersion(duckdb::AttachOptions& options) {
   static_assert(
@@ -203,25 +212,22 @@ void RequestSereneDBStorageVersion(duckdb::AttachOptions& options) {
       duckdb::StorageVersion::SERENEDB_LATEST)};
 }
 
-std::filesystem::path DataDirectory::EngineDir() const {
-  return std::filesystem::path{directory} / kEngineDir;
-}
-
 std::string DataDirectory::CatalogLogFile() const {
-  return (EngineDir() / kCatalogLog).string();
+  return duckdb::FileSystem::JoinPath(engine, kCatalogLog);
 }
 
-std::filesystem::path DataDirectory::DatabaseDir(duckdb::idx_t oid) const {
-  return EngineDir() / absl::StrCat(oid);
+std::string DataDirectory::DatabaseDir(duckdb::idx_t oid) const {
+  return duckdb::FileSystem::JoinPath(engine, absl::StrCat(oid));
 }
 
-std::filesystem::path DataDirectory::StorageDir(duckdb::idx_t database,
-                                                duckdb::idx_t oid) const {
-  return DatabaseDir(database) / absl::StrCat(oid);
+std::string DataDirectory::StorageDir(duckdb::idx_t database,
+                                      duckdb::idx_t oid) const {
+  return duckdb::FileSystem::JoinPath(engine, absl::StrCat(database),
+                                      absl::StrCat(oid));
 }
 
 std::string DataDirectory::DatabaseFile(duckdb::idx_t oid) const {
-  return (DatabaseDir(oid) / kDataFile).string();
+  return duckdb::FileSystem::JoinPath(engine, absl::StrCat(oid), kDataFile);
 }
 
 void Attach(duckdb::ClientContext& context, duckdb::AttachInfo& info,
@@ -285,7 +291,7 @@ void RegisterClusterStorage(duckdb::DBConfig& config,
 void InitCatalog(std::string_view directory) {
   const DataDirectory layout{std::string{directory}};
   StorageFileSystem().CreateDirectoryExtended(
-    layout.EngineDir().native(),
+    layout.engine,
     {.mode = duckdb::CreateDirectoryMode::RECURSIVE, .sync = true});
   backup::PrepareDataDirectory(layout);
   auto conn = irs::DuckDBEngine::Instance().CreateConnection();
@@ -293,10 +299,8 @@ void InitCatalog(std::string_view directory) {
   const auto log_path = layout.CatalogLogFile();
   gMissingDatabases.fresh_cluster = !FileExistsOrDie(log_path);
   if (gMissingDatabases.fresh_cluster &&
-      absl::c_any_of(ListStoragesOrDie(layout.EngineDir().string()),
-                     HoldsFiles)) {
-    SDB_FATAL(STARTUP, "'", log_path, "' does not exist, but '",
-              layout.EngineDir().string(),
+      absl::c_any_of(ListStoragesOrDie(layout.engine), HoldsFilesOrDie)) {
+    SDB_FATAL(STARTUP, "'", log_path, "' does not exist, but '", layout.engine,
               "' holds database directories: refusing to start without the "
               "catalog that owns them");
   }
@@ -364,13 +368,12 @@ void InitCatalog(std::string_view directory) {
   for (auto& database : storages) {
     const auto oid = database.catalog.get().GetAttached().oid;
     for (size_t i = 0; i < tablespaces.size(); ++i) {
-      listings.ScheduleTask(duckdb::make_uniq<duckdb::FunctionExecutorTask>(
-        listings,
-        [&listed = database.listed[i],
-         path = absl::StrCat(tablespaces[i], "/", oid)] {
+      listings.ScheduleTask(
+        [&listed = database.listed[i], path = duckdb::FileSystem::JoinPath(
+                                         tablespaces[i], absl::StrCat(oid))] {
           listed = ListStoragesOrDie(path);
         },
-        "SweepStorages"));
+        "SweepStorages");
     }
   }
   std::vector<duckdb::reference<SereneDBCatalog>> catalogs;

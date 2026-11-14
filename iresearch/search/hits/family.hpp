@@ -98,7 +98,7 @@ struct Family {
   template<typename Input, typename Exclude, typename ExcludeArgs>
   static Result MakeExcludedPosting(const Context&, ExcludeArgs&& negated,
                                     const irs::detail::PostingClause& posting,
-                                    const InputFile& doc,
+                                    const duckdb::InputFile& doc,
                                     const SubReader& segment,
                                     const TermReader& own,
                                     const irs::detail::ScoreRecipe& recipe) {

@@ -20,6 +20,7 @@
 
 #pragma once
 
+#include <duckdb/storage/external_file_cache/external_file_cache.hpp>
 #include <limits>
 #include <memory>
 #include <tuple>
@@ -33,7 +34,6 @@
 #include "iresearch/search/probe/impl.hpp"
 #include "iresearch/search/queries/vector_similarity_query.hpp"
 #include "iresearch/search/scorers/score_args.hpp"
-#include "iresearch/store/data_input.hpp"
 #include "iresearch/utils/assert.hpp"
 
 namespace irs::detail {
@@ -43,7 +43,7 @@ struct ClusterFeed {
   bool has_centroids;
 
   using Args =
-    std::tuple<const PostingMeta&, const InputFile&,
+    std::tuple<const PostingMeta&, const duckdb::InputFile&,
                std::unique_ptr<QuantizerReader>, VectorBlockReader, uint32_t>;
 
   Args operator()(size_t c) const {

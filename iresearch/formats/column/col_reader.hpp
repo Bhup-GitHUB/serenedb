@@ -25,6 +25,7 @@
 #include <cstdint>
 #include <duckdb/common/file_system.hpp>
 #include <duckdb/common/serializer/serialization_traits.hpp>
+#include <duckdb/storage/external_file_cache/external_file_cache.hpp>
 #include <memory>
 #include <span>
 #include <string>
@@ -33,7 +34,6 @@
 
 #include "iresearch/formats/column/read_context.hpp"
 #include "iresearch/index/column_info.hpp"
-#include "iresearch/store/data_input.hpp"
 #include "iresearch/types.hpp"
 #include "iresearch/utils/containers/flat_hash_map.hpp"
 
@@ -70,18 +70,12 @@ class ColReader final {
   const NormColumnReader* NormColumn(field_id id) const noexcept;
   ReadContext& Ctx() noexcept { return _ctx; }
 
-  const InputFile* File() const noexcept { return _file.get(); }
-  void PrefetchExtents(
-    std::span<duckdb::ExternalFileCacheRange> extents) const noexcept {
-    if (_file) {
-      _file->PrefetchExtents(extents);
-    }
-  }
+  const duckdb::InputFile* File() const noexcept { return _file.get(); }
   duckdb::DatabaseInstance& Database() const noexcept { return *_db; }
 
  private:
   duckdb::DatabaseInstance* _db;
-  std::unique_ptr<InputFile> _file;
+  duckdb::shared_ptr<duckdb::InputFile> _file;
   ReadContext _ctx;
   std::vector<std::unique_ptr<ColumnReader>> _columns;
   irs::containers::FlatHashMap<field_id, ColumnReader*> _by_id;

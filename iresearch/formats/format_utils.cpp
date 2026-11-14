@@ -22,18 +22,19 @@
 
 #include "format_utils.hpp"
 
+#include <absl/base/internal/endian.h>
+#include <absl/crc/crc32c.h>
 #include <absl/strings/str_cat.h>
 
 #include <duckdb/common/error_data.hpp>
 #include <duckdb/common/exception.hpp>
 #include <duckdb/common/serializer/binary_deserializer.hpp>
 #include <duckdb/common/serializer/binary_serializer.hpp>
-#include <duckdb/common/serializer/memory_stream.hpp>
+#include <duckdb/storage/external_file_cache/input_file_reader.hpp>
 #include <limits>
 
 #include "iresearch/index/file_names.hpp"
-#include "iresearch/store/file_output.hpp"
-#include "iresearch/utils/crc.hpp"
+#include "iresearch/store/index_files.hpp"
 #include "iresearch/utils/pg/sql_exception_macro.hpp"
 
 namespace irs::format_utils {
@@ -42,10 +43,11 @@ namespace {
 constexpr duckdb::field_id_t kFieldDataCrc32c = 0;
 constexpr duckdb::field_id_t kFieldMeta = 1;
 
-void WriteFooterImpl(FileOutput& out, const FooterWriter* write) {
+void WriteFooterImpl(duckdb::BufferedFileWriter& out,
+                     const FooterWriter* write) {
   const uint32_t data_crc32c = out.Checksum();
-  duckdb::MemoryStream footer;
-  duckdb::BinarySerializer serializer{footer};
+  const auto begin = out.Position();
+  duckdb::BinarySerializer serializer{out};
   serializer.Begin();
   serializer.WritePropertyWithDefault<uint32_t>(kFieldDataCrc32c, "data_crc32c",
                                                 data_crc32c, 0);
@@ -53,39 +55,26 @@ void WriteFooterImpl(FileOutput& out, const FooterWriter* write) {
     serializer.WriteObject(kFieldMeta, "meta", *write);
   }
   serializer.End();
-  const auto size = footer.GetPosition();
+  const auto size = out.Position() - begin;
   SDB_ENSURE(size <= std::numeric_limits<uint32_t>::max(), "footer of ", size,
              " bytes does not fit its 32-bit length");
-  out.WriteData(footer.GetData(), size);
-  out.WriteU32(out.Checksum());
-  out.WriteU32(static_cast<uint32_t>(size));
+  out.Write<uint32_t>(out.Checksum());
+  out.Write<uint32_t>(static_cast<uint32_t>(size));
 }
 
-struct BytesFile {
-  uint64_t Length() const noexcept { return bytes.size(); }
-  SpanBytes Pin(uint64_t offset, uint64_t size) const noexcept {
-    return {bytes.substr(offset, size)};
-  }
-  void Prefetch(uint64_t, uint64_t) const noexcept {}
-  void Evict(uint64_t, uint64_t) const noexcept {}
-
-  bytes_view bytes;
-};
-
-template<typename File>
-Footer ReadFooterImpl(const File& file, std::string_view name,
-                      const FooterReader* read) {
-  const auto length = file.Length();
+Footer ReadFooterImpl(const duckdb::InputFileReader& in, uint64_t length,
+                      std::string_view name, const FooterReader* read) {
   if (length < kTrailerLen) {
     THROW_SQL_ERROR(ERR_CODE(ERRCODE_INDEX_CORRUPTED),
                     ERR_MSG("footer: '", name, "' of ", length,
                             " bytes is too short for a trailer"));
   }
   const uint64_t trailer_offset = length - kTrailerLen;
-  const auto trailer = file.Pin(trailer_offset, kTrailerLen);
-  BytesViewInput in{trailer.bytes};
-  const auto footer_expected_crc32c = static_cast<uint32_t>(in.ReadI32());
-  const auto footer_len = static_cast<uint32_t>(in.ReadI32());
+  const auto trailer = in.Pin(trailer_offset, kTrailerLen);
+  const auto footer_expected_crc32c =
+    absl::little_endian::Load32(trailer.Ptr());
+  const auto footer_len =
+    absl::little_endian::Load32(trailer.Ptr() + sizeof(uint32_t));
   if (footer_len > trailer_offset) {
     THROW_SQL_ERROR(
       ERR_CODE(ERRCODE_INDEX_CORRUPTED),
@@ -93,17 +82,23 @@ Footer ReadFooterImpl(const File& file, std::string_view name,
               footer_len, " bytes"));
   }
   Footer footer{.data_len = trailer_offset - footer_len};
-  file.Prefetch(footer.data_len, footer_len);
-  const auto footer_bytes = file.Pin(footer.data_len, footer_len);
-  const auto* footer_data = footer_bytes.bytes.data();
-  Crc32c footer_actual_crc32c;
-  footer_actual_crc32c.process_bytes(footer_data, footer_len);
-  if (footer_actual_crc32c.checksum() != footer_expected_crc32c) {
+  const auto file = in.File();
+  const bool in_trailer_page =
+    footer.data_len / duckdb::PageResidency::PAGE_SIZE ==
+    trailer_offset / duckdb::PageResidency::PAGE_SIZE;
+  if (file && !in_trailer_page) {
+    file->Prefetch(footer.data_len, footer_len);
+  }
+  const auto footer_bytes = in.Pin(footer.data_len, footer_len);
+  const auto* footer_data = footer_bytes.Ptr();
+  if (static_cast<uint32_t>(absl::ComputeCrc32c(
+        {reinterpret_cast<const char*>(footer_data), footer_len})) !=
+      footer_expected_crc32c) {
     THROW_SQL_ERROR(
       ERR_CODE(ERRCODE_INDEX_CORRUPTED),
       ERR_MSG("footer: '", name, "' does not match its checksum"));
   }
-  duckdb::MemoryStream stream{const_cast<byte_type*>(footer_data), footer_len};
+  duckdb::InputFileReader stream{std::span{footer_data, footer_len}};
   duckdb::BinaryDeserializer deserializer{stream};
   try {
     deserializer.Begin();
@@ -123,35 +118,42 @@ Footer ReadFooterImpl(const File& file, std::string_view name,
                             duckdb::ErrorData{e}.RawMessage(),
                             "; it was written by a newer release of SereneDB"));
   }
-  file.Evict(footer.data_len, footer_len);
+  if (file) {
+    file->Evict(footer.data_len, footer_len);
+  }
   return footer;
 }
 
 }  // namespace
 
-void WriteFooter(FileOutput& out) { WriteFooterImpl(out, nullptr); }
+void WriteFooter(duckdb::BufferedFileWriter& out) {
+  WriteFooterImpl(out, nullptr);
+}
 
-void WriteFooter(FileOutput& out, FooterWriter write) {
+void WriteFooter(duckdb::BufferedFileWriter& out, FooterWriter write) {
   WriteFooterImpl(out, &write);
 }
 
-Footer ReadFooter(const InputFile& file, std::string_view name) {
-  return ReadFooterImpl(file, name, nullptr);
+Footer ReadFooter(const duckdb::InputFile& file, std::string_view name) {
+  return ReadFooterImpl(duckdb::InputFileReader{file}, file.GetSize(), name,
+                        nullptr);
 }
 
-Footer ReadFooter(const InputFile& file, std::string_view name,
+Footer ReadFooter(const duckdb::InputFile& file, std::string_view name,
                   FooterReader read) {
-  return ReadFooterImpl(file, name, &read);
+  return ReadFooterImpl(duckdb::InputFileReader{file}, file.GetSize(), name,
+                        &read);
 }
 
 Footer ReadFooter(bytes_view file, std::string_view name, FooterReader read) {
-  return ReadFooterImpl(BytesFile{.bytes = file}, name, &read);
+  return ReadFooterImpl(duckdb::InputFileReader{file}, file.size(), name,
+                        &read);
 }
 
-std::unique_ptr<FileOutput> PrepareOutput(const FlushState& state,
-                                          std::string_view ext) {
-  return FileOutput::Open(state.fs, state.root, FileName(state.name, ext),
-                          state.observers, true);
+std::unique_ptr<duckdb::BufferedFileWriter> PrepareOutput(
+  const FlushState& state, std::string_view ext) {
+  return OpenOutput(state.fs, state.root, FileName(state.name, ext),
+                    state.observers, true);
 }
 
 }  // namespace irs::format_utils

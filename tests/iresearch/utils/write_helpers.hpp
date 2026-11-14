@@ -22,8 +22,8 @@
 
 #include <cmath>
 #include <cstdint>
-#include <iresearch/store/data_input.hpp>
-#include <iresearch/store/data_output.hpp>
+#include <duckdb/common/serializer/write_stream.hpp>
+#include <duckdb/storage/external_file_cache/input_file_reader.hpp>
 #include <iresearch/utils/assert.hpp>
 #include <iresearch/utils/bytes_utils.hpp>
 #include <iresearch/utils/number_utils.hpp>
@@ -43,7 +43,7 @@ template<typename N>
 N ReadVarintBytes(auto& in) {
   N value = 0;
   for (uint32_t shift = 0;; shift += 7) {
-    const byte_type b = in.ReadByte();
+    const auto b = in.template Read<byte_type>();
     value |= static_cast<N>(b & 0x7F) << shift;
     if (b < 0x80) {
       return value;
@@ -55,14 +55,14 @@ uint32_t ReadV32(auto& in) { return ReadVarintBytes<uint32_t>(in); }
 
 uint64_t ReadV64(auto& in) { return ReadVarintBytes<uint64_t>(in); }
 
-inline void WriteZV32(DataOutput& out, int32_t v) {
-  out.WriteV32(irs::ZigZagEncode32(v));
+inline void WriteZV32(duckdb::WriteStream& out, int32_t v) {
+  out.WriteVarint<uint32_t>(irs::ZigZagEncode32(v));
 }
 
 int32_t ReadZV32(auto& in) { return irs::ZigZagDecode32(ReadV32(in)); }
 
-inline void WriteZV64(DataOutput& out, int64_t v) {
-  out.WriteV64(irs::ZigZagEncode64(v));
+inline void WriteZV64(duckdb::WriteStream& out, int64_t v) {
+  out.WriteVarint<uint64_t>(irs::ZigZagEncode64(v));
 }
 
 template<typename StringType>
@@ -75,20 +75,20 @@ StringType ReadString(auto& in) {
 }  // namespace irs
 namespace tests {
 
-uint16_t ReadU16(irs::IndexInput& in);
+uint16_t ReadU16(duckdb::InputFileReader& in);
 
-void WriteZvfloat(irs::DataOutput& out, float_t v);
+void WriteZvfloat(duckdb::WriteStream& out, float_t v);
 
-float_t ReadZvfloat(irs::IndexInput& in);
+float_t ReadZvfloat(duckdb::InputFileReader& in);
 
-void WriteZvdouble(irs::DataOutput& out, double_t v);
+void WriteZvdouble(duckdb::WriteStream& out, double_t v);
 
-double_t ReadZvdouble(irs::IndexInput& in);
+double_t ReadZvdouble(duckdb::InputFileReader& in);
 
 template<typename StringType>
-void WriteStr(irs::DataOutput& out, const StringType& str) {
+void WriteStr(duckdb::WriteStream& out, const StringType& str) {
   SDB_ASSERT(str.size() < std::numeric_limits<uint32_t>::max());
-  out.WriteV32(static_cast<uint32_t>(str.size()));
+  out.WriteVarint<uint32_t>(static_cast<uint32_t>(str.size()));
   out.WriteData(reinterpret_cast<const irs::byte_type*>(str.data()),
                 str.size());
 }

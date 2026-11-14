@@ -24,6 +24,7 @@
 // tests use BLOB-typed cs columns through this thin layer.
 
 #include <atomic>
+#include <duckdb/common/serializer/write_stream.hpp>
 #include <duckdb/common/types/vector.hpp>
 #include <functional>
 #include <iresearch/formats/column/col_reader.hpp>
@@ -33,7 +34,6 @@
 #include <iresearch/index/index_reader.hpp>
 #include <iresearch/index/index_reader_options.hpp>
 #include <iresearch/index/index_writer.hpp>
-#include <iresearch/store/data_output.hpp>
 #include <iresearch/utils/duckdb_engine.hpp>
 #include <iresearch/utils/string.hpp>
 #include <iresearch/utils/type_limits.hpp>
@@ -91,17 +91,17 @@ void AppendBlob(ColumnWriter& cw, doc_id_t doc, bytes_view payload);
 // Append a null entry at `doc`. Same caveat as AppendBlob.
 void AppendNullBlob(ColumnWriter& cw, doc_id_t doc);
 
-// DataOutput that appends bytes to an `irs::bstring`. Used by tests to
+// duckdb::WriteStream that appends bytes to an `irs::bstring`. Used by tests to
 // capture a field's serialised STORE bytes for forwarding to a cs blob
 // column.
-class BstringDataOutput final : public DataOutput {
+class BstringDataOutput final : public duckdb::WriteStream {
  public:
   explicit BstringDataOutput(bstring& buf) noexcept : _buf{&buf} {}
 
  private:
   void Overflow(const byte_type* data, size_t size) final {
     _buf->append(data, size);
-    _offset += size;
+    write_offset += size;
   }
 
   bstring* _buf;
@@ -110,7 +110,7 @@ class BstringDataOutput final : public DataOutput {
 // Serialise `field.Write(out)` bytes and append them as a single BLOB row
 // to the cs column under `cs[id]`. Opens the column on first use, reuses
 // it on subsequent calls. The field type only needs a
-// `bool Write(irs::DataOutput&) const` method.
+// `bool Write(duckdb::WriteStream&) const` method.
 template<typename Field>
 void StoreFieldAt(ColWriter& cs, field_id id, doc_id_t doc,
                   const Field& field) {

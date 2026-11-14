@@ -29,7 +29,6 @@
 #include <duckdb/main/attached_database.hpp>
 #include <duckdb/main/client_context.hpp>
 #include <duckdb/storage/storage_lock.hpp>
-#include <filesystem>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -57,7 +56,7 @@ struct StoreCut {
 };
 
 struct Cut {
-  std::filesystem::path catalog_link;
+  std::string catalog_link;
   duckdb::idx_t catalog_log_size = 0;
   std::vector<DatabaseCut> databases;
   std::vector<StoreCut> stores;
@@ -99,7 +98,7 @@ class BackupSession final {
     ABSL_GUARDED_BY(_mutex);
   std::vector<duckdb::unique_ptr<duckdb::StorageLockKey>> _checkpoint_keys
     ABSL_GUARDED_BY(_mutex);
-  std::filesystem::path _backup_dir ABSL_GUARDED_BY(_mutex);
+  std::string _backup_dir ABSL_GUARDED_BY(_mutex);
   BackupOwner _owner ABSL_GUARDED_BY(_mutex);
   std::string _label_file ABSL_GUARDED_BY(_mutex);
 };
