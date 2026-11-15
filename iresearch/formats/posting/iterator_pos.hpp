@@ -33,6 +33,7 @@ struct DocState {
   const duckdb::InputFile* pay_in;
   const PostingMeta* term_state;
   uint32_t* enc_buf;
+  bool scan = false;
 };
 
 template<typename IteratorTraits, typename InputType>
@@ -141,18 +142,30 @@ class PositionImpl final : public PosAttr {
       if constexpr (IteratorTraits::Offset()) {
         _pay.in = InputType{*state.pay_in};
       }
+      if (state.scan) {
+        _pos.in.ReadAheadUntil(state.pos_in->GetSize(),
+                               duckdb::ReadAheadSteps::SCANNING);
+        if constexpr (IteratorTraits::Offset()) {
+          _pay.in.ReadAheadUntil(state.pay_in->GetSize(),
+                                 duckdb::ReadAheadSteps::SCANNING);
+        }
+      }
     }
-    const auto pos_end =
-      state.term_state->pos_start + PosExtent(*state.term_state);
     _pos.in.Seek(state.term_state->pos_start);
-    _pos.in.ReadAheadUntil(pos_end, duckdb::ReadAheadSteps::SKIPPING);
+    if (!state.scan) {
+      _pos.in.ReadAheadUntil(
+        state.term_state->pos_start + PosExtent(*state.term_state),
+        duckdb::ReadAheadSteps::SKIPPING);
+    }
     _enc_buf = state.enc_buf;
 
     if constexpr (IteratorTraits::Offset()) {
-      const auto pay_end =
-        state.term_state->pay_start + PayExtent(*state.term_state);
       _pay.in.Seek(state.term_state->pay_start);
-      _pay.in.ReadAheadUntil(pay_end, duckdb::ReadAheadSteps::SKIPPING);
+      if (!state.scan) {
+        _pay.in.ReadAheadUntil(
+          state.term_state->pay_start + PayExtent(*state.term_state),
+          duckdb::ReadAheadSteps::SKIPPING);
+      }
     }
     Land(state.term_state->pos_start, state.term_state->pay_start,
          state.term_state->pos_offset);

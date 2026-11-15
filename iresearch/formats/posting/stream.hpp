@@ -68,7 +68,8 @@ class PostingsStream : public TermPostings {
       } else {
         if (!_file_in) {
           _file_in = InputType{doc_in};
-          _file_in.ReadAheadUntil(doc_in.GetSize());
+          _file_in.ReadAheadUntil(doc_in.GetSize(),
+                                  duckdb::ReadAheadSteps::SCANNING);
         }
         _file_in.Seek(meta.doc_start);
         _doc_in = &_file_in;
@@ -88,6 +89,7 @@ class PostingsStream : public TermPostings {
         .pay_in = pay_in,
         .term_state = &meta,
         .enc_buf = _enc_buf,
+        .scan = true,
       };
       _pos.Prepare(state);
     }

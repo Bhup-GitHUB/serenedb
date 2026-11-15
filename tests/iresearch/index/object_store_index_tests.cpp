@@ -38,6 +38,7 @@
 #include <iresearch/formats/ivf/centroids.hpp>
 #include <iresearch/index/index_reader.hpp>
 #include <iresearch/index/index_writer.hpp>
+#include <iresearch/index/merge_writer.hpp>
 #include <iresearch/search/detail/bitset_build.hpp>
 #include <iresearch/search/detail/enc_buf.hpp>
 #include <iresearch/search/filters/boolean_filter.hpp>
@@ -45,6 +46,7 @@
 #include <iresearch/search/filters/prefix_filter.hpp>
 #include <iresearch/search/filters/term_filter.hpp>
 #include <iresearch/search/queries/posting_heads.hpp>
+#include <iresearch/utils/async.hpp>
 #include <iresearch/utils/duckdb_engine.hpp>
 #include <iresearch/utils/index_utils.hpp>
 #include <string>
@@ -919,6 +921,59 @@ TEST(ObjectStoreIndexTest, written_files_read_back_from_their_cache_blocks) {
   DropCachedBlocks(duckdb::ExternalFileCache::Get(Db()));
   ReadValues(dir, checksum);
   EXPECT_NE(0, tests::ObjectStore().Requests().get);
+}
+
+TEST(ObjectStoreIndexTest, a_merge_reads_its_segments_ahead) {
+  constexpr size_t kSegments = 2;
+  constexpr size_t kDocs = 150000;
+  constexpr size_t kWords = 24;
+  constexpr irs::field_id kText = 1;
+  auto& store = tests::ObjectStore();
+  const tests::IndexDir dir{Db(), Root()};
+  {
+    auto writer = tests::IndexWriter::Make(dir, tests::kOmCreate,
+                                           irs::tests::DefaultWriterOptions());
+    tests::Document doc;
+    auto text = std::make_shared<tests::TextField<std::string>>("text");
+    text->id = kText;
+    doc.insert(text);
+    std::string value;
+    for (size_t segment = 0; segment != kSegments; ++segment) {
+      for (size_t i = 0; i != kDocs; ++i) {
+        value.clear();
+        for (size_t word = 0; word != kWords; ++word) {
+          absl::StrAppend(&value, "w", (i * 31 + word * 17) % 5003, " ");
+        }
+        text->value(value);
+        ASSERT_TRUE(tests::Insert(*writer, doc));
+      }
+      ASSERT_TRUE(writer->RefreshCommit());
+    }
+  }
+  const auto restarted = dir.Reopened();
+  const auto reader =
+    tests::OpenReader(restarted, irs::tests::DefaultReaderOptions());
+  ASSERT_EQ(kSegments, reader.size());
+  uint64_t blocks = 0;
+  for (const auto& segment : reader) {
+    const auto* terms = segment.field(kText);
+    ASSERT_NE(nullptr, terms);
+    const auto handles = terms->Handles();
+    for (const auto* file : {handles.doc, handles.pos, handles.pay}) {
+      ASSERT_NE(nullptr, file);
+      blocks += (file->GetSize() + kBlock - 1) / kBlock;
+    }
+  }
+  ASSERT_LT(128, blocks);
+  DropCachedBlocks(duckdb::ExternalFileCache::Get(Db()));
+  store.ResetRequests();
+  const tests::IndexDir merged{Db(), TestEnv::MemoryRoot()};
+  irs::SegmentMeta meta;
+  irs::MergeWriter merger{merged.Db(), merged.Fs(), merged.Root(),
+                          irs::SegmentWriterOptions{}};
+  merger.Reset(reader.begin(), reader.end());
+  ASSERT_TRUE(irs::GetReady(merger.Flush(meta)));
+  EXPECT_LT(store.Requests().get, blocks / 3);
 }
 
 #ifdef SDB_FAULT_INJECTION
