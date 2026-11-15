@@ -54,7 +54,7 @@ Bytes ReadWhole(duckdb::QueryContext context, duckdb::FileSystem& fs,
 void WriteWhole(duckdb::FileSystem& fs, const std::string& path,
                 std::string_view content, bool durable);
 
-void ForEach(duckdb::DatabaseInstance& db, std::string_view root, size_t count,
+void ForEach(duckdb::DatabaseInstance& db, bool remote, size_t count,
              absl::FunctionRef<void(size_t)> visit);
 
 }  // namespace irs

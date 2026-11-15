@@ -285,10 +285,8 @@ TEST(SimulatedObjectStoreTest,
 }
 
 TEST(SimulatedObjectStoreTest, for_each_rethrows_what_a_visit_threw) {
-  tests::ObjectStore();
-  tests::IndexDir files{irs::DuckDBEngine::Instance().instance(), Root()};
-  ASSERT_EQ(tests::StorageKind::Remote, files.Kind());
-  ASSERT_SQL_ERROR(irs::ForEach(files.Db(), files.Root(), 4,
+  ASSERT_SQL_ERROR(irs::ForEach(irs::DuckDBEngine::Instance().instance(),
+                                /*remote=*/true, 4,
                                 [](size_t i) {
                                   if (i == 2) {
                                     THROW_SQL_ERROR(

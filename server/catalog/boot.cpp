@@ -35,6 +35,7 @@
 #include <duckdb/main/database.hpp>
 #include <duckdb/main/database_manager.hpp>
 #include <duckdb/parser/parsed_data/attach_info.hpp>
+#include <iresearch/store/storage.hpp>
 #include <iresearch/utils/duckdb_engine.hpp>
 #include <iresearch/utils/log.hpp>
 #include <memory>
@@ -84,29 +85,38 @@ bool RemoveUnowned(const std::string& directory,
   return removed;
 }
 
-void OpenLive(search::Store& storage, const duckdb::CatalogEntry& entry) {
-  if (!storage.Opened()) {
-    storage.Open();
-  }
-  if (storage.Absent()) {
-    SDB_FATAL(STARTUP, "the directory '", storage.Path(), "' of ",
-              entry.name.GetIdentifierName(), " (oid ", entry.oid,
-              ") is missing");
-  }
+struct LiveStorage {
+  search::Store* storage;
+  const duckdb::CatalogEntry* entry;
+};
+
+void OpenStorages(SereneDBCatalog& catalog, std::vector<LiveStorage>& live) {
+  const auto open = [&](search::Store& storage,
+                        const duckdb::CatalogEntry& entry) {
+    if (!storage.Opened()) {
+      storage.Open();
+    }
+    live.push_back({&storage, &entry});
+  };
+  ForEachSearchStorage(
+    catalog, [&](SearchTableEntry& table) { open(*table.Storage(), table); },
+    [&](InvertedIndexEntry& index) { open(*index.Storage(), index); });
 }
 
-void OpenStorages(SereneDBCatalog& catalog,
-                  absl::flat_hash_set<duckdb::idx_t>& oids) {
-  ForEachSearchStorage(
-    catalog,
-    [&](SearchTableEntry& table) {
-      OpenLive(*table.Storage(), table);
-      oids.insert(table.oid);
-    },
-    [&](InvertedIndexEntry& index) {
-      OpenLive(*index.Storage(), index);
-      oids.insert(index.oid);
-    });
+void RequirePresent(std::span<const LiveStorage> live) {
+  std::vector<uint8_t> absent(live.size());
+  irs::ForEach(
+    irs::DuckDBEngine::Instance().instance(),
+    absl::c_any_of(
+      live, [](const LiveStorage& one) { return one.storage->Remote(); }),
+    live.size(), [&](size_t i) { absent[i] = live[i].storage->Absent(); });
+  for (size_t i = 0; i != live.size(); ++i) {
+    if (absent[i]) {
+      SDB_FATAL(STARTUP, "the directory '", live[i].storage->Path(), "' of ",
+                live[i].entry->name.GetIdentifierName(), " (oid ",
+                live[i].entry->oid, ") is missing");
+    }
+  }
 }
 
 }  // namespace
@@ -205,12 +215,17 @@ void InitCatalog(bool default_database, bool initialized) {
   }
   const auto attached =
     SereneDBDatabases(duckdb::DatabaseManager::Get(instance));
-  absl::flat_hash_set<duckdb::idx_t> live;
+  std::vector<LiveStorage> stores;
   for (const auto& db : attached) {
-    OpenStorages(db->GetCatalog().Cast<SereneDBCatalog>(), live);
+    OpenStorages(db->GetCatalog().Cast<SereneDBCatalog>(), stores);
   }
+  RequirePresent(stores);
   bool removed = true;
   if (!clean) {
+    absl::flat_hash_set<duckdb::idx_t> live;
+    for (const auto& store : stores) {
+      live.insert(store.entry->oid);
+    }
     std::vector<std::string> tablespaces;
     context.RunFunctionInTransaction([&] {
       tablespaces =

@@ -34,6 +34,7 @@
 #include <duckdb/main/database_manager.hpp>
 #include <duckdb/parallel/task_executor.hpp>
 #include <duckdb/parallel/task_scheduler.hpp>
+#include <iresearch/store/storage.hpp>
 #include <iresearch/utils/containers/flat_hash_map.hpp>
 #include <iresearch/utils/duckdb_engine.hpp>
 #include <iresearch/utils/log.hpp>
@@ -104,14 +105,23 @@ bool RecoverSearchStorages(
         tables.push_back(index.Storage());
       });
   }
-  auto& scheduler = duckdb::TaskScheduler::GetScheduler(
-    irs::DuckDBEngine::Instance().instance());
+  auto& db = irs::DuckDBEngine::Instance().instance();
+  if (orphans) {
+    irs::ForEach(
+      db,
+      absl::c_any_of(tables, [](const auto& table) { return table->Remote(); }),
+      tables.size(), [&](size_t i) { tables[i]->ReserveListedIds(); });
+  }
+  auto& scheduler = duckdb::TaskScheduler::GetScheduler(db);
   context.RunFunctionInTransaction([&] {
-    duckdb::TaskExecutor recovery{scheduler};
+    duckdb::TaskExecutor replays{scheduler};
+    duckdb::TaskExecutor remote_opens{scheduler, scheduler.AsyncPool()};
     for (auto& table : tables) {
-      table->ScheduleRecovery(context, recovery, orphans);
+      table->ScheduleRecovery(context, replays,
+                              table->Remote() ? remote_opens : replays);
     }
-    recovery.WorkOnTasks();
+    remote_opens.WorkOnTasks();
+    replays.WorkOnTasks();
   });
   duckdb::TaskExecutor executor{scheduler};
   std::atomic_size_t replayed_tables{0};

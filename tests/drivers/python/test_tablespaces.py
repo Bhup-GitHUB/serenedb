@@ -69,8 +69,7 @@ class _Server:
         return self.log.read_text()
 
 
-CREATE_INDEX = ("CREATE INDEX docs_body ON docs USING inverted(body words) "
-                "TABLESPACE idx")
+CREATE_INDEX = "CREATE INDEX docs_body ON docs USING inverted(body words)"
 
 
 def _create_tablespace(server: _Server, location: str) -> None:
@@ -83,11 +82,22 @@ def _create_index(server: _Server, tablespace: bool = True) -> None:
         conn.execute(
             "CREATE TEXT SEARCH DICTIONARY words AS "
             "split_by_non_alpha(case := 'lower')")
-        conn.execute("CREATE TABLE docs(id INTEGER, body TEXT)")
+        conn.execute("CREATE TABLE docs(id INTEGER, body TEXT)"
+                     + (" TABLESPACE idx" if tablespace else ""))
+        conn.execute(CREATE_INDEX)
         conn.execute(
             "INSERT INTO docs VALUES (1, 'quick brown fox'), (2, 'lazy dog')")
-        conn.execute(CREATE_INDEX if tablespace else
-                     CREATE_INDEX.removesuffix(" TABLESPACE idx"))
+        conn.execute("VACUUM (FLUSH_TABLE) docs")
+
+
+def _create_view_index(conn: psycopg.Connection, source: Path) -> None:
+    conn.execute(
+        "COPY (SELECT 1 AS id, 'quick brown fox' AS body "
+        f"UNION ALL SELECT 2, 'lazy dog') TO '{source}' (FORMAT PARQUET)")
+    conn.execute(
+        f"CREATE VIEW notes_view AS SELECT * FROM read_parquet('{source}')")
+    conn.execute("CREATE INDEX notes ON notes_view USING inverted(id, body) "
+                 "TABLESPACE idx")
 
 
 def _matches(server: _Server) -> list[int]:
@@ -150,7 +160,8 @@ def test_a_database_in_a_tablespace_keeps_its_objects_there(
     datadir = tmp_path / "data"
     home = tmp_path / "home"
     other = tmp_path / "other"
-    names = ["docs", "notes_home", "notes_other", "in_default"]
+    source = tmp_path / "notes.parquet"
+    names = ["docs", "notes", "notes_home", "notes_other", "in_default"]
 
     server = _Server(datadir)
     try:
@@ -159,42 +170,43 @@ def test_a_database_in_a_tablespace_keeps_its_objects_there(
             conn.execute(f"CREATE TABLESPACE home LOCATION '{home}'")
             conn.execute(f"CREATE TABLESPACE other LOCATION '{other}'")
             conn.execute("CREATE DATABASE placed TABLESPACE home")
-            database = conn.execute(
-                "SELECT oid FROM pg_database WHERE datname = 'placed'"
-            ).fetchone()[0]
         with server.connect("placed") as conn:
             conn.execute("CREATE TEXT SEARCH DICTIONARY words AS "
                          "split_text(case := 'lower')")
-            conn.execute("CREATE TABLE docs (id INT, body TEXT) "
-                         "")
+            conn.execute("CREATE TABLE docs (id INT, body TEXT)")
             conn.execute("CREATE TABLE notes (id INT, body TEXT)")
             conn.execute("CREATE INDEX notes_home ON notes "
                          "USING inverted(body words)")
-            conn.execute("CREATE INDEX notes_other ON notes "
-                         "USING inverted(body words) TABLESPACE other")
-            conn.execute("CREATE TABLE in_default (id INT) "
-                         " TABLESPACE pg_default")
             conn.execute("INSERT INTO docs VALUES (1, 'quick brown fox'), "
                          "(2, 'lazy dog')")
             conn.execute("INSERT INTO notes VALUES (1, 'red fox'), "
                          "(2, 'blue whale')")
+            conn.execute("COPY (SELECT id, body FROM notes ORDER BY id) "
+                         f"TO '{source}' (FORMAT PARQUET)")
+            conn.execute("CREATE VIEW notes_view AS "
+                         f"SELECT * FROM read_parquet('{source}')")
+            conn.execute("CREATE INDEX notes_other ON notes_view "
+                         "USING inverted(id, body words) TABLESPACE other")
+            conn.execute("CREATE TABLE in_default (id INT) "
+                         "TABLESPACE pg_default")
+            conn.execute("INSERT INTO in_default VALUES (1)")
             conn.execute("VACUUM (FLUSH_TABLE) docs")
             conn.execute("VACUUM (FLUSH_TABLE) notes")
+            conn.execute("VACUUM (FLUSH_TABLE) in_default")
             assert _placement(conn, names) == {
-                "docs": "", "notes_home": "", "notes_other": "other",
-                "in_default": "pg_default"}
+                "docs": "", "notes": "", "notes_home": "",
+                "notes_other": "other", "in_default": "pg_default"}
             oids = _oids(conn, names)
     finally:
         server.stop()
 
-    in_home = _directory(home) / str(database)
-    assert (in_home / "data.db").is_file()
+    in_home = _directory(home) / "store"
+    in_default = datadir / "engine_v1" / "store" / str(oids["in_default"])
     assert (in_home / str(oids["docs"])).is_dir()
-    assert (in_home / str(oids["notes_home"])).is_dir()
-    assert (_directory(other) / str(database)
-            / str(oids["notes_other"])).is_dir()
-    assert (datadir / "engine_v1" / str(database)
-            / str(oids["in_default"])).is_dir()
+    assert (in_home / str(oids["notes"])).is_dir()
+    assert not (in_home / str(oids["notes_home"])).exists()
+    assert (_directory(other) / "store" / str(oids["notes_other"])).is_dir()
+    assert in_default.is_dir()
 
     again = _Server(datadir)
     try:
@@ -216,9 +228,9 @@ def test_a_database_in_a_tablespace_keeps_its_objects_there(
             conn.execute("DROP TABLESPACE other")
     finally:
         again.stop()
-    assert not any(_directory(home).iterdir())
-    assert not any(_directory(other).iterdir())
-    assert not (datadir / "engine_v1" / str(database)).exists()
+    assert not any(in_home.iterdir())
+    assert not any((_directory(other) / "store").iterdir())
+    assert not in_default.exists()
 
 
 def test_the_tablespace_of_its_database_needs_no_grant(tmp_path: Path) -> None:
@@ -236,16 +248,13 @@ def test_the_tablespace_of_its_database_needs_no_grant(tmp_path: Path) -> None:
         with psycopg.connect(host="127.0.0.1", port=server.port, user="app",
                              password="app_pw", dbname="appdb",
                              autocommit=True) as conn:
-            conn.execute("CREATE TABLE implicit (id INT) "
-                         "")
-            conn.execute("CREATE TABLE explicit (id INT) "
-                         " TABLESPACE home")
+            conn.execute("CREATE TABLE implicit (id INT)")
+            conn.execute("CREATE TABLE explicit (id INT) TABLESPACE home")
             for tablespace in ("other", "pg_default"):
                 with pytest.raises(psycopg.errors.InsufficientPrivilege,
                                    match=f"permission denied for tablespace "
                                          f"{tablespace}"):
                     conn.execute("CREATE TABLE elsewhere (id INT) "
-                                 " "
                                  f"TABLESPACE {tablespace}")
             assert _placement(conn, ["implicit", "explicit"]) == {
                 "implicit": "", "explicit": ""}
@@ -268,7 +277,7 @@ def test_a_database_in_a_tablespace_needs_create_on_it(
                 conn.execute("CREATE DATABASE placed TABLESPACE home")
     finally:
         server.stop()
-    assert not list(home.glob("*/engine_v1/[0-9]*"))
+    assert not list(home.glob("*/engine_v1/store/*"))
 
 
 MINIO = ("MINIO_HOST", "MINIO_PORT", "MINIO_ACCESS_KEY", "MINIO_SECRET_KEY",
@@ -388,13 +397,13 @@ def test_index_files_on_s3(tmp_path: Path, s3_store: _Store) -> None:
             conn.execute("INSERT INTO docs VALUES (3, 'fox again')")
             conn.execute("VACUUM (FLUSH_TABLE) docs")
             conn.execute("CREATE TABLE notes(id INTEGER, body TEXT) "
-                         " TABLESPACE idx")
+                         "TABLESPACE idx")
             conn.execute("INSERT INTO notes VALUES (1, 'kept on s3')")
             conn.execute("CREATE DATABASE placed TABLESPACE idx")
         assert _matches(server) == [1, 3]
     finally:
         server.stop()
-    assert len(list((datadir / "engine_v1").glob("*/data.db"))) == 2, list(
+    assert not any((datadir / "engine_v1" / "store").iterdir()), list(
         datadir.rglob("*"))
 
     again = _Server(datadir)
@@ -408,7 +417,7 @@ def test_index_files_on_s3(tmp_path: Path, s3_store: _Store) -> None:
                 conn.execute("DROP TABLESPACE idx")
             conn.execute("DROP DATABASE placed")
             conn.execute("DROP TABLE notes")
-            conn.execute("DROP INDEX docs_body")
+            conn.execute("DROP TABLE docs")
             conn.execute("DROP TABLESPACE idx")
     finally:
         again.stop()
@@ -431,11 +440,14 @@ def _fill_docs(server: _Server, rows: int) -> None:
         conn.execute(
             "CREATE TEXT SEARCH DICTIONARY words AS "
             "split_by_non_alpha(case := 'lower')")
-        conn.execute("CREATE TABLE docs(id INTEGER, body TEXT)")
+        conn.execute("CREATE TABLE docs(id INTEGER, body TEXT) "
+                     "WITH (compaction_interval = 0) TABLESPACE idx")
+        conn.execute("SET threads = 1")
         conn.execute(
             "INSERT INTO docs SELECT i, concat_ws(' ', 'fox', md5(i::VARCHAR), "
             "md5((i + 1000000)::VARCHAR), md5((i + 2000000)::VARCHAR)) "
             f"FROM range({rows}) t(i)")
+        conn.execute("VACUUM (FLUSH_TABLE) docs")
 
 
 def _large_table(server: _Server, store: _Store, location: str) -> None:
@@ -559,12 +571,12 @@ def test_a_trickling_read_fails_by_its_deadline(tmp_path: Path, kind: str) -> No
                 conn.execute(
                     "CREATE TEXT SEARCH DICTIONARY words AS "
                     "split_by_non_alpha(case := 'lower')")
-                conn.execute("CREATE TABLE docs(id INTEGER, body TEXT)")
+                conn.execute("CREATE TABLE docs(id INTEGER, body TEXT) TABLESPACE idx")
+                conn.execute(CREATE_INDEX)
                 conn.execute(
                     "INSERT INTO docs SELECT i, concat_ws(' ', 'fox', md5(i::VARCHAR)) "
                     "FROM range(30000) t(i)")
-                conn.execute(
-                    CREATE_INDEX)
+                conn.execute("VACUUM (FLUSH_TABLE) docs")
                 conn.execute("SET GLOBAL enable_external_file_cache = false")
                 conn.execute("SET GLOBAL enable_external_file_cache = true")
                 fake.trickle = 2048
@@ -596,15 +608,16 @@ def test_a_read_uses_the_first_block_of_a_request_while_the_rest_arrives(
                 conn.execute(
                     "CREATE TEXT SEARCH DICTIONARY words AS "
                     "split_by_non_alpha(case := 'lower')")
-                conn.execute("CREATE TABLE docs(id INTEGER, body TEXT)")
+                conn.execute("CREATE TABLE docs(id INTEGER, body TEXT) "
+                             "WITH (compaction_interval = 0) TABLESPACE idx")
+                conn.execute(
+                    "CREATE INDEX docs_body ON docs USING inverted(id, body words)")
                 conn.execute("SET threads = 1")
                 conn.execute(
                     "INSERT INTO docs SELECT i, concat_ws(' ', "
                     "CASE WHEN i % 3 <> 0 THEN 'common' END, 'w' || (hash(i) % 5000)) "
                     "FROM range(600000) t(i)")
-                conn.execute(
-                    "CREATE INDEX docs_body ON docs USING inverted(id, body words) "
-                    "WITH (compaction_interval = 0) TABLESPACE idx")
+                conn.execute("VACUUM (FLUSH_TABLE) docs")
                 expected = conn.execute(query).fetchall()
                 conn.execute("SET GLOBAL enable_external_file_cache = false")
                 conn.execute("SET GLOBAL enable_external_file_cache = true")
@@ -645,7 +658,7 @@ def test_reads_refuse_an_object_replaced_after_its_upload(tmp_path: Path) -> Non
             server.stop()
 
 
-def test_a_refresh_opens_the_files_it_wrote_without_a_head(tmp_path: Path) -> None:
+def test_a_flush_opens_the_files_it_wrote_without_a_head(tmp_path: Path) -> None:
     location = f"s3://bucket/written-{tmp_path.name}"
     with FakeS3() as fake:
         server = _Server(tmp_path / "data")
@@ -725,31 +738,39 @@ def test_a_failed_part_aborts_its_upload(tmp_path: Path) -> None:
             server.stop()
 
 
-def test_failed_commit_is_retried(tmp_path: Path) -> None:
+def test_a_failed_flush_keeps_its_rows_and_is_retried(tmp_path: Path) -> None:
     location = f"s3://bucket/retried-{tmp_path.name}"
+    prefix = f"retried-{tmp_path.name}/"
+    datadir = tmp_path / "data"
     with FakeS3() as fake:
-        server = _Server(tmp_path / "data")
+        server = _Server(datadir)
         try:
             assert server.wait_ready(), server.output()
             _create_secret(server, _Store(fake.endpoint, "key", "secret", "bucket"),
                            location)
             _create_index(server)
-            fake.copy_error = "AccessDenied"
+            stored = _index_files(fake, prefix)
+            fake.put_error = "AccessDenied"
             with server.connect() as conn:
                 conn.execute("INSERT INTO docs VALUES (3, 'fox again')")
-                with pytest.raises(psycopg.Error):
+                with pytest.raises(psycopg.Error, match="AccessDenied"):
                     conn.execute("VACUUM (FLUSH_TABLE) docs")
-                with pytest.raises(psycopg.Error,
-                                   match="cannot commit its last refresh"):
-                    conn.execute("CHECKPOINT")
-            assert _matches(server) == [1]
-            fake.copy_error = None
-            with server.connect() as conn:
-                conn.execute("VACUUM (FLUSH_TABLE) docs")
                 conn.execute("CHECKPOINT")
             assert _matches(server) == [1, 3]
+            assert _index_files(fake, prefix) == stored
+            fake.put_error = None
+            with server.connect() as conn:
+                conn.execute("VACUUM (FLUSH_TABLE) docs")
+            assert _matches(server) == [1, 3]
+            assert len(_index_files(fake, prefix)) > len(stored)
         finally:
             server.stop()
+        again = _Server(datadir)
+        try:
+            assert again.wait_ready(), again.output()
+            assert _matches(again) == [1, 3]
+        finally:
+            again.stop()
 
 
 def test_throttled_requests_are_retried(tmp_path: Path) -> None:
@@ -917,25 +938,6 @@ def test_a_lost_marker_response_is_retried(tmp_path: Path, kind: str) -> None:
         fake.dropped
 
 
-def test_a_lost_copy_response_is_retried(tmp_path: Path) -> None:
-    location = f"s3://bucket/copy-{tmp_path.name}"
-    with FakeS3() as fake:
-        server = _Server(tmp_path / "data")
-        try:
-            assert server.wait_ready(), server.output()
-            _create_secret(server, _Store(fake.endpoint, "key", "secret", "bucket"),
-                           location)
-            _create_index(server)
-            fake.drop["COPY"] = 1
-            with server.connect() as conn:
-                conn.execute("INSERT INTO docs VALUES (3, 'fox again')")
-                conn.execute("VACUUM (FLUSH_TABLE) docs")
-            assert _matches(server) == [1, 3]
-        finally:
-            server.stop()
-    assert fake.dropped, fake.requests
-
-
 def test_a_store_down_at_startup_refuses_the_start(tmp_path: Path) -> None:
     location = f"s3://bucket/down-{tmp_path.name}"
     datadir = tmp_path / "data"
@@ -952,7 +954,7 @@ def test_a_store_down_at_startup_refuses_the_start(tmp_path: Path) -> None:
     assert f"/bucket/down-{tmp_path.name}/" in output and "Could not connect" in output, output
 
 
-@pytest.mark.parametrize("kind", ["index", "search_table"])
+@pytest.mark.parametrize("kind", ["table", "index"])
 def test_a_missing_storage_refuses_the_start(tmp_path: Path, kind: str) -> None:
     prefix = f"missing-{tmp_path.name}/"
     datadir = tmp_path / "data"
@@ -962,20 +964,20 @@ def test_a_missing_storage_refuses_the_start(tmp_path: Path, kind: str) -> None:
             assert server.wait_ready(), server.output()
             _create_secret(server, _Store(fake.endpoint, "key", "secret", "bucket"),
                            f"s3://bucket/{prefix}")
-            if kind == "index":
-                _create_index(server)
-            else:
+            if kind == "table":
                 with server.connect() as conn:
                     conn.execute("CREATE TABLE notes(id INTEGER, body TEXT) "
-                                 " TABLESPACE idx")
+                                 "TABLESPACE idx")
+            else:
+                with server.connect() as conn:
+                    _create_view_index(conn, tmp_path / "notes.parquet")
         finally:
             server.stop()
         with fake.lock:
             for key in [key for _, key in fake.objects if key.startswith(prefix)]:
                 del fake.objects[("bucket", key)]
         output = _refused(datadir)
-    owner = "docs_body" if kind == "index" else "notes"
-    assert f"/bucket/{prefix}" in output and f"of {owner}" in output, output
+    assert f"/bucket/{prefix}" in output and "of notes" in output, output
     assert "is missing" in output, output
 
 
@@ -990,19 +992,12 @@ def test_a_crash_while_creating_an_index_leaves_no_objects(tmp_path: Path) -> No
             _create_secret(server, _Store(fake.endpoint, "key", "secret", "bucket"),
                            location)
             with server.connect() as conn:
-                conn.execute(
-                    "CREATE TEXT SEARCH DICTIONARY words AS "
-                    "split_by_non_alpha(case := 'lower')")
-                conn.execute("CREATE TABLE docs(id INTEGER, body TEXT)")
-                conn.execute(
-                    "INSERT INTO docs VALUES (1, 'quick brown fox'), (2, 'lazy dog')")
                 try:
                     conn.execute("SET sdb_faults = 'crash_before_finish_creation'")
                 except psycopg.Error:
                     pytest.skip("built without fault injection")
                 with pytest.raises(psycopg.OperationalError):
-                    conn.execute(
-                        CREATE_INDEX)
+                    _create_view_index(conn, tmp_path / "notes.parquet")
             server.proc.wait(timeout=60)
             assert _index_files(fake, prefix), fake.keys("bucket")
         finally:
@@ -1012,7 +1007,7 @@ def test_a_crash_while_creating_an_index_leaves_no_objects(tmp_path: Path) -> No
             assert again.wait_ready(), again.output()
             with again.connect() as conn:
                 with pytest.raises(psycopg.Error):
-                    conn.execute("SELECT * FROM docs_body")
+                    conn.execute("SELECT * FROM notes")
         finally:
             again.stop()
         assert not _index_files(fake, prefix), fake.keys("bucket")
@@ -1034,9 +1029,10 @@ def _kill_while_stalled(server: _Server, fake: FakeS3, statement) -> None:
         worker.join(timeout=60)
 
 
-def _crash_while_committing(tmp_path: Path, kind: str, key: str) -> None:
-    location = f"s3://bucket/commit-{tmp_path.name}"
-    prefix = f"commit-{tmp_path.name}/"
+def test_a_crash_during_a_flush_keeps_its_rows_and_leaves_no_files(
+        tmp_path: Path) -> None:
+    location = f"s3://bucket/flush-{tmp_path.name}"
+    prefix = f"flush-{tmp_path.name}/"
     datadir = tmp_path / "data"
     with FakeS3() as fake:
         server = _Server(datadir)
@@ -1045,36 +1041,28 @@ def _crash_while_committing(tmp_path: Path, kind: str, key: str) -> None:
             _create_secret(server, _Store(fake.endpoint, "key", "secret", "bucket"),
                            location)
             _create_index(server)
-            fake.stall(kind, key)
+            stored = _index_files(fake, prefix)
+            fake.stall("PUT", ".idx")
 
-            def refresh(conn: psycopg.Connection) -> None:
+            def flush(conn: psycopg.Connection) -> None:
                 conn.execute("INSERT INTO docs VALUES (3, 'fox again')")
                 conn.execute("VACUUM (FLUSH_TABLE) docs")
 
-            _kill_while_stalled(server, fake, refresh)
+            _kill_while_stalled(server, fake, flush)
         finally:
             server.stop()
         again = _Server(datadir)
         try:
             assert again.wait_ready(), again.output()
             assert _matches(again) == [1, 3]
+            assert _eventually(lambda: _index_files(fake, prefix) == stored), \
+                fake.keys("bucket", prefix)
         finally:
             again.stop()
-        assert not [name for name in fake.keys("bucket", prefix)
-                    if "pending_segments_" in name], fake.keys("bucket", prefix)
 
 
-def test_a_crash_before_the_commit_copy_keeps_the_last_commit(
+def test_a_crash_during_an_index_build_leaves_the_files_of_its_table(
         tmp_path: Path) -> None:
-    _crash_while_committing(tmp_path, "COPY", "/segments_")
-
-
-def test_a_crash_between_the_commit_copy_and_its_delete_keeps_the_new_commit(
-        tmp_path: Path) -> None:
-    _crash_while_committing(tmp_path, "DELETE", "pending_segments_")
-
-
-def test_a_crash_during_an_upload_leaves_no_index_files(tmp_path: Path) -> None:
     location = f"s3://bucket/upload-{tmp_path.name}"
     prefix = f"upload-{tmp_path.name}/"
     datadir = tmp_path / "data"
@@ -1084,6 +1072,7 @@ def test_a_crash_during_an_upload_leaves_no_index_files(tmp_path: Path) -> None:
             assert server.wait_ready(), server.output()
             _large_table(server, _Store(fake.endpoint, "key", "secret", "bucket"),
                          location)
+            stored = _index_files(fake, prefix)
             fake.stall("PUT_PART", prefix)
             _kill_while_stalled(server, fake,
                                 lambda conn: conn.execute(CREATE_INDEX))
@@ -1092,7 +1081,8 @@ def test_a_crash_during_an_upload_leaves_no_index_files(tmp_path: Path) -> None:
         again = _Server(datadir)
         try:
             assert again.wait_ready(), again.output()
-            assert not _index_files(fake, prefix), fake.keys("bucket", prefix)
+            assert _eventually(lambda: _index_files(fake, prefix) == stored), \
+                fake.keys("bucket", prefix)
             with again.connect() as conn:
                 with pytest.raises(psycopg.Error):
                     conn.execute("SELECT * FROM docs_body")
@@ -1102,35 +1092,11 @@ def test_a_crash_during_an_upload_leaves_no_index_files(tmp_path: Path) -> None:
             again.stop()
 
 
-def test_an_orphan_object_is_removed_when_its_index_opens(tmp_path: Path) -> None:
+@pytest.mark.parametrize("kind", ["table", "index"])
+def test_an_orphan_object_is_removed_after_a_crash(tmp_path: Path,
+                                                   kind: str) -> None:
     location = f"s3://bucket/orphan-{tmp_path.name}"
-    datadir = tmp_path / "data"
-    with FakeS3() as fake:
-        server = _Server(datadir)
-        try:
-            assert server.wait_ready(), server.output()
-            _create_secret(server, _Store(fake.endpoint, "key", "secret", "bucket"),
-                           location)
-            _create_index(server)
-        finally:
-            server.stop()
-        commits = [key for key in fake.keys("bucket", f"orphan-{tmp_path.name}/")
-                   if key.rsplit("/", 1)[-1].startswith("segments_")]
-        assert commits, fake.keys("bucket")
-        orphan = commits[0].rsplit("/", 1)[0] + "/_99.doc"
-        fake.replace("bucket", orphan, b"written by an upload no commit names")
-        again = _Server(datadir)
-        try:
-            assert again.wait_ready(), again.output()
-            assert _matches(again) == [1]
-        finally:
-            again.stop()
-        assert orphan not in fake.keys("bucket"), fake.keys("bucket")
-
-
-def test_an_orphan_object_of_a_search_table_is_removed_after_a_restart(
-        tmp_path: Path) -> None:
-    location = f"s3://bucket/orphan-table-{tmp_path.name}"
+    prefix = f"orphan-{tmp_path.name}/"
     datadir = tmp_path / "data"
     with FakeS3() as fake:
         server = _Server(datadir)
@@ -1139,24 +1105,28 @@ def test_an_orphan_object_of_a_search_table_is_removed_after_a_restart(
             _create_secret(server, _Store(fake.endpoint, "key", "secret", "bucket"),
                            location)
             with server.connect() as conn:
-                conn.execute("CREATE TABLE notes (id INT, body TEXT) "
-                             " TABLESPACE idx")
-                conn.execute("INSERT INTO notes VALUES (1, 'kept on s3')")
-                conn.execute("VACUUM (FLUSH_TABLE) notes")
+                if kind == "table":
+                    conn.execute("CREATE TABLE notes (id INT, body TEXT) "
+                                 "TABLESPACE idx")
+                    conn.execute("INSERT INTO notes VALUES (1, 'quick brown fox')")
+                    conn.execute("VACUUM (FLUSH_TABLE) notes")
+                else:
+                    _create_view_index(conn, tmp_path / "notes.parquet")
+            server.proc.kill()
         finally:
             server.stop()
-        commits = [key for key in fake.keys("bucket", f"orphan-table-{tmp_path.name}/")
-                   if key.rsplit("/", 1)[-1].startswith("segments_")]
-        assert commits, fake.keys("bucket")
-        orphan = commits[0].rsplit("/", 1)[0] + "/_99.doc"
-        fake.replace("bucket", orphan, b"written by an upload no commit names")
+        stored = _index_files(fake, prefix)
+        assert stored, fake.keys("bucket")
+        orphan = stored[0].rsplit("/", 1)[0] + "/_99.doc"
+        fake.replace("bucket", orphan, b"written by an upload no segment names")
         again = _Server(datadir)
         try:
             assert again.wait_ready(), again.output()
             with again.connect() as conn:
-                assert conn.execute("SELECT body FROM notes").fetchall() == [
-                    ("kept on s3",)]
-            assert _eventually(lambda: orphan not in fake.keys("bucket")), \
+                assert conn.execute(
+                    "SELECT id FROM notes WHERE body = 'quick brown fox'"
+                ).fetchall() == [(1,)]
+            assert _eventually(lambda: _index_files(fake, prefix) == stored), \
                 fake.keys("bucket")
         finally:
             again.stop()
@@ -1206,7 +1176,7 @@ def test_a_copy_to_a_dfs_file_reads_back(tmp_path: Path) -> None:
     assert fake.requests["APPEND"] > 1 and fake.requests["FLUSH"] > 0, fake.requests
 
 
-def test_an_index_in_a_dfs_tablespace_commits_and_survives_a_restart(tmp_path: Path) -> None:
+def test_a_table_in_a_dfs_tablespace_survives_a_restart(tmp_path: Path) -> None:
     datadir = tmp_path / "data"
     with FakeAzure() as fake:
         server = _Server(datadir)
@@ -1224,10 +1194,12 @@ def test_an_index_in_a_dfs_tablespace_commits_and_survives_a_restart(tmp_path: P
             assert again.wait_ready(), again.output()
             assert _count_fox(again) == 2000
             with again.connect() as conn:
-                conn.execute("DROP INDEX docs_body")
+                conn.execute("DROP TABLE docs")
+                conn.execute("DROP TABLESPACE idx")
         finally:
             again.stop()
-    assert fake.requests["RENAME"] > 0, fake.requests
+        assert not [name for name in fake.names("indexes", f"dfs-{tmp_path.name}/")
+                    if not name.endswith("/")], fake.names("indexes")
 
 
 @pytest.mark.parametrize("kind", ["s3", "azure"])
@@ -1255,25 +1227,26 @@ def test_a_restart_lists_each_directory_one_level_deep(tmp_path: Path, kind: str
                         f"SCOPE '{location}')")
                 _create_tablespace(server, location)
             _create_index(server)
+            server.proc.kill()
         finally:
             server.stop()
         markers = [key for key in keys(bucket, f"{prefix}/") if key.endswith("/")]
         assert len(markers) == 5, keys(bucket)
-        index = max(markers, key=lambda key: key.count("/")).removesuffix("/")
-        database = index.rsplit("/", 1)[0]
+        table = max(markers, key=lambda key: key.count("/")).removesuffix("/")
+        stores = table.rsplit("/", 1)[0]
         for i in range(6000):
-            fake.replace(bucket, f"{database}/archive/{i}", b"")
-        orphan = f"{index}/_99.doc"
-        fake.replace(bucket, orphan, b"written by an upload no commit names")
+            fake.replace(bucket, f"{stores}/archive/{i}", b"")
+        orphan = f"{table}/_99.doc"
+        fake.replace(bucket, orphan, b"written by an upload no segment names")
         listings = fake.requests["LIST"]
         again = _Server(datadir)
         try:
             assert again.wait_ready(), again.output()
             assert _matches(again) == [1]
-            assert _eventually(lambda: orphan not in keys(bucket, f"{index}/")), \
-                keys(bucket, f"{index}/")
+            assert _eventually(lambda: orphan not in keys(bucket, f"{table}/")), \
+                keys(bucket, f"{table}/")
             assert fake.requests["LIST"] - listings == 3, fake.requests
-            objects = len(keys(bucket, f"{prefix}/"))
+            objects = len(keys(bucket, f"{stores}/"))
             page = 1000 if kind == "s3" else 5000
             listings = fake.requests["LIST"]
             with again.connect() as conn:
@@ -1283,8 +1256,7 @@ def test_a_restart_lists_each_directory_one_level_deep(tmp_path: Path, kind: str
             again.stop()
 
 
-def test_a_restart_opens_its_indexes_and_search_tables_at_once(
-        tmp_path: Path) -> None:
+def test_a_restart_opens_its_tables_at_once(tmp_path: Path) -> None:
     each = 3
     datadir = tmp_path / "data"
     with FakeS3() as fake:
@@ -1298,12 +1270,14 @@ def test_a_restart_opens_its_indexes_and_search_tables_at_once(
                     "CREATE TEXT SEARCH DICTIONARY words AS "
                     "split_by_non_alpha(case := 'lower')")
                 for i in range(each):
-                    conn.execute(f"CREATE TABLE docs{i}(id INTEGER, body TEXT)")
-                    conn.execute(f"INSERT INTO docs{i} VALUES ({i}, 'quick brown fox')")
+                    conn.execute(f"CREATE TABLE docs{i}(id INTEGER, body TEXT) "
+                                 "TABLESPACE idx")
                     conn.execute(f"CREATE INDEX docs{i}_body ON docs{i} "
-                                 "USING inverted(body words) TABLESPACE idx")
+                                 "USING inverted(body words)")
+                    conn.execute(f"INSERT INTO docs{i} VALUES ({i}, 'quick brown fox')")
+                    conn.execute(f"VACUUM (FLUSH_TABLE) docs{i}")
                     conn.execute(f"CREATE TABLE notes{i}(id INTEGER, body TEXT) "
-                                 " TABLESPACE idx")
+                                 "TABLESPACE idx")
                     conn.execute(f"INSERT INTO notes{i} VALUES ({i}, 'kept on s3')")
                     conn.execute(f"VACUUM (FLUSH_TABLE) notes{i}")
         finally:
@@ -1328,64 +1302,18 @@ def test_a_restart_opens_its_indexes_and_search_tables_at_once(
         finally:
             again.stop()
     assert not [entry for entry in log if entry["key"].endswith("/")], log
+    assert not [entry for entry in trace if entry["method"] == "LIST"], trace
+    checks = [entry for entry in trace
+              if entry["method"] == "HEAD" and entry["key"].endswith("/")]
+    assert len(checks) == 2 * each, trace
+    assert max(entry["began"] for entry in checks) < min(
+        entry["ended"] for entry in checks), checks
     opens: dict[str, dict] = {}
     for entry in sorted(log, key=lambda entry: entry["began"]):
-        directory, name = entry["key"].rsplit("/", 1)
-        if name.startswith("segments_"):
-            opens.setdefault(directory, entry)
+        opens.setdefault(entry["key"].rsplit("/", 1)[0], entry)
     assert len(opens) == 2 * each, log
     assert max(entry["began"] for entry in opens.values()) < min(
         entry["ended"] for entry in opens.values()), opens
-    listings: dict[str, dict] = {}
-    for entry in sorted(trace, key=lambda entry: entry["began"]):
-        if entry["method"] == "LIST":
-            listings.setdefault(entry["key"], entry)
-    swept = [entry for prefix, entry in listings.items()
-             if len(parts := prefix.split("/")) == 5
-             and parts[2] == "engine_v1" and parts[3].isdigit()]
-    assert len(swept) == 1, trace
-    assert swept[0]["began"] < min(entry["began"] for entry in opens.values()), \
-        (swept, opens)
-
-
-def test_a_checkpoint_saves_its_indexes_at_once(tmp_path: Path) -> None:
-    each = 4
-    with FakeS3() as fake:
-        server = _Server(tmp_path / "data")
-        try:
-            assert server.wait_ready(), server.output()
-            _create_secret(server, _Store(fake.endpoint, "key", "secret", "bucket"),
-                           f"s3://bucket/saved-{tmp_path.name}")
-            with server.connect() as conn:
-                conn.execute(
-                    "CREATE TEXT SEARCH DICTIONARY words AS "
-                    "split_by_non_alpha(case := 'lower')")
-                for i in range(each):
-                    conn.execute(f"CREATE TABLE docs{i}(id INTEGER, body TEXT)")
-                    conn.execute(f"CREATE INDEX docs{i}_body ON docs{i} "
-                                 "USING inverted(body words) "
-                                 "WITH (refresh_interval = 0) TABLESPACE idx")
-                conn.execute("CHECKPOINT")
-                for i in range(each):
-                    conn.execute(f"INSERT INTO docs{i} VALUES ({i}, 'quick brown fox')")
-                fake.latency = 0.5
-                fake.trace = []
-                conn.execute("CHECKPOINT")
-                trace, fake.trace = fake.trace, None
-                fake.latency = 0
-                for i in range(each):
-                    assert conn.execute(
-                        f"SELECT id FROM docs{i}_body WHERE body @@ 'fox'"
-                    ).fetchall() == [(i,)]
-        finally:
-            server.stop()
-    uploads = [entry for entry in trace if entry["method"] == "PUT"]
-    saves: dict[str, dict] = {}
-    for entry in sorted(uploads, key=lambda entry: entry["began"]):
-        saves.setdefault(entry["key"].rsplit("/", 1)[0], entry)
-    assert len(saves) == each, uploads
-    assert max(entry["began"] for entry in saves.values()) < min(
-        entry["ended"] for entry in saves.values()), saves
 
 
 def test_restored_objects_are_read_by_the_etags_they_are_listed_with(
@@ -1445,14 +1373,13 @@ def test_a_rotated_secret_reaches_files_opened_before_it(tmp_path: Path) -> None
                 conn.execute(
                     "CREATE TEXT SEARCH DICTIONARY words AS "
                     "split_by_non_alpha(case := 'lower')")
-                conn.execute("CREATE TABLE docs(id INTEGER, body TEXT)")
+                conn.execute("CREATE TABLE docs(id INTEGER, body TEXT) "
+                             "WITH (compaction_interval = 0) TABLESPACE idx")
+                conn.execute(CREATE_INDEX)
                 conn.execute(
                     "INSERT INTO docs SELECT i, concat_ws(' ', 'fox', "
                     "md5(i::VARCHAR)) FROM range(20000) t(i)")
-                conn.execute(
-                    "CREATE INDEX docs_body ON docs USING inverted(body words) "
-                    "WITH (refresh_interval = 100, compaction_interval = 0) "
-                    "TABLESPACE idx")
+                conn.execute("VACUUM (FLUSH_TABLE) docs")
             assert _count_fox(server) == 20000
 
             fake.session_tokens = {"first", "second"}
@@ -1463,10 +1390,7 @@ def test_a_rotated_secret_reaches_files_opened_before_it(tmp_path: Path) -> None
             with server.connect() as conn:
                 conn.execute(
                     "INSERT INTO docs SELECT i, 'fox' FROM range(20000, 20100) t(i)")
-            assert _eventually(lambda: _count_fox(server) == 20100), \
-                server.output()
-
-            with server.connect() as conn:
+                conn.execute("VACUUM (FLUSH_TABLE) docs")
                 conn.execute("SET GLOBAL enable_external_file_cache = false")
                 conn.execute("SET GLOBAL enable_external_file_cache = true")
             assert _count_fox(server) == 20100, server.output()
@@ -1475,7 +1399,46 @@ def test_a_rotated_secret_reaches_files_opened_before_it(tmp_path: Path) -> None
             server.stop()
 
 
-def test_an_expired_token_holds_refreshes_until_a_restart(tmp_path: Path) -> None:
+def test_a_restart_opens_its_tables_with_the_replaced_secret(
+        tmp_path: Path) -> None:
+    location = f"s3://bucket/restarted-{tmp_path.name}"
+    datadir = tmp_path / "data"
+    with FakeS3() as fake:
+        fake.session_tokens = {"first"}
+        store = _Store(fake.endpoint, "key", "secret", "bucket", fake)
+        server = _Server(datadir)
+        try:
+            assert server.wait_ready(), server.output()
+            with server.connect() as conn:
+                conn.execute(_token_secret(store, location, "first"))
+            _create_tablespace(server, location)
+            with server.connect() as conn:
+                conn.execute("CREATE TABLE gone(id INTEGER) TABLESPACE idx")
+                conn.execute("INSERT INTO gone VALUES (1)")
+                conn.execute("VACUUM (FLUSH_TABLE) gone")
+                conn.execute("CREATE TABLE notes(id INTEGER, body TEXT) "
+                             "TABLESPACE idx")
+                conn.execute("INSERT INTO notes VALUES (1, 'kept on s3')")
+                conn.execute("VACUUM (FLUSH_TABLE) notes")
+                conn.execute("DROP TABLE gone")
+                fake.session_tokens = {"first", "second"}
+                conn.execute(_token_secret(store, location, "second"))
+            fake.session_tokens = {"second"}
+        finally:
+            server.stop()
+        again = _Server(datadir)
+        try:
+            assert again.wait_ready(), again.output()
+            with again.connect() as conn:
+                assert conn.execute("SELECT body FROM notes").fetchall() == [
+                    ("kept on s3",)]
+        finally:
+            again.stop()
+        assert fake.stats()["requests"].get("EXPIRED", 0) == 0, fake.requests
+
+
+def test_a_flush_with_an_expired_token_works_once_the_secret_is_replaced(
+        tmp_path: Path) -> None:
     location = f"s3://bucket/expired-{tmp_path.name}"
     datadir = tmp_path / "data"
     with FakeS3() as fake:
@@ -1491,26 +1454,28 @@ def test_an_expired_token_holds_refreshes_until_a_restart(tmp_path: Path) -> Non
                 conn.execute(
                     "CREATE TEXT SEARCH DICTIONARY words AS "
                     "split_by_non_alpha(case := 'lower')")
-                conn.execute("CREATE TABLE docs(id INTEGER, body TEXT)")
+                conn.execute("CREATE TABLE docs(id INTEGER, body TEXT) "
+                             "WITH (compaction_interval = 0) TABLESPACE idx")
+                conn.execute(CREATE_INDEX)
                 conn.execute(
                     "INSERT INTO docs SELECT i, 'fox' FROM range(1000) t(i)")
-                conn.execute(
-                    "CREATE INDEX docs_body ON docs USING inverted(body words) "
-                    "WITH (refresh_interval = 100, compaction_interval = 0) "
-                    "TABLESPACE idx")
+                conn.execute("VACUUM (FLUSH_TABLE) docs")
             assert _count_fox(server) == 1000
 
             fake.session_tokens = {"second"}
             with server.connect() as conn:
                 conn.execute(
                     "INSERT INTO docs SELECT i, 'fox' FROM range(1000, 1100) t(i)")
-            assert _eventually(
-                lambda: fake.stats()["requests"].get("EXPIRED", 0) > 0)
+                with pytest.raises(psycopg.Error, match="ExpiredToken"):
+                    conn.execute("VACUUM (FLUSH_TABLE) docs")
+            assert fake.stats()["requests"].get("EXPIRED", 0) > 0
+            assert _count_fox(server) == 1100
             with server.connect() as conn:
                 conn.execute(_token_secret(store, location, "second"))
-            time.sleep(1)
-            assert server.proc.poll() is None, server.output()
-            assert _count_fox(server) == 1000
+                conn.execute("VACUUM (FLUSH_TABLE) docs")
+                conn.execute("SET GLOBAL enable_external_file_cache = false")
+                conn.execute("SET GLOBAL enable_external_file_cache = true")
+            assert _count_fox(server) == 1100
         finally:
             server.stop()
 
@@ -1543,14 +1508,13 @@ def test_a_rotated_azure_secret_reaches_files_opened_before_it(
                 conn.execute(
                     "CREATE TEXT SEARCH DICTIONARY words AS "
                     "split_by_non_alpha(case := 'lower')")
-                conn.execute("CREATE TABLE docs(id INTEGER, body TEXT)")
+                conn.execute("CREATE TABLE docs(id INTEGER, body TEXT) "
+                             "WITH (compaction_interval = 0) TABLESPACE idx")
+                conn.execute(CREATE_INDEX)
                 conn.execute(
                     "INSERT INTO docs SELECT i, concat_ws(' ', 'fox', "
                     "md5(i::VARCHAR)) FROM range(20000) t(i)")
-                conn.execute(
-                    "CREATE INDEX docs_body ON docs USING inverted(body words) "
-                    "WITH (refresh_interval = 100, compaction_interval = 0) "
-                    "TABLESPACE idx")
+                conn.execute("VACUUM (FLUSH_TABLE) docs")
             assert _count_fox(server) == 20000
 
             fake.sas_signatures = {"first", "second"}
@@ -1561,10 +1525,7 @@ def test_a_rotated_azure_secret_reaches_files_opened_before_it(
             with server.connect() as conn:
                 conn.execute(
                     "INSERT INTO docs SELECT i, 'fox' FROM range(20000, 20100) t(i)")
-            assert _eventually(lambda: _count_fox(server) == 20100), \
-                server.output()
-
-            with server.connect() as conn:
+                conn.execute("VACUUM (FLUSH_TABLE) docs")
                 conn.execute("SET GLOBAL enable_external_file_cache = false")
                 conn.execute("SET GLOBAL enable_external_file_cache = true")
             assert _count_fox(server) == 20100, server.output()
@@ -1731,10 +1692,10 @@ def test_cold_top_k_reads_postings_and_columns_in_one_round(
                     "CREATE TEXT SEARCH DICTIONARY words AS "
                     "split_by_non_alpha(case := 'lower') "
                     "WITH (frequency, position, norm)")
-                conn.execute("CREATE TABLE docs(id INTEGER, body TEXT)")
+                conn.execute("CREATE TABLE docs(id INTEGER, body TEXT) "
+                             "WITH (compaction_interval = 0) TABLESPACE idx")
                 conn.execute(
-                    "CREATE INDEX docs_body ON docs USING inverted(id, body words) "
-                    "WITH (compaction_interval = 0) TABLESPACE idx")
+                    "CREATE INDEX docs_body ON docs USING inverted(id, body words)")
                 for segment in range(segments):
                     conn.execute(
                         "INSERT INTO docs SELECT i, CASE i % 10 WHEN 0 THEN 'alpha' "
@@ -2040,10 +2001,10 @@ def test_cold_count_reads_its_postings_in_one_round(tmp_path: Path) -> None:
                     "CREATE TEXT SEARCH DICTIONARY words AS "
                     "split_by_non_alpha(case := 'lower') "
                     "WITH (frequency, position, norm)")
-                conn.execute("CREATE TABLE docs(id INTEGER, body TEXT)")
+                conn.execute("CREATE TABLE docs(id INTEGER, body TEXT) "
+                             "WITH (compaction_interval = 0) TABLESPACE idx")
                 conn.execute(
-                    "CREATE INDEX docs_body ON docs USING inverted(id, body words) "
-                    "WITH (compaction_interval = 0) TABLESPACE idx")
+                    "CREATE INDEX docs_body ON docs USING inverted(id, body words)")
                 for segment in range(segments):
                     conn.execute(
                         "INSERT INTO docs SELECT i, CASE i % 10 WHEN 0 THEN 'alpha beta' "

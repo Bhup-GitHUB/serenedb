@@ -129,7 +129,7 @@ class Store final : public std::enable_shared_from_this<Store>,
   // The database whose attachment holds this store's catalog entry.
   duckdb::idx_t GetDatabaseId() const noexcept { return _db_id; }
   const std::string& Path() const noexcept { return _path; }
-  bool Absent() const noexcept { return _absent; }
+  bool Absent() const;
   bool Opened() const noexcept { return !_root.empty(); }
   bool Remote() const noexcept { return _remote; }
   bool ReadOnly() const noexcept { return !_writer; }
@@ -310,8 +310,10 @@ class Store final : public std::enable_shared_from_this<Store>,
     std::vector<irs::IndexWriter::Replacement> replacements);
 
   TableReplay* Replay();
+  void ReserveListedIds();
   void ScheduleRecovery(duckdb::ClientContext& context,
-                        duckdb::TaskExecutor& executor, bool orphans);
+                        duckdb::TaskExecutor& replays,
+                        duckdb::TaskExecutor& opens);
   bool FinishReplay();
 
   std::shared_ptr<const TableState> SnapshotState(Tick snapshot,
@@ -413,7 +415,6 @@ class Store final : public std::enable_shared_from_this<Store>,
   bool _in_memory;
   bool _read_only;
   bool _is_new;
-  bool _absent = false;
   std::atomic<bool> _dropped{false};
   uint64_t _segment_memory_max;
   uint32_t _segment_docs_max = 0;

@@ -2,14 +2,15 @@
 
 Path-style buckets that exist on first use, single and multipart uploads,
 the x-amz-meta-* metadata a single upload sets, ranged reads, ListObjectsV2,
-server-side copies, single and batched deletes.
+single and batched deletes.
 Requests are not authenticated. It counts requests by kind, accepted
 connections and the most part uploads in flight at once; `latency` delays every request, `trickle`
 sends the bodies of reads at that many bytes a second, `hold_read` holds a ranged read in the
-middle of its body, and the part numbers in `failing_parts` are refused with a 500. The next `throttle` requests are refused with 503 SlowDown, and the next
-`drop[kind]` requests of a kind (PUT, COMPLETE_UPLOAD, COPY) take effect but get no response: the
+middle of its body, the part numbers in `failing_parts` are refused with a 500, and while
+`put_error` is set a single-request upload is refused with 403 and that error code. The next `throttle` requests are refused with 503 SlowDown, and the next
+`drop[kind]` requests of a kind (PUT, COMPLETE_UPLOAD) take effect but get no response: the
 connection closes, and their keys are listed in `dropped`. `stall(kind, key)` holds the next
-request of a kind (PUT_PART, COPY, DELETE) whose key contains `key` before it takes effect, sets
+request of a kind (PUT, PUT_PART, DELETE) whose key contains `key` before it takes effect, sets
 `stalled`, and after `release` is set closes the connection without applying it: a test kills the
 server while the request is held. While `session_tokens` is set, a request whose
 X-Amz-Security-Token is not one of them is refused with 400 ExpiredToken, as a store refuses a
@@ -47,7 +48,7 @@ import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from xml.sax.saxutils import escape
 
-from fake_store import FakeStore, Handler, byte_range, http_date, list_page, split_path
+from fake_store import FakeStore, Handler, byte_range, http_date, list_page
 
 NS = "http://s3.amazonaws.com/doc/2006-03-01/"
 CRC32C_POLY = 0x82F63B78
@@ -149,7 +150,7 @@ class FakeS3(FakeStore):
         self.session_tokens: set[str] | None = None
         self.drop: collections.Counter[str] = collections.Counter()
         self.dropped: list[str] = []
-        self.copy_error: str | None = None
+        self.put_error: str | None = None
         self.stalling: tuple[str, str] | None = None
         self.stalled = threading.Event()
         self.release = threading.Event()
@@ -458,34 +459,18 @@ class _Handler(Handler):
                 return
             self._put_part(int(query["partNumber"][0]), query["uploadId"][0])
             return
-        source = self.headers.get("x-amz-copy-source")
-        body = self._body()
-        if source:
-            if self._stalled("COPY", key):
-                return
-            self.fake.count("COPY")
-            self._wait()
-            with self.fake.lock:
-                error = self.fake.copy_error
-            if error:
-                self._xml(200, f"<Error><Code>{escape(error)}</Code>"
-                               "<Message>The copy failed.</Message></Error>")
-                return
-            src_bucket, src_key = split_path(source)
-            obj = self._find(src_bucket, src_key)
-            if obj is None:
-                self._missing(src_key)
-                return
-            copy = _Object(obj.data)
-            with self.fake.lock:
-                self.fake.objects[(bucket, key)] = copy
-            if self._dropped("COPY", key):
-                return
-            self._xml(200, f'<CopyObjectResult xmlns="{NS}"><ETag>{escape(copy.etag)}</ETag></CopyObjectResult>')
+        if self._stalled("PUT", key):
             return
+        body = self._body()
         self.fake.count("PUT")
         began = time.monotonic()
         self._wait()
+        with self.fake.lock:
+            error = self.fake.put_error
+        if error:
+            self._xml(403, f"<Error><Code>{escape(error)}</Code>"
+                           "<Message>The upload failed.</Message></Error>")
+            return
         matches, _ = self._checksum(body)
         if not matches:
             self._bad_digest()

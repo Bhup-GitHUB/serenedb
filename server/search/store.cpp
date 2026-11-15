@@ -244,11 +244,8 @@ void Store::Open() {
   if (!_in_memory) {
     if (_is_new) {
       catalog::CreateDirectory(_path);
-      _on_disk = true;
-    } else {
-      _on_disk = fs.DirectoryExists(_path);
-      _absent = !_on_disk;
     }
+    _on_disk = true;
   }
   const auto memory = MemoryRoot(_db_id, _id);
   _root = _on_disk ? _path : fs.JoinPath(memory, "segments");
@@ -291,6 +288,10 @@ void Store::EnsureOpen() {
   if (!Opened()) {
     Open();
   }
+}
+
+bool Store::Absent() const {
+  return _on_disk && !catalog::StorageFileSystem().DirectoryExists(_path);
 }
 
 void Store::ClaimColumnOids(const irs::DirectoryReader& reader) const {
@@ -373,7 +374,8 @@ void Store::OptimizeInMemory() {
 std::vector<OwnSegment> Store::OpenFlushed(
   std::span<const irs::IndexWriter::FlushedSegment> flushed) const {
   std::vector<OwnSegment> segments(flushed.size());
-  irs::ForEach(irs::DuckDBEngine::Instance().instance(), _root, flushed.size(),
+  irs::ForEach(irs::DuckDBEngine::Instance().instance(), _remote,
+               flushed.size(),
                [&](size_t i) { segments[i] = OpenOwn(flushed[i].meta); });
   return segments;
 }
@@ -1049,7 +1051,7 @@ std::shared_ptr<const TableState> Store::ReplaceSegments(
   std::vector<std::shared_ptr<TableUnit>> added;
   std::vector<irs::DocMap> maps;
   std::vector<OwnSegment> opened(replacements.size());
-  irs::ForEach(irs::DuckDBEngine::Instance().instance(), _root,
+  irs::ForEach(irs::DuckDBEngine::Instance().instance(), _remote,
                replacements.size(), [&](size_t i) {
                  SDB_IF_FAILURE("search_replacement_open_fails") {
                    THROW_SQL_ERROR(ERR_MSG("intentional debug error"));
@@ -1427,26 +1429,31 @@ TableReplay* Store::Replay() {
   return _table ? &_replay : nullptr;
 }
 
+void Store::ReserveListedIds() {
+  EnsureOpen();
+  if (_table) {
+    _writer->ReserveSegmentId(irs::MaxSegmentId(
+      irs::ListIndexFiles(catalog::StorageFileSystem(), _root)));
+  }
+}
+
 void Store::ScheduleRecovery(duckdb::ClientContext& context,
-                             duckdb::TaskExecutor& executor, bool orphans) {
+                             duckdb::TaskExecutor& replays,
+                             duckdb::TaskExecutor& opens) {
   EnsureOpen();
   if (!_table) {
     return;
   }
   _writer->ReserveSegmentId(_replay.Top());
-  if (orphans) {
-    _writer->ReserveSegmentId(irs::MaxSegmentId(
-      irs::ListIndexFiles(catalog::StorageFileSystem(), _root)));
-  }
   for (auto& [id, segment] : _replay.Segments()) {
-    executor.ScheduleTask(
-      duckdb::make_uniq<RecoveryTask>(executor, [this, id, &segment] {
+    opens.ScheduleTask(
+      duckdb::make_uniq<RecoveryTask>(opens, [this, id, &segment] {
         segment.opened = _table->OpenSegment(id, segment.kinds, segment.rows);
       }));
   }
   for (auto& piece : _replay.Cut()) {
-    executor.ScheduleTask(
-      duckdb::make_uniq<RecoveryTask>(executor, [this, &context, &piece] {
+    replays.ScheduleTask(
+      duckdb::make_uniq<RecoveryTask>(replays, [this, &context, &piece] {
         piece.reader = ReplayPiece(context, _replay.Chunks(piece));
       }));
   }

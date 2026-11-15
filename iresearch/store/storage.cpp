@@ -80,9 +80,9 @@ void WriteWhole(duckdb::FileSystem& fs, const std::string& path,
   fs.SyncDirectory(fs.JoinPath(path, ".."));
 }
 
-void ForEach(duckdb::DatabaseInstance& db, std::string_view root, size_t count,
+void ForEach(duckdb::DatabaseInstance& db, bool remote, size_t count,
              absl::FunctionRef<void(size_t)> visit) {
-  if (count < 2 || !duckdb::DatabaseFileSystem::IsRemote(root)) {
+  if (count < 2 || !remote) {
     for (size_t i = 0; i != count; ++i) {
       visit(i);
     }
