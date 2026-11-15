@@ -1,4 +1,5 @@
-"""A temporary job is dropped when its session ends, interrupting a run in progress."""
+"""A temporary job is dropped when its session ends, interrupting a run in progress and letting the session's
+temporary objects go."""
 
 from __future__ import annotations
 
@@ -73,5 +74,33 @@ def test_a_temporary_job_is_dropped_when_its_session_ends(tmp_path: Path) -> Non
             _wait_parked(admin, "pause_job_after_run")
             assert admin.execute("SELECT step FROM tj_log ORDER BY step").fetchall() == [(1,)]
             admin.execute("RESET sdb_faults")
+    finally:
+        server.stop()
+
+
+def _cache_bytes(conn: psycopg.Connection) -> int:
+    return conn.execute("SELECT value::BIGINT FROM sdb_metrics WHERE relation_id IS NULL "
+                        "AND metric = 'external_file_cache_used_bytes'").fetchone()[0]
+
+
+def test_a_temporary_job_lets_its_session_go_when_the_session_ends(tmp_path: Path) -> None:
+    server = Serened(SERENED_BIN, datadir_root=str(tmp_path),
+                     log_path=str(tmp_path / "serened.log"))
+    try:
+        server.start()
+        with _connect(server) as admin:
+            session = _connect(server)
+            session.execute(
+                "CREATE TEMPORARY TABLE tj_big AS SELECT i AS id, "
+                "'word' || (i % 1000) || ' other ' || i AS body FROM generate_series(1, 300000) g(i)")
+            session.execute("CREATE INDEX tj_big_body ON tj_big USING inverted(body)")
+            session.execute("VACUUM (FLUSH_TABLE) tj_big")
+            session.execute("CREATE TEMPORARY JOB tj_keeps EVERY 1 HOUR AS SELECT count(*) FROM tj_big")
+            assert _cache_bytes(admin) > 0
+            session.close()
+            deadline = time.monotonic() + 30
+            while _cache_bytes(admin) != 0:
+                assert time.monotonic() < deadline, _cache_bytes(admin)
+                time.sleep(0.05)
     finally:
         server.stop()

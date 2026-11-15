@@ -157,6 +157,17 @@ bool Dropped(JobState& state) {
   return state.dropped;
 }
 
+duckdb::shared_ptr<duckdb::AttachedDatabase> DatabaseOf(duckdb::idx_t oid) {
+  auto& db = irs::DuckDBEngine::Instance().instance();
+  for (auto& database :
+       catalog::SereneDBDatabases(duckdb::DatabaseManager::Get(db))) {
+    if (database->oid == oid) {
+      return std::move(database);
+    }
+  }
+  return nullptr;
+}
+
 duckdb::ErrorData RunQuery(JobState& state, const JobDefinition& job,
                            duckdb::optional_ptr<duckdb::ClientContext> caller,
                            duckdb::shared_ptr<duckdb::ClientContext>& context) {
@@ -178,12 +189,19 @@ duckdb::ErrorData RunQuery(JobState& state, const JobDefinition& job,
       duckdb::ExceptionType::CATALOG,
       absl::StrCat("role with OID ", job.owner, " does not exist")};
   }
-  auto temporary = state.session.temporary.lock();
+  duckdb::shared_ptr<duckdb::AttachedDatabase> temporary;
+  {
+    absl::MutexLock lock{&state.mutex};
+    if (state.dropped) {
+      return duckdb::ErrorData{duckdb::ExceptionType::INTERRUPT,
+                               "Interrupted!"};
+    }
+    temporary = state.temporary;
+  }
   const auto database =
-    duckdb::AttachedDatabase::TryGetReference(state.session.database);
+    DatabaseOf(temporary ? state.session_database : job.database_oid);
   if (!database ||
-      database->GetCatalog().Cast<catalog::SereneDBCatalog>().IsDropped() ||
-      Dropped(state)) {
+      database->GetCatalog().Cast<catalog::SereneDBCatalog>().IsDropped()) {
     return duckdb::ErrorData{duckdb::ExceptionType::INTERRUPT, "Interrupted!"};
   }
   SystemConnection connection{

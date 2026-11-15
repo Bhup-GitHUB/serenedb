@@ -118,8 +118,10 @@ void JobCatalogEntry::ScheduleAtCommit(duckdb::ClientContext& context) const {
 }
 
 void JobCatalogEntry::OnDrop() {
+  duckdb::shared_ptr<duckdb::AttachedDatabase> temporary;
   absl::MutexLock lock{&_state->mutex};
   _state->dropped = true;
+  temporary = std::move(_state->temporary);
   for (const auto& context : _state->contexts) {
     context->Interrupt();
   }

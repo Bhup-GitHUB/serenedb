@@ -86,14 +86,10 @@ struct JobDefinition {
     body;
 };
 
-struct JobSession {
-  duckdb::weak_ptr<duckdb::AttachedDatabase> database;
-  duckdb::weak_ptr<duckdb::AttachedDatabase> temporary;
-};
-
 struct JobState {
   absl::Mutex mutex;
-  JobSession session;
+  duckdb::shared_ptr<duckdb::AttachedDatabase> temporary ABSL_GUARDED_BY(mutex);
+  duckdb::idx_t session_database = 0;
   JobDefinition definition;
   JobStatus status;
   uint64_t timer = 0;

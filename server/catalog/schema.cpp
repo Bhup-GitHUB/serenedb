@@ -730,15 +730,13 @@ duckdb::optional_ptr<duckdb::CatalogEntry> Schema::CreateJob(
   auto state = std::make_shared<JobState>();
   if (catalog.IsTemporaryCatalog()) {
     auto& context = transaction.GetContext();
-    state->session = {
-      .database =
-        duckdb::Catalog::GetCatalog(
-          context, duckdb::DatabaseManager::GetDefaultDatabase(context))
-          .GetAttached()
-          .shared_from_this(),
-      .temporary = catalog.GetAttached().shared_from_this()};
-  } else {
-    state->session.database = catalog.GetAttached().shared_from_this();
+    state->session_database =
+      duckdb::Catalog::GetCatalog(
+        context, duckdb::DatabaseManager::GetDefaultDatabase(context))
+        .GetAttached()
+        .oid;
+    absl::MutexLock lock{&state->mutex};
+    state->temporary = catalog.GetAttached().shared_from_this();
   }
   auto job =
     duckdb::make_uniq<JobCatalogEntry>(catalog, *this, info, std::move(state));
