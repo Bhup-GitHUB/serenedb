@@ -633,7 +633,7 @@ TEST(ObjectStoreIndexTest, posting_heads_prefetch_every_clause) {
   const tests::IndexDir dir{Db(), Root()};
   {
     auto writer = tests::IndexWriter::Make(dir, tests::kOmCreate,
-                                    irs::tests::DefaultWriterOptions());
+                                           irs::tests::DefaultWriterOptions());
     tests::Document doc;
     auto words =
       std::make_shared<tests::StringField>("words", irs::IndexFeatures::Freq);

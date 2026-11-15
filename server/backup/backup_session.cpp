@@ -118,7 +118,8 @@ uint64_t BackupSession::Begin(duckdb::ClientContext& context, BackupOwner owner,
   std::erase_if(pins,
                 [](const auto& db) { return db->GetCatalog().InMemory(); });
   auto& fs = catalog::StorageFileSystem();
-  auto backup_dir = fs.JoinPath(catalog::ClusterOf().Layout().engine, kBackupDir);
+  auto backup_dir =
+    fs.JoinPath(catalog::ClusterOf().Layout().engine, kBackupDir);
   if (!catalog::Log::Remove(fs, backup_dir)) {
     THROW_SQL_ERROR(ERR_CODE(ERRCODE_IO_ERROR),
                     ERR_MSG("could not remove the leftover backup directory '",

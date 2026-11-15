@@ -334,9 +334,8 @@ void TablespaceSizeFunction(duckdb::DataChunk& args,
     args.data[0], result, args.size(), [&](Key key) {
       if constexpr (std::is_same_v<Key, duckdb::string_t>) {
         return TablespaceBytes(
-          session,
-          cluster.Tablespace(transaction,
-                             duckdb::Identifier{connector::AsView(key)}));
+          session, cluster.Tablespace(
+                     transaction, duckdb::Identifier{connector::AsView(key)}));
       } else {
         return TablespaceBytes(
           session,

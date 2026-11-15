@@ -93,8 +93,7 @@ duckdb::unique_ptr<duckdb::Catalog> AttachForeignDatabase(
   const DataDirectory layout{root};
   auto lock = FileLock::Take(fs.JoinPath(root, backup::kPgVersionFile),
                              FileLock::Mode::Shared);
-  if (!fs.DirectoryExists(layout.LogDir()) ||
-      absl::IsNotFound(lock.status())) {
+  if (!fs.DirectoryExists(layout.LogDir()) || absl::IsNotFound(lock.status())) {
     THROW_SQL_ERROR(
       ERR_CODE(ERRCODE_UNDEFINED_FILE),
       ERR_MSG("\"", info.path, "\" is not a SereneDB data directory"));

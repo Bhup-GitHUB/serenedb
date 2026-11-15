@@ -205,8 +205,8 @@ const Index& IndexOf(size_t dictionary) {
   irs::IndexWriterOptions writer_opts;
   writer_opts.reader_options.scorer = &Bm25();
   writer_opts.norm_column_id = [](irs::field_id id) { return id + kNormBase; };
-  auto writer = tests::IndexWriter::Make(dir, tests::kOmCreate,
-                                         std::move(writer_opts));
+  auto writer =
+    tests::IndexWriter::Make(dir, tests::kOmCreate, std::move(writer_opts));
   auto plain_tokens = spec.make();
   auto positional_tokens = spec.make();
   Field plain{.tokenizer = plain_tokens.get(),

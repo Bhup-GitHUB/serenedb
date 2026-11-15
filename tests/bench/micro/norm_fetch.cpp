@@ -79,8 +79,9 @@ const std::vector<uint32_t>& IndexNorms() {
     }
     const char* field = std::getenv("NORM_FIELD");
     auto& db = irs::DuckDBEngine::Instance().instance();
-    const auto reader = bench::OpenIndex(
-      db, duckdb::FileSystem::GetFileSystem(db), path, irs::IndexReaderOptions{});
+    const auto reader =
+      bench::OpenIndex(db, duckdb::FileSystem::GetFileSystem(db), path,
+                       irs::IndexReaderOptions{});
     for (const auto& segment : reader) {
       for (const auto id : segment.field_ids()) {
         if (field != nullptr && id != std::strtoul(field, nullptr, 10)) {

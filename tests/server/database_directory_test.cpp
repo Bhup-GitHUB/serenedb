@@ -153,9 +153,9 @@ TEST_F(DatabaseDirectoryTest, RemovalsWaitWhileTheyAreDeferred) {
 
 TEST_F(DatabaseDirectoryTest, StoragesOnAnObjectStore) {
   ObjectStore();
-  const auto store = StoreDirOf(absl::StrCat(
-    irs::SimulatedObjectStore::kPrefix, "bucket/database_directory_",
-    ::getpid()));
+  const auto store =
+    StoreDirOf(absl::StrCat(irs::SimulatedObjectStore::kPrefix,
+                            "bucket/database_directory_", ::getpid()));
   const auto path = StoragePathIn(store, 7);
   EXPECT_FALSE(StorageFileSystem().DirectoryExists(path));
   CreateDirectory(path);
@@ -223,8 +223,8 @@ TEST_F(DatabaseDirectoryTest, ListsTheStoragesOfADirectory) {
 
 TEST_F(DatabaseDirectoryTest, ListsTheStoragesOfAnObjectStore) {
   ObjectStore();
-  const auto store = StoreDirOf(absl::StrCat(
-    irs::SimulatedObjectStore::kPrefix, "bucket/listed_", ::getpid()));
+  const auto store = StoreDirOf(absl::StrCat(irs::SimulatedObjectStore::kPrefix,
+                                             "bucket/listed_", ::getpid()));
   CreateDirectory(StoragePathIn(store, 7));
   CreateDirectory(StoragePathIn(store, 8));
   ObjectStore().Publish(absl::StrCat(store, "/8/segment"), "rows");

@@ -2286,7 +2286,7 @@ TEST(InverterEndToEndTest, EmptyPositionalFieldWritesNoStreams) {
 
   const auto run_case = [&](bool text_tokens) {
     ::tests::IndexDir dir{DuckDBEngine::Instance().instance(),
-                        TestEnv::MemoryRoot()};
+                          TestEnv::MemoryRoot()};
     auto writer = ::tests::IndexWriter::Make(
       dir, ::tests::kOmCreate, irs::tests::DefaultWriterOptions());
     ASSERT_NE(nullptr, writer);

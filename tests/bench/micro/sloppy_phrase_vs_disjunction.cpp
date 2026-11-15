@@ -428,8 +428,7 @@ Corpus BuildIndex() {
 
   irs::IndexReaderOptions reader_opts;
   auto rdr = tests::OpenReader(dir, reader_opts);
-  return Corpus{.dir_path = std::move(tmp_root),
-                .reader = std::move(rdr)};
+  return Corpus{.dir_path = std::move(tmp_root), .reader = std::move(rdr)};
 }
 
 // Builds a synthetic corpus where every document is 30x "zzcmn", one
@@ -486,8 +485,7 @@ Corpus BuildSyntheticIndex() {
 
   irs::IndexReaderOptions reader_opts;
   auto rdr = tests::OpenReader(dir, reader_opts);
-  return Corpus{.dir_path = std::move(tmp_root),
-                .reader = std::move(rdr)};
+  return Corpus{.dir_path = std::move(tmp_root), .reader = std::move(rdr)};
 }
 
 // Builds a dense 3-term corpus: each doc is "aaa bbb ccc" repeated
@@ -540,8 +538,7 @@ Corpus BuildDense3Index() {
 
   irs::IndexReaderOptions reader_opts;
   auto rdr = tests::OpenReader(dir, reader_opts);
-  return Corpus{.dir_path = std::move(tmp_root),
-                .reader = std::move(rdr)};
+  return Corpus{.dir_path = std::move(tmp_root), .reader = std::move(rdr)};
 }
 
 // Single-term corpus: each doc is "aaa" repeated kAllSameReps times.
@@ -591,8 +588,7 @@ Corpus BuildAllSameIndex() {
 
   irs::IndexReaderOptions reader_opts;
   auto rdr = tests::OpenReader(dir, reader_opts);
-  return Corpus{.dir_path = std::move(tmp_root),
-                .reader = std::move(rdr)};
+  return Corpus{.dir_path = std::move(tmp_root), .reader = std::move(rdr)};
 }
 
 // Never-matching dense pair corpus: each doc is kFarApartReps of "aaa",
@@ -652,8 +648,7 @@ Corpus BuildFarApartIndex() {
 
   irs::IndexReaderOptions reader_opts2;
   auto rdr2 = tests::OpenReader(dir, reader_opts2);
-  return Corpus{.dir_path = std::move(tmp_root),
-                .reader = std::move(rdr2)};
+  return Corpus{.dir_path = std::move(tmp_root), .reader = std::move(rdr2)};
 }
 
 const Corpus& GetCorpus() {

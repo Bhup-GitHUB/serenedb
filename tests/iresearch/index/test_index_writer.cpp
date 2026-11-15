@@ -245,8 +245,8 @@ IndexWriter::IndexWriter(const IndexDir& dir, OpenMode mode,
     dir.Publish({});
   }
   RemoveUnheld(dir);
-  _writer = irs::IndexWriter::Make(dir.Db(), dir.Fs(), dir.Root(),
-                                   std::move(options));
+  _writer =
+    irs::IndexWriter::Make(dir.Db(), dir.Fs(), dir.Root(), std::move(options));
   _writer->ReserveSegmentId(
     std::max(irs::MaxSegmentId(dir.Files()), dir.TopSegmentId()));
 }
@@ -527,8 +527,8 @@ bool IndexWriter::RefreshBegin() {
   if (ready == 0 && staged.merges == 0 && flushed.empty()) {
     return false;
   }
-  staged.segments = Apply(_dir.Committed(), std::span{_pending}.first(ready),
-                          flushed, _merges);
+  staged.segments =
+    Apply(_dir.Committed(), std::span{_pending}.first(ready), flushed, _merges);
   _staged = std::move(staged);
   return true;
 }

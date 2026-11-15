@@ -394,8 +394,7 @@ void Log::Cut(duckdb::FileSystem& fs, const std::string& dir, Lsn end) {
       ParseRecords(std::span{*bytes}.subspan(from, limit - from), begin + from,
                    [](size_t, size_t, std::span<uint8_t>) {});
     if (reached == end) {
-      const auto file =
-        fs.OpenFile(path, duckdb::FileFlags::FILE_FLAGS_WRITE);
+      const auto file = fs.OpenFile(path, duckdb::FileFlags::FILE_FLAGS_WRITE);
       file->Truncate(static_cast<int64_t>(end - begin));
       file->Sync();
       RemoveFrom(fs, dir, number + 1);
@@ -835,9 +834,8 @@ Lsn Log::Link(const std::string& dir) {
     std::error_code ec;
     std::filesystem::create_hard_link(_fs.JoinPath(_dir, name), link, ec);
     if (ec) {
-      THROW_SQL_ERROR(
-        ERR_CODE(irs::pg::ErrcodeForFileAccess(ec.value())),
-        ERR_MSG("could not link \"", link, "\": ", ec.message()));
+      THROW_SQL_ERROR(ERR_CODE(irs::pg::ErrcodeForFileAccess(ec.value())),
+                      ERR_MSG("could not link \"", link, "\": ", ec.message()));
     }
   }
   _fs.SyncDirectory(dir);

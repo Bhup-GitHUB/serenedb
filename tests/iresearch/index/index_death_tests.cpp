@@ -582,10 +582,9 @@ TEST_F(index_death_test_formats_15,
   {
     FailingFileSystem fs;
     const auto dir = LocalFiles(fs);
-    for (const auto* name :
-         {"0000000000000001.col", "0000000000000002.doc",
-          "0000000000000003.pos", "0000000000000004.idx",
-          "0000000000000005.pay"}) {
+    for (const auto* name : {"0000000000000001.col", "0000000000000002.doc",
+                             "0000000000000003.pos", "0000000000000004.idx",
+                             "0000000000000005.pay"}) {
       fs.RegisterFailure(FailingFileSystem::Failure::CLOSE, name);
     }
     auto writer = tests::IndexWriter::Make(dir, tests::kOmCreate,

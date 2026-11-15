@@ -96,8 +96,8 @@ std::shared_ptr<const SegmentReaderImpl> SegmentReaderImpl::Open(
   }
   reader->_hold = meta.hold;
   if (!reader->_hold && options.released) {
-    reader->_hold = std::make_shared<const SegmentHold>(
-      options.released, meta.name, meta.kinds);
+    reader->_hold = std::make_shared<const SegmentHold>(options.released,
+                                                        meta.name, meta.kinds);
   }
   return reader;
 }

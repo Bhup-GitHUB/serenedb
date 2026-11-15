@@ -1621,7 +1621,7 @@ TEST(HnswPqGraphTest, CoarseCodesLinkNodesAsTheVectorsDo) {
                    .ef_construction = 64,
                  });
     tests::IndexDir dir{irs::DuckDBEngine::Instance().instance(),
-                      TestEnv::MemoryRoot()};
+                        TestEnv::MemoryRoot()};
     auto writer =
       tests::IndexWriter::Make(dir, tests::kOmCreate, std::move(opts));
     EXPECT_NE(nullptr, writer);

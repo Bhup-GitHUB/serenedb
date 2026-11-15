@@ -138,9 +138,8 @@ void IndexDir::Publish(std::vector<irs::SegmentMeta> segments) const {
     if (meta.hold && absl::c_none_of(published, [&](const Published& known) {
           return known.segment.name == meta.name;
         })) {
-      published.push_back(
-        {.segment = {.name = meta.name, .kinds = meta.kinds},
-         .hold = meta.hold});
+      published.push_back({.segment = {.name = meta.name, .kinds = meta.kinds},
+                           .hold = meta.hold});
     }
   }
   _state->segments->committed.swap(segments);

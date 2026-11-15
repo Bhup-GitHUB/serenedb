@@ -380,8 +380,7 @@ Corpus BuildIndex() {
                inserted, data_path.string().c_str());
 
   auto rdr = tests::OpenReader(dir, irs::IndexReaderOptions{});
-  return Corpus{.dir_path = std::move(tmp_root),
-                .reader = std::move(rdr)};
+  return Corpus{.dir_path = std::move(tmp_root), .reader = std::move(rdr)};
 }
 
 const Corpus& GetCorpus() {

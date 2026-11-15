@@ -265,8 +265,7 @@ const Index& IndexOf(size_t docs, bool zipf = false) {
   }
   writer->RefreshCommit();
 
-  index.reader =
-    tests::OpenReader(dir, irs::IndexReaderOptions{});
+  index.reader = tests::OpenReader(dir, irs::IndexReaderOptions{});
   SDB_ASSERT(index.reader.size() == 1,
              "corpus must be one segment or the encodings get mixed");
   return index;

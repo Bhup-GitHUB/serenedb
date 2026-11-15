@@ -48,9 +48,7 @@ namespace {
 constexpr std::string_view kRetiredLabelFile = "backup_label.old";
 constexpr std::string_view kSubscriptionHoldFile = "subscriptions.hold";
 
-const std::string& EngineDir() {
-  return catalog::ClusterOf().Layout().engine;
-}
+const std::string& EngineDir() { return catalog::ClusterOf().Layout().engine; }
 
 [[noreturn]] void Fail(std::string_view what, std::string_view path,
                        std::string_view why) {

@@ -172,19 +172,17 @@ std::string SereneDBCatalog::StoragePath(duckdb::CatalogTransaction transaction,
   if (_foreign) {
     THROW_SQL_ERROR(
       ERR_CODE(ERRCODE_FEATURE_NOT_SUPPORTED),
-      ERR_MSG("cannot attach \"", GetName().GetIdentifierName(),
-              "\" read-only: ",
-              entry.type == duckdb::CatalogType::TABLE_ENTRY ? "table"
-                                                             : "inverted index",
-              " \"", entry.name.GetIdentifierName(),
-              "\" is placed in a tablespace"));
+      ERR_MSG(
+        "cannot attach \"", GetName().GetIdentifierName(), "\" read-only: ",
+        entry.type == duckdb::CatalogType::TABLE_ENTRY ? "table"
+                                                       : "inverted index",
+        " \"", entry.name.GetIdentifierName(), "\" is placed in a tablespace"));
   }
   auto& context = transaction.GetContext();
   auto& cluster = ClusterOf(context);
-  return StoragePathIn(
-    StoreDirOf(cluster.TablespaceDirectoryOf(
-      cluster.GetCatalogTransaction(context), tablespace)),
-    entry.oid);
+  return StoragePathIn(StoreDirOf(cluster.TablespaceDirectoryOf(
+                         cluster.GetCatalogTransaction(context), tablespace)),
+                       entry.oid);
 }
 
 void SereneDBCatalog::Place(duckdb::CatalogTransaction transaction,
@@ -744,14 +742,14 @@ duckdb::DatabaseSize SereneDBCatalog::GetDatabaseSize(
   duckdb::DatabaseSize size;
   size.block_size =
     duckdb::Settings::Get<duckdb::DefaultBlockSizeSetting>(context);
-  ReadEntry<DatabaseCatalogEntry>(GetName().GetIdentifierName(),
-               [&](const DatabaseCatalogEntry& database) {
-                 const auto& options = database.Options();
-                 if (const auto it = options.find(kBlockSizeSetting);
-                     it != options.end()) {
-                   size.block_size = it->second.GetValue<duckdb::idx_t>();
-                 }
-               });
+  ReadEntry<DatabaseCatalogEntry>(
+    GetName().GetIdentifierName(), [&](const DatabaseCatalogEntry& database) {
+      const auto& options = database.Options();
+      if (const auto it = options.find(kBlockSizeSetting);
+          it != options.end()) {
+        size.block_size = it->second.GetValue<duckdb::idx_t>();
+      }
+    });
   ForEachSearchStorage(
     *this,
     [&](SearchTableEntry& table) {

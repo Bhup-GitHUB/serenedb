@@ -53,9 +53,9 @@
 #include "iresearch/formats/piece_fields.hpp"
 #include "iresearch/index/docs_mask/docs_mask.hpp"
 #include "iresearch/index/field_meta.hpp"
+#include "iresearch/index/file_names.hpp"
 #include "iresearch/index/index_features.hpp"
 #include "iresearch/index/index_meta.hpp"
-#include "iresearch/index/file_names.hpp"
 #include "iresearch/store/index_files.hpp"
 #include "iresearch/utils/assert.hpp"
 #include "iresearch/utils/down_cast.hpp"
@@ -1046,8 +1046,7 @@ std::shared_ptr<const SegmentReaderImpl> MergeWriter::FlushPiece(
   col_writer.reset();
 
   flushed = tracker.Flush();
-  segment.byte_size =
-    flushed.bytes + (norms_file ? norms_file->GetSize() : 0);
+  segment.byte_size = flushed.bytes + (norms_file ? norms_file->GetSize() : 0);
   for (const auto& column : columns) {
     segment.byte_size += utils::downCast<HotColumnReader>(*column).Bytes();
   }

@@ -206,12 +206,13 @@ void RefuseDependents(duckdb::ClientContext& context, ClusterCatalog& cluster,
   for (const auto& [type, kind] :
        {std::pair{duckdb::CatalogType::DATABASE_ENTRY, "database "},
         std::pair{duckdb::CatalogType::TABLESPACE_ENTRY, "tablespace "}}) {
-    cluster.Set(type).Scan(cluster_transaction, [&](duckdb::CatalogEntry& entry) {
-      if (const auto use = UseOf(entry, role.oid); use != RoleUse::None) {
-        lines.push_back(Describe(
-          use, absl::StrCat(kind, entry.name.GetIdentifierName())));
-      }
-    });
+    cluster.Set(type).Scan(
+      cluster_transaction, [&](duckdb::CatalogEntry& entry) {
+        if (const auto use = UseOf(entry, role.oid); use != RoleUse::None) {
+          lines.push_back(
+            Describe(use, absl::StrCat(kind, entry.name.GetIdentifierName())));
+        }
+      });
   }
   absl::c_move(remote, std::back_inserter(lines));
   if (lines.empty()) {
@@ -642,9 +643,9 @@ duckdb::optional_ptr<duckdb::CatalogEntry> ClusterCatalog::CreateTablespace(
   const auto& name = info.GetQualifiedName().Name();
   RequireUnreservedTablespaceName(name.GetIdentifierName());
   const auto exists = [&] {
-    THROW_SQL_ERROR(ERR_CODE(ERRCODE_DUPLICATE_OBJECT),
-                    ERR_MSG("tablespace \"", name.GetIdentifierName(),
-                            "\" already exists"));
+    THROW_SQL_ERROR(
+      ERR_CODE(ERRCODE_DUPLICATE_OBJECT),
+      ERR_MSG("tablespace \"", name.GetIdentifierName(), "\" already exists"));
   };
   if (_tablespaces.Get(transaction, name)) {
     exists();
@@ -772,10 +773,10 @@ void ClusterCatalog::ReplayCreate(duckdb::ClientContext& context,
     }
     case duckdb::CatalogType::TABLESPACE_ENTRY: {
       auto& tablespace = info->Cast<duckdb::CreateTablespaceInfo>();
-      _tablespaces.Create(transaction,
-                          duckdb::make_uniq<TablespaceCatalogEntry>(
-                            *this, tablespace,
-                            TablespaceDirectory(tablespace.location)));
+      _tablespaces.Create(
+        transaction,
+        duckdb::make_uniq<TablespaceCatalogEntry>(
+          *this, tablespace, TablespaceDirectory(tablespace.location)));
       return;
     }
     case duckdb::CatalogType::REPLICATION_ORIGIN_ENTRY:

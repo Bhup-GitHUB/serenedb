@@ -125,8 +125,7 @@ const Index& IndexOf() {
     trx.Commit();
   }
   writer->RefreshCommit();
-  index.reader =
-    tests::OpenReader(dir, irs::IndexReaderOptions{});
+  index.reader = tests::OpenReader(dir, irs::IndexReaderOptions{});
   SDB_ASSERT(index.reader.size() == 1);
   return index;
 }

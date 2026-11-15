@@ -202,8 +202,8 @@ ColReader::ColReader(duckdb::DatabaseInstance& db,
   }
   SDB_ASSERT(norms.empty() || _file);
   for (auto& norm : norms) {
-    auto column = std::make_unique<NormColumnReader>(
-      norm.id, std::move(norm.meta), *_file);
+    auto column =
+      std::make_unique<NormColumnReader>(norm.id, std::move(norm.meta), *_file);
     const bool ok = _norm_by_id.emplace(norm.id, column.get()).second;
     SDB_ENSURE(ok, "in-memory columns: duplicate norm field_id ", norm.id);
     _norm_columns.push_back(std::move(column));

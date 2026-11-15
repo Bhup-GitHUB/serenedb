@@ -193,9 +193,9 @@ def main():
     for path in walk_files(TEST_DIR, TESTNET_EXTS):
         text = read(path)
         has_set = "sdb_faults" in text
-        has_lit = "FAIL" in text or "Fail" in text
+        has_lit = may_name_faults(text)
         has_points = "FaultPoints::" in text
-        if not has_set and not has_lit and not has_points:
+        if not has_set and not has_lit:
             continue
         normalized = rel(path)
         is_recovery = normalized.startswith(RECOVERY_DIR + "/")

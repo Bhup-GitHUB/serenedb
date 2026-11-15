@@ -1107,12 +1107,10 @@ TEST_P(IndexTestCase, writer_commit_cleanup_interleaved) {
 
   {
     std::optional<tests::IndexDir> synced_dir;
-    tests::CallbackFileSystem fs{[&] {
-      synced_dir->RemoveReleased();
-    }};
+    tests::CallbackFileSystem fs{[&] { synced_dir->RemoveReleased(); }};
     synced_dir.emplace(dir().Over(fs));
     auto writer = tests::IndexWriter::Make(*synced_dir, tests::kOmCreate,
-                                    irs::tests::DefaultWriterOptions());
+                                           irs::tests::DefaultWriterOptions());
     const auto* doc1 = gen.next();
     ASSERT_TRUE(InsertWithName(*writer, *doc1));
     writer->RefreshCommit();

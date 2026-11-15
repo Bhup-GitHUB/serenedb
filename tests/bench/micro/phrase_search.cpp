@@ -219,8 +219,8 @@ Index BuildIndex(const std::vector<std::string>& docs,
   Index index{.strategy = &strategy, .tokenizer = MakeTokenizer(strategy)};
 
   irs::IndexWriterOptions writer_opts;
-  auto writer = tests::IndexWriter::Make(dir, tests::kOmCreate,
-                                         std::move(writer_opts));
+  auto writer =
+    tests::IndexWriter::Make(dir, tests::kOmCreate, std::move(writer_opts));
 
   BenchField field{
     .tokenizer = index.tokenizer.get(),

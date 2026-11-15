@@ -127,8 +127,7 @@ const Index& IndexOf(size_t docs) {
     trx.Commit();
   }
   writer->RefreshCommit();
-  index.reader =
-    tests::OpenReader(dir, irs::IndexReaderOptions{});
+  index.reader = tests::OpenReader(dir, irs::IndexReaderOptions{});
   return index;
 }
 

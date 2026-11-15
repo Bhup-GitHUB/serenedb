@@ -589,7 +589,7 @@ TEST(PhrasePositionsTest, positions_left_in_cache_blocks) {
                             TestEnv::MemoryRoot()};
   {
     auto writer = tests::IndexWriter::Make(dir, tests::kOmCreate,
-                                    irs::tests::DefaultWriterOptions());
+                                           irs::tests::DefaultWriterOptions());
     ASSERT_NE(nullptr, writer);
     Field field{.tokenizer = &whitespace, .value = text};
     auto ctx = writer->GetBatch();

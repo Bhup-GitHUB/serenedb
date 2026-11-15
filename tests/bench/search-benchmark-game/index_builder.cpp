@@ -93,9 +93,9 @@ irs::DirectoryReader IndexBuilder::GetReader() {
   absl::MutexLock lock{&_mutex};
   readers.reserve(_segments.size());
   for (const auto& meta : _segments) {
-    readers.emplace_back(irs::SegmentReaderImpl::Open(
-      ::irs::DuckDBEngine::Instance().instance(), _fs, _root, meta,
-      _reader_options));
+    readers.emplace_back(
+      irs::SegmentReaderImpl::Open(::irs::DuckDBEngine::Instance().instance(),
+                                   _fs, _root, meta, _reader_options));
   }
   return {_reader_options, std::move(readers), /*stats=*/true};
 }
