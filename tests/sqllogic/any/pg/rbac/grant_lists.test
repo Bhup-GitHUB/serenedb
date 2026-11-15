@@ -78,10 +78,18 @@ a1	a2	b1	b2
 f	f	f	f
 
 
+onlyif postgres
 statement error
 GRANT SELECT ON gl_t1, gl_nosuch TO gl_alice;
 ----
 db error: ERROR: relation "gl_nosuch" does not exist
+
+
+skipif postgres
+statement error
+GRANT SELECT ON gl_t1, gl_nosuch TO gl_alice;
+----
+db error: ERROR: Table with name gl_nosuch does not exist!
 
 
 query

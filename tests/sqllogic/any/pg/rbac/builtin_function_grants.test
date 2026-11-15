@@ -48,10 +48,18 @@ statement ok
 SET ROLE bfg_other;
 
 
+onlyif postgres
 statement error
 SELECT lower('A');
 ----
 db error: ERROR: permission denied for function lower
+
+
+skipif postgres
+statement error
+SELECT lower('A');
+----
+db error: ERROR: permission denied for scalar function lower
 
 
 query
@@ -170,10 +178,18 @@ statement ok
 SET ROLE bfg_user;
 
 
+onlyif postgres
 statement error
 GRANT EXECUTE ON FUNCTION lower(text) TO bfg_other;
 ----
 db error: ERROR: permission denied for function lower
+
+
+skipif postgres
+statement error
+GRANT EXECUTE ON FUNCTION lower(text) TO bfg_other;
+----
+db error: ERROR: permission denied for scalar function lower
 
 
 statement ok
@@ -207,10 +223,18 @@ statement ok
 SET ROLE bfg_other;
 
 
+onlyif postgres
 statement error
 SELECT abs(-1);
 ----
 db error: ERROR: permission denied for function abs
+
+
+skipif postgres
+statement error
+SELECT abs(-1);
+----
+db error: ERROR: permission denied for scalar function abs
 
 
 query

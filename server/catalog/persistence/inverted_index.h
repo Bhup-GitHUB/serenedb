@@ -21,6 +21,7 @@
 #pragma once
 
 #include <cstdint>
+#include <duckdb/common/enums/catalog_type.hpp>
 #include <duckdb/common/enums/role_capability.hpp>
 #include <duckdb/common/types.hpp>
 #include <iresearch/index/column_info.hpp>
@@ -78,7 +79,7 @@ struct UniqueKeyRecord {
 };
 
 struct FunctionCallRecord {
-  std::string kind;
+  duckdb::CatalogType type = duckdb::CatalogType::INVALID;
   std::string name;
   std::string builtin_key;
   duckdb::RoleCapability capability = duckdb::RoleCapability::None;

@@ -58,14 +58,14 @@ connection after_crash
 statement error
 INSERT INTO riee_items VALUES (2, 2);
 ----
-db error: ERROR: permission denied for function riee_double
+db error: ERROR: permission denied for macro function riee_double
 
 
 connection after_crash
 statement error
 UPDATE riee_items SET a = 3;
 ----
-db error: ERROR: permission denied for function riee_double
+db error: ERROR: permission denied for macro function riee_double
 
 
 connection after_crash

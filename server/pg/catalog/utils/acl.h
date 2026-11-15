@@ -22,7 +22,6 @@
 
 #include <absl/functional/function_ref.h>
 
-#include <array>
 #include <duckdb/catalog/catalog_entry.hpp>
 #include <duckdb/catalog/permissions.hpp>
 #include <duckdb/main/client_context.hpp>
@@ -34,29 +33,6 @@
 #include "pg/catalog/oids.h"
 
 namespace sdb::pg {
-
-struct AclPrivilege {
-  duckdb::AclMode mode;
-  char chr;
-  std::string_view name;
-};
-inline constexpr std::array kAclPrivileges{
-  AclPrivilege{duckdb::AclMode::Insert, 'a', "INSERT"},
-  AclPrivilege{duckdb::AclMode::Select, 'r', "SELECT"},
-  AclPrivilege{duckdb::AclMode::Update, 'w', "UPDATE"},
-  AclPrivilege{duckdb::AclMode::Delete, 'd', "DELETE"},
-  AclPrivilege{duckdb::AclMode::Truncate, 'D', "TRUNCATE"},
-  AclPrivilege{duckdb::AclMode::References, 'x', "REFERENCES"},
-  AclPrivilege{duckdb::AclMode::Trigger, 't', "TRIGGER"},
-  AclPrivilege{duckdb::AclMode::Execute, 'X', "EXECUTE"},
-  AclPrivilege{duckdb::AclMode::Usage, 'U', "USAGE"},
-  AclPrivilege{duckdb::AclMode::Create, 'C', "CREATE"},
-  AclPrivilege{duckdb::AclMode::CreateTemp, 'T', "TEMPORARY"},
-  AclPrivilege{duckdb::AclMode::Connect, 'c', "CONNECT"},
-  AclPrivilege{duckdb::AclMode::Set, 's', "SET"},
-  AclPrivilege{duckdb::AclMode::AlterSystem, 'A', "ALTER SYSTEM"},
-  AclPrivilege{duckdb::AclMode::Maintain, 'm', "MAINTAIN"},
-};
 
 void AppendAcl(std::string& out, const duckdb::AclItem& item,
                const duckdb::SecuritySnapshot& roles);

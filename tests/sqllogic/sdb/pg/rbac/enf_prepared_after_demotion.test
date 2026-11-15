@@ -27,7 +27,7 @@ connection c_epd user=epd_kostya password=epd_pw
 statement error
 EXECUTE epd_databases;
 ----
-db error: ERROR: permission denied for function duckdb_databases
+db error: ERROR: permission denied for table function duckdb_databases
 
 
 statement ok

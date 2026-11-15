@@ -75,11 +75,20 @@ EXECUTE epo_seq_q;
 db error: ERROR: permission denied for sequence epo_counter
 
 
+onlyif postgres
 connection c_epo user=epo_vedernikoff password=epo_pw
 statement error
 EXECUTE epo_fn_q;
 ----
 db error: ERROR: permission denied for function epo_double<slt:ignore>
+
+
+skipif postgres
+connection c_epo user=epo_vedernikoff password=epo_pw
+statement error
+EXECUTE epo_fn_q;
+----
+db error: ERROR: permission denied for macro function epo_double<slt:ignore>
 
 
 connection c_epo user=epo_vedernikoff password=epo_pw

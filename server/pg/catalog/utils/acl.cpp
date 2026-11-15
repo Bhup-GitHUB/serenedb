@@ -26,6 +26,7 @@
 #include <absl/strings/str_cat.h>
 #include <absl/strings/strip.h>
 
+#include <array>
 #include <duckdb/catalog/catalog_entry.hpp>
 #include <duckdb/main/attached_database.hpp>
 #include <duckdb/main/database_manager.hpp>
@@ -47,9 +48,9 @@ namespace sdb::pg {
 namespace {
 
 constexpr auto kAclModes = [] {
-  std::array<char, kAclPrivileges.size()> modes{};
+  std::array<char, std::size(duckdb::ACL_PRIVILEGES)> modes{};
   for (size_t i = 0; i < modes.size(); ++i) {
-    modes[i] = kAclPrivileges[i].chr;
+    modes[i] = duckdb::ACL_PRIVILEGES[i].letter;
   }
   return modes;
 }();
@@ -131,9 +132,9 @@ void AppendAcl(std::string& out, const duckdb::AclItem& item,
     PutRole(out, item.grantee, roles);
   }
   out.push_back('=');
-  for (const auto& p : kAclPrivileges) {
+  for (const auto& p : duckdb::ACL_PRIVILEGES) {
     if ((item.privs & p.mode) != duckdb::AclMode::NoRights) {
-      out.push_back(p.chr);
+      out.push_back(p.letter);
       if ((item.grant_option & p.mode) != duckdb::AclMode::NoRights) {
         out.push_back('*');
       }
@@ -175,10 +176,10 @@ std::optional<irs::pg::SqlErrorData> ParseAcl(
       item.grant_option |= read;
       continue;
     }
-    const auto it = absl::c_find_if(kAclPrivileges, [&](const auto& privilege) {
-      return privilege.chr == text.front();
-    });
-    if (it == kAclPrivileges.end()) {
+    const auto it = absl::c_find_if(
+      duckdb::ACL_PRIVILEGES,
+      [&](const auto& privilege) { return privilege.letter == text.front(); });
+    if (it == std::end(duckdb::ACL_PRIVILEGES)) {
       return AclSyntaxError(absl::StrCat(
         "invalid mode character: must be one of \"",
         std::string_view{kAclModes.data(), kAclModes.size()}, "\""));

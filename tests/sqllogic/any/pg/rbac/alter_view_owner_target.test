@@ -35,10 +35,18 @@ ALTER VIEW avo_t OWNER TO avo_r;
 db error: ERROR: "avo_t" is not a view
 
 
+onlyif postgres
 statement error
 ALTER VIEW avo_missing OWNER TO avo_r;
 ----
 db error: ERROR: relation "avo_missing" does not exist
+
+
+skipif postgres
+statement error
+ALTER VIEW avo_missing OWNER TO avo_r;
+----
+db error: ERROR: View with name avo_missing does not exist!
 
 
 statement ok

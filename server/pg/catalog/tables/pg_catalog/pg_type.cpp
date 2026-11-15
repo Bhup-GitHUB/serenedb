@@ -21,10 +21,10 @@
 #include <duckdb/catalog/catalog_entry/table_catalog_entry.hpp>
 #include <duckdb/catalog/catalog_entry/type_catalog_entry.hpp>
 #include <duckdb/catalog/catalog_entry/view_catalog_entry.hpp>
+#include <duckdb/catalog/permissions.hpp>
 #include <type_traits>
 
 #include "pg/catalog/builtin/builtin.h"
-#include "pg/catalog/engine/builtin_functions.h"
 #include "pg/catalog/functions/pg_catalog/regproc.h"
 #include "pg/catalog/tables/tables.h"
 #include "pg/catalog/utils/lookup.h"
@@ -195,7 +195,7 @@ class PgType final : public SystemTableScan<kPgTypeSql> {
       [](const auto& type) { return NonEmpty(type.default_text); }),
     Col<"typacl">([](const auto& type, SystemScan& scan) -> const auto& {
       static const duckdb::vector<duckdb::AclItem> kDefault;
-      const auto granted = BuiltinTypeGrant(scan.Context(), type.oid);
+      const auto granted = duckdb::BuiltinTypeGrant(scan.Context(), type.oid);
       return granted ? granted->acl : kDefault;
     }));
 

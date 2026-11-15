@@ -44,9 +44,7 @@ constexpr SystemIndex kIndexes[] = {
   {kInfoColumnsSql["table_schema"], SystemLookup::Namespace},
 };
 
-constexpr auto kAnyColumnPrivilege =
-  duckdb::AclMode::Select | duckdb::AclMode::Insert | duckdb::AclMode::Update |
-  duckdb::AclMode::References;
+constexpr auto kAnyColumnPrivilege = duckdb::ACL_COLUMN_PRIVILEGES;
 
 struct ColumnTypeInfo {
   ColumnType described;

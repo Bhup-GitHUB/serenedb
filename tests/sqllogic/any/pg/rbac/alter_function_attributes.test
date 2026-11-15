@@ -77,11 +77,20 @@ SELECT afa_read(1);
 db error: ERROR: permission denied for table afa_secret
 
 
+onlyif postgres
 connection c_user user=afa_user password=afa_pw
 statement error
 ALTER FUNCTION afa_read(int) SECURITY DEFINER;
 ----
 db error: ERROR: must be owner of function afa_read
+
+
+skipif postgres
+connection c_user user=afa_user password=afa_pw
+statement error
+ALTER FUNCTION afa_read(int) SECURITY DEFINER;
+----
+db error: ERROR: must be owner of macro function afa_read
 
 
 connection c_owner user=afa_owner password=afa_pw
@@ -190,11 +199,20 @@ statement ok
 ALTER FUNCTION afa_read(int) SECURITY DEFINER;
 
 
+onlyif postgres
 connection c_user user=afa_user password=afa_pw
 statement error
 SELECT afa_read(1);
 ----
 db error: ERROR: permission denied for function afa_read
+
+
+skipif postgres
+connection c_user user=afa_user password=afa_pw
+statement error
+SELECT afa_read(1);
+----
+db error: ERROR: permission denied for macro function afa_read
 
 
 onlyif postgres
@@ -230,7 +248,7 @@ connection c_user user=afa_user password=afa_pw
 statement error
 ALTER FUNCTION lower(text) STABLE;
 ----
-db error: ERROR: permission denied for function lower
+db error: ERROR: permission denied for scalar function lower
 
 
 statement ok

@@ -85,13 +85,13 @@ connection c_alice user=aod_alice password=aod_pw
 statement error
 ALTER TEXT SEARCH DICTIONARY aod_s.aod_dict OWNER TO aod_alice;
 ----
-db error: ERROR: must be owner of text search dictionary aod_dict
+db error: ERROR: must be owner of tokenizer aod_dict
 
 
 statement error
 ALTER TEXT SEARCH DICTIONARY aod_s.aod_nosuch OWNER TO aod_alice;
 ----
-db error: ERROR: text search dictionary "aod_s.aod_nosuch" does not exist
+db error: ERROR: Tokenizer with name aod_nosuch does not exist!
 
 
 statement ok

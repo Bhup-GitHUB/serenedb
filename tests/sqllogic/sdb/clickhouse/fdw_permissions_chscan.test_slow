@@ -42,7 +42,7 @@ statement error
 CREATE SERVER fp_denied FOREIGN DATA WRAPPER clickhouse_fdw
   OPTIONS (host '${CHHOST}', port '${CHPORT}', database 'chtest');
 ----
-db error: ERROR: permission denied for foreign-data wrapper clickhouse_fdw<slt:ignore>
+db error: ERROR: permission denied for foreign data wrapper clickhouse_fdw<slt:ignore>
 
 
 # The denied CREATE left no orphaned attachment: the superuser can create the
@@ -63,7 +63,7 @@ statement error
 CREATE SERVER fp_srv FOREIGN DATA WRAPPER clickhouse_fdw
   OPTIONS (host '${CHHOST}', port '${CHPORT}', database 'chtest');
 ----
-db error: ERROR: permission denied for foreign-data wrapper clickhouse_fdw<slt:ignore>
+db error: ERROR: permission denied for foreign data wrapper clickhouse_fdw<slt:ignore>
 
 
 connection default
@@ -208,7 +208,7 @@ statement error
 CREATE SERVER fp_own2 FOREIGN DATA WRAPPER clickhouse_fdw
   OPTIONS (host '${CHHOST}', port '${CHPORT}', database 'chtest', user 'scanner', password 'pass word');
 ----
-db error: ERROR: permission denied for foreign-data wrapper clickhouse_fdw<slt:ignore>
+db error: ERROR: permission denied for foreign data wrapper clickhouse_fdw<slt:ignore>
 
 
 connection c_owner user=fp_owner password=owner_pw
@@ -233,7 +233,7 @@ connection c_owner user=fp_owner password=owner_pw
 statement error
 ALTER SERVER fp_own OWNER TO fp_other;
 ----
-db error: ERROR: permission denied for foreign-data wrapper clickhouse_fdw<slt:ignore>
+db error: ERROR: permission denied for foreign data wrapper clickhouse_fdw<slt:ignore>
 
 
 connection default

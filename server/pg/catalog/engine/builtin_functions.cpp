@@ -407,26 +407,12 @@ std::string BuiltinFunctionKey(const duckdb::CatalogEntry& function,
 
 duckdb::optional_ptr<const duckdb::Permissions> BuiltinFunctionGrant(
   duckdb::ClientContext& context, const BuiltinFunction& function) {
-  const auto& security = context.security;
-  if (!security || !security->HasFunctionGrants()) {
+  const auto grants = duckdb::BuiltinFunctionGrants(context);
+  if (!grants) {
     return nullptr;
   }
-  const auto database = duckdb::DatabaseManager::TryGetDefaultDatabase(context);
-  if (!security->HasFunctionGrants(database.GetIdentifierName())) {
-    return nullptr;
-  }
-  return security->FunctionPermissions(database.GetIdentifierName(),
-                                       BuiltinFunctionKey(function));
-}
-
-duckdb::optional_ptr<const duckdb::Permissions> BuiltinTypeGrant(
-  duckdb::ClientContext& context, duckdb::idx_t type) {
-  const auto& security = context.security;
-  if (!security || !security->HasTypeGrants()) {
-    return nullptr;
-  }
-  const auto database = duckdb::DatabaseManager::TryGetDefaultDatabase(context);
-  return security->TypePermissions(database.GetIdentifierName(), type);
+  const auto row = grants->find(BuiltinFunctionKey(function));
+  return row == grants->end() ? nullptr : &row->second;
 }
 
 std::string BuiltinSignatureKey(

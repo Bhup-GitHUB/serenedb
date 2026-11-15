@@ -24,10 +24,18 @@ DROP PROCEDURE drko_one();
 db error: ERROR: drko_one() is not a procedure
 
 
+onlyif postgres
 statement error
 DROP FUNCTION drko_one();
 ----
 db error: ERROR: must be owner of function drko_one
+
+
+skipif postgres
+statement error
+DROP FUNCTION drko_one();
+----
+db error: ERROR: must be owner of macro function drko_one
 
 
 statement ok

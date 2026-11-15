@@ -492,7 +492,8 @@ std::optional<std::span<const duckdb::AclItem>> ObjectAcl(
     return std::nullopt;
   }
   if (classid == kPgTypeTable && objid < kMaxSystem) {
-    if (const auto granted = BuiltinTypeGrant(*session.context, objid)) {
+    if (const auto granted =
+          duckdb::BuiltinTypeGrant(*session.context, objid)) {
       return granted->acl;
     }
     return std::nullopt;

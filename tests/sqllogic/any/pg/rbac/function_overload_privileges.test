@@ -152,10 +152,18 @@ statement ok
 SET ROLE fop_c;
 
 
+onlyif postgres
 statement error
 SELECT fop_f(1);
 ----
 db error: ERROR: permission denied for function fop_f
+
+
+skipif postgres
+statement error
+SELECT fop_f(1);
+----
+db error: ERROR: permission denied for macro function fop_f
 
 
 query
@@ -231,22 +239,46 @@ statement ok
 SET ROLE fop_b;
 
 
+onlyif postgres
 statement error
 DROP FUNCTION fop_f(INT);
 ----
 db error: ERROR: must be owner of function fop_f
 
 
+skipif postgres
+statement error
+DROP FUNCTION fop_f(INT);
+----
+db error: ERROR: must be owner of macro function fop_f
+
+
+onlyif postgres
 statement error
 ALTER FUNCTION fop_f(INT) OWNER TO fop_b;
 ----
 db error: ERROR: must be owner of function fop_f
 
 
+skipif postgres
+statement error
+ALTER FUNCTION fop_f(INT) OWNER TO fop_b;
+----
+db error: ERROR: must be owner of macro function fop_f
+
+
+onlyif postgres
 statement error
 ALTER FUNCTION fop_f(INT) STABLE;
 ----
 db error: ERROR: must be owner of function fop_f
+
+
+skipif postgres
+statement error
+ALTER FUNCTION fop_f(INT) STABLE;
+----
+db error: ERROR: must be owner of macro function fop_f
 
 
 statement ok
@@ -257,10 +289,18 @@ statement ok
 CREATE OR REPLACE FUNCTION fop_f(x TEXT) RETURNS TEXT LANGUAGE SQL STABLE AS 'SELECT x || x';
 
 
+onlyif postgres
 statement error
 CREATE OR REPLACE FUNCTION fop_f(x INT) RETURNS INT LANGUAGE SQL AS 'SELECT x + 1';
 ----
 db error: ERROR: must be owner of function fop_f
+
+
+skipif postgres
+statement error
+CREATE OR REPLACE FUNCTION fop_f(x INT) RETURNS INT LANGUAGE SQL AS 'SELECT x + 1';
+----
+db error: ERROR: must be owner of macro function fop_f
 
 
 statement ok

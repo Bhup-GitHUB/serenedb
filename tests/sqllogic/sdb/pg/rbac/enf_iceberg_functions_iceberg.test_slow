@@ -88,7 +88,7 @@ connection c_ved user=eifn_vedernikoff password=eifn_pw
 statement error
 SELECT count(*) FROM iceberg_load_table_response('eifn_${__DATABASE__}.${__DATABASE__}.eifn_t');
 ----
-db error: ERROR: permission denied for function iceberg_load_table_response
+db error: ERROR: permission denied for table function iceberg_load_table_response
 
 
 statement ok
@@ -115,14 +115,14 @@ connection c_ved user=eifn_vedernikoff password=eifn_pw
 statement error
 SELECT count(*) FROM iceberg_load_table_response('eifn_${__DATABASE__}.${__DATABASE__}.eifn_t');
 ----
-db error: ERROR: permission denied for function iceberg_load_table_response
+db error: ERROR: permission denied for table function iceberg_load_table_response
 
 
 connection c_ved user=eifn_vedernikoff password=eifn_pw
 statement error
 SELECT * FROM iceberg_to_ducklake('eifn_${__DATABASE__}', 'eifn_lake_${__DATABASE__}');
 ----
-db error: ERROR: permission denied for function iceberg_to_ducklake
+db error: ERROR: permission denied for table function iceberg_to_ducklake
 
 
 connection c_ved user=eifn_vedernikoff password=eifn_pw

@@ -161,12 +161,12 @@ void ExplodeAcl(const duckdb::SecuritySnapshot& roles, std::string_view text,
   if (auto error = ParseAcl(text, roles, true, item)) {
     THROW_SQL_ERROR_FROM_DATA(std::move(*error));
   }
-  for (const auto& privilege : kAclPrivileges) {
+  for (const auto& privilege : duckdb::ACL_PRIVILEGES) {
     if ((item.privs & privilege.mode) != AclMode::NoRights) {
       rows.emplace_back(ExplodedAcl{
         .grantor = static_cast<int64_t>(item.grantor),
         .grantee = static_cast<int64_t>(item.grantee),
-        .privilege = privilege.name,
+        .privilege = privilege.keyword,
         .grantable =
           (item.grant_option & privilege.mode) != AclMode::NoRights});
     }
@@ -234,20 +234,6 @@ struct PrivilegeModes {
                   ERR_MSG("unrecognized privilege type: \"", privilege, "\""));
 }
 
-std::optional<AclMode> FindPrivilege(std::string_view keyword) {
-  if (absl::EqualsIgnoreCase(keyword, "TEMP")) {
-    return AclMode::CreateTemp;
-  }
-  const auto it =
-    absl::c_find_if(kAclPrivileges, [&](const AclPrivilege& privilege) {
-      return absl::EqualsIgnoreCase(privilege.name, keyword);
-    });
-  if (it == kAclPrivileges.end()) {
-    return std::nullopt;
-  }
-  return it->mode;
-}
-
 PrivilegeModes ParsePrivileges(std::string_view text, AclMode allowed) {
   constexpr std::string_view kGrantOption = " WITH GRANT OPTION";
   PrivilegeModes modes;
@@ -261,11 +247,11 @@ PrivilegeModes ParsePrivileges(std::string_view text, AclMode allowed) {
       keyword.remove_suffix(kGrantOption.size());
       held = &modes.grant_options;
     }
-    const auto mode = FindPrivilege(keyword);
-    if (!mode || (*mode & allowed) != *mode) {
+    const auto mode = duckdb::FindPrivilege(keyword);
+    if (mode == AclMode::NoRights || (mode & allowed) != mode) {
       ThrowUnrecognizedPrivilege(chunk);
     }
-    *held |= *mode;
+    *held |= mode;
   }
   return modes;
 }
@@ -284,11 +270,11 @@ void MakeAclItemFunction(duckdb::DataChunk& args,
       for (const std::string_view token :
            absl::StrSplit(AsView(privileges), ',')) {
         const auto chunk = absl::StripAsciiWhitespace(token);
-        const auto mode = FindPrivilege(chunk);
-        if (!mode) {
+        const auto mode = duckdb::FindPrivilege(chunk);
+        if (mode == AclMode::NoRights) {
           ThrowUnrecognizedPrivilege(chunk);
         }
-        privs |= *mode;
+        privs |= mode;
       }
       text.clear();
       AppendAcl(text,
@@ -456,10 +442,7 @@ struct RelationPrivileges : ObjectPrivileges<F> {
 struct TablePrivileges : RelationPrivileges<TablePrivileges> {
   static constexpr std::string_view kName = "has_table_privilege";
   static constexpr CatalogType kType = CatalogType::TABLE_ENTRY;
-  static constexpr AclMode kModes = AclMode::Select | AclMode::Insert |
-                                    AclMode::Update | AclMode::Delete |
-                                    AclMode::Truncate | AclMode::References |
-                                    AclMode::Trigger | AclMode::Maintain;
+  static constexpr AclMode kModes = duckdb::Permissions::AllPrivileges(kType);
   static constexpr bool kSuperuserFirst = false;
 
   static std::optional<ObjectTarget> Target(const Session&,
@@ -472,8 +455,7 @@ struct TablePrivileges : RelationPrivileges<TablePrivileges> {
   }
 };
 
-constexpr AclMode kColumnModes =
-  AclMode::Select | AclMode::Insert | AclMode::Update | AclMode::References;
+constexpr AclMode kColumnModes = duckdb::ACL_COLUMN_PRIVILEGES;
 
 struct AnyColumnPrivileges : RelationPrivileges<AnyColumnPrivileges> {
   static constexpr std::string_view kName = "has_any_column_privilege";
@@ -590,7 +572,7 @@ struct ColumnPrivileges : RelationPrivileges<ColumnPrivileges> {
 struct SchemaPrivileges : ObjectPrivileges<SchemaPrivileges> {
   static constexpr std::string_view kName = "has_schema_privilege";
   static constexpr CatalogType kType = CatalogType::SCHEMA_ENTRY;
-  static constexpr AclMode kModes = AclMode::Usage | AclMode::Create;
+  static constexpr AclMode kModes = duckdb::Permissions::AllPrivileges(kType);
   static constexpr bool kSuperuserFirst = true;
 
   static uint64_t Resolve(const Session& session, std::string_view name) {
@@ -618,8 +600,7 @@ struct SchemaPrivileges : ObjectPrivileges<SchemaPrivileges> {
 struct SequencePrivileges : RelationPrivileges<SequencePrivileges> {
   static constexpr std::string_view kName = "has_sequence_privilege";
   static constexpr CatalogType kType = CatalogType::SEQUENCE_ENTRY;
-  static constexpr AclMode kModes =
-    AclMode::Usage | AclMode::Select | AclMode::Update;
+  static constexpr AclMode kModes = duckdb::Permissions::AllPrivileges(kType);
   static constexpr bool kSuperuserFirst = false;
 
   static std::optional<ObjectTarget> Target(const Session& session,
@@ -636,7 +617,7 @@ struct SequencePrivileges : RelationPrivileges<SequencePrivileges> {
 struct FunctionPrivileges : ObjectPrivileges<FunctionPrivileges> {
   static constexpr std::string_view kName = "has_function_privilege";
   static constexpr CatalogType kType = CatalogType::MACRO_ENTRY;
-  static constexpr AclMode kModes = AclMode::Execute;
+  static constexpr AclMode kModes = duckdb::Permissions::AllPrivileges(kType);
   static constexpr bool kSuperuserFirst = true;
 
   static uint64_t Resolve(const Session& session, std::string_view name) {
@@ -675,7 +656,7 @@ struct FunctionPrivileges : ObjectPrivileges<FunctionPrivileges> {
 struct TypePrivileges : ObjectPrivileges<TypePrivileges> {
   static constexpr std::string_view kName = "has_type_privilege";
   static constexpr CatalogType kType = CatalogType::TYPE_ENTRY;
-  static constexpr AclMode kModes = AclMode::Usage;
+  static constexpr AclMode kModes = duckdb::Permissions::AllPrivileges(kType);
   static constexpr bool kSuperuserFirst = true;
 
   static uint64_t Resolve(const Session& session, std::string_view name) {
@@ -709,7 +690,7 @@ struct TypePrivileges : ObjectPrivileges<TypePrivileges> {
     if (!builtin) {
       return std::nullopt;
     }
-    const auto granted = BuiltinTypeGrant(
+    const auto granted = duckdb::BuiltinTypeGrant(
       *session.context, builtin->IsArray() ? builtin->elem : builtin->oid);
     return ObjectTarget{granted ? granted.get() : &kBuiltinPermissions};
   }
@@ -718,8 +699,7 @@ struct TypePrivileges : ObjectPrivileges<TypePrivileges> {
 struct DatabasePrivileges : ObjectPrivileges<DatabasePrivileges> {
   static constexpr std::string_view kName = "has_database_privilege";
   static constexpr CatalogType kType = CatalogType::DATABASE_ENTRY;
-  static constexpr AclMode kModes =
-    AclMode::Create | AclMode::CreateTemp | AclMode::Connect;
+  static constexpr AclMode kModes = duckdb::Permissions::AllPrivileges(kType);
   static constexpr bool kSuperuserFirst = true;
 
   static uint64_t Resolve(const Session& session, std::string_view name) {
@@ -743,7 +723,7 @@ struct DatabasePrivileges : ObjectPrivileges<DatabasePrivileges> {
 struct ServerPrivileges : ObjectPrivileges<ServerPrivileges> {
   static constexpr std::string_view kName = "has_server_privilege";
   static constexpr CatalogType kType = CatalogType::FOREIGN_SERVER_ENTRY;
-  static constexpr AclMode kModes = AclMode::Usage;
+  static constexpr AclMode kModes = duckdb::Permissions::AllPrivileges(kType);
   static constexpr bool kSuperuserFirst = true;
 
   static uint64_t Resolve(const Session& session, std::string_view name) {
@@ -770,7 +750,7 @@ struct ForeignDataWrapperPrivileges
   static constexpr std::string_view kName =
     "has_foreign_data_wrapper_privilege";
   static constexpr CatalogType kType = CatalogType::FOREIGN_DATA_WRAPPER_ENTRY;
-  static constexpr AclMode kModes = AclMode::Usage;
+  static constexpr AclMode kModes = duckdb::Permissions::AllPrivileges(kType);
   static constexpr bool kSuperuserFirst = true;
 
   struct Scope : ObjectScope {
@@ -834,7 +814,7 @@ struct TablespacePrivileges : ObjectPrivileges<TablespacePrivileges> {
 struct LanguagePrivileges : ObjectPrivileges<LanguagePrivileges> {
   static constexpr std::string_view kName = "has_language_privilege";
   static constexpr CatalogType kType = CatalogType::LANGUAGE_ENTRY;
-  static constexpr AclMode kModes = AclMode::Usage;
+  static constexpr AclMode kModes = duckdb::Permissions::AllPrivileges(kType);
   static constexpr bool kSuperuserFirst = true;
 
   struct Scope : ObjectScope {
@@ -877,7 +857,7 @@ struct LanguagePrivileges : ObjectPrivileges<LanguagePrivileges> {
 struct ParameterPrivileges : ObjectPrivileges<ParameterPrivileges> {
   static constexpr std::string_view kName = "has_parameter_privilege";
   static constexpr CatalogType kType = CatalogType::PARAMETER_ENTRY;
-  static constexpr AclMode kModes = AclMode::Set | AclMode::AlterSystem;
+  static constexpr AclMode kModes = duckdb::Permissions::AllPrivileges(kType);
   static constexpr bool kSuperuserFirst = false;
 
   struct Parameter {

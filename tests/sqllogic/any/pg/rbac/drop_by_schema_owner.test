@@ -100,8 +100,18 @@ DROP TABLE dbso_s.t;
 db error: ERROR: must be owner of table t
 
 
-statement error must be owner of function (dbso_s\.)?f
+onlyif postgres
+statement error
 DROP FUNCTION dbso_s.f(INTEGER);
+----
+db error: ERROR: must be owner of function dbso_s.f
+
+
+skipif postgres
+statement error
+DROP FUNCTION dbso_s.f(INTEGER);
+----
+db error: ERROR: must be owner of macro function f
 
 
 statement ok

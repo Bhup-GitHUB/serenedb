@@ -47,14 +47,14 @@ connection c_alice user=efw_alice password=efw_pw
 statement error
 CREATE SERVER efw_pg FOREIGN DATA WRAPPER postgres_fdw OPTIONS (host '127.0.0.1', port '1', dbname 'efw');
 ----
-db error: ERROR: permission denied for foreign-data wrapper postgres_fdw
+db error: ERROR: permission denied for foreign data wrapper postgres_fdw
 
 
 connection c_alice user=efw_alice password=efw_pw
 statement error
 GRANT USAGE ON FOREIGN DATA WRAPPER postgres_fdw TO efw_bob;
 ----
-db error: ERROR: permission denied for foreign-data wrapper postgres_fdw
+db error: ERROR: permission denied for foreign data wrapper postgres_fdw
 
 
 statement error

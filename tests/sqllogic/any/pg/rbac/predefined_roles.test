@@ -209,7 +209,7 @@ connection c_reader user=prr_reader password=prr_pw
 statement error
 CHECKPOINT;
 ----
-db error: ERROR: permission denied for function checkpoint
+db error: ERROR: permission denied for table function checkpoint
 
 
 statement ok

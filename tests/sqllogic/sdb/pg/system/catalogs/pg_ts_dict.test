@@ -168,7 +168,7 @@ connection pudge_conn user=pudge_tsd_butcher password=pudge_tsd_butcher_pw
 statement error
 DROP TEXT SEARCH DICTIONARY pudge_tsd_hook;
 ----
-db error: ERROR: must be owner of text search dictionary pudge_tsd_hook<slt:ignore>
+db error: ERROR: must be owner of tokenizer pudge_tsd_hook<slt:ignore>
 
 
 connection default
