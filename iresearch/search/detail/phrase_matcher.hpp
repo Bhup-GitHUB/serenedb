@@ -29,6 +29,7 @@
 #include <limits>
 #include <memory>
 #include <span>
+#include <utility>
 
 #include "iresearch/analysis/token_attributes.hpp"
 #include "iresearch/formats/posting/common.hpp"
@@ -62,10 +63,10 @@ using FixedTermPosition =
 template<typename T>
 struct TermPositionTraits;
 
-template<bool Offs, typename Input>
-struct TermPositionTraits<FixedTermPosition<Offs, Input>> {
-  using T = FixedTermPosition<Offs, Input>;
-  using PositionImpl = FixedTermPositionImpl<Offs, Input>;
+template<typename Pos>
+struct TermPositionTraits<std::pair<Pos*, TermInterval>> {
+  using T = std::pair<Pos*, TermInterval>;
+  using PositionImpl = Pos;
 
   static PosAttr::value_t Position(T& pos) noexcept {
     return pos.first->value();
@@ -78,10 +79,19 @@ struct TermPositionTraits<FixedTermPosition<Offs, Input>> {
   static void ResetPos(const T& pos) { pos.first->reset(); }
 
   static const OffsAttr& Offsets(const T& pos) noexcept {
-    static_assert(Offs);
-    const auto* offs = irs::get<OffsAttr>(*pos.first);
-    SDB_ASSERT(offs);
-    return *offs;
+    if constexpr (requires(const Pos& p) { p.Offsets(); }) {
+      return pos.first->Offsets();
+    } else {
+      const auto* offs = irs::get<OffsAttr>(*pos.first);
+      SDB_ASSERT(offs);
+      return *offs;
+    }
+  }
+
+  static score_t Boost(const T& pos) noexcept
+    requires requires(const Pos& p) { p.Boost(); }
+  {
+    return pos.first->Boost();
   }
 };
 
@@ -664,6 +674,10 @@ class PhraseMatcher {
       if (kByDocFreq(_pos.back(), _pos.front())) {
         absl::c_reverse(_pos);
         _reversed = !_reversed;
+      }
+    } else if constexpr (N == 2) {
+      if (kByDocFreq(_pos.back(), _pos.front())) {
+        std::swap(_pos.front(), _pos.back());
       }
     } else {
       absl::c_sort(_pos, kByDocFreq);
