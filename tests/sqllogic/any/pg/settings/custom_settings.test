@@ -88,6 +88,22 @@ cst.deep.name
 three parts
 
 
+onlyif postgres
+statement error
+SHOW cst."not simple";
+----
+db error: ERROR: unrecognized configuration parameter "cst.not simple"
+
+
+skipif postgres
+statement error
+SHOW cst."not simple";
+----
+db error: ERROR: unrecognized configuration parameter "cst.not simple"
+
+Did you mean: <slt:ignore>
+
+
 statement error
 SELECT set_config('cst..empty', 'x', false);
 ----
