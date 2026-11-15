@@ -184,8 +184,8 @@ Root::ptr MakePrunedDisjunction(
         irs::detail::ClauseOf(terms[i], field, scorer, boost);
       const auto& own = *posting.state.reader;
       const auto* const doc = irs::detail::DocOf(own);
-      members.push_back(irs::ResolveInput(
-        *doc, [&]<typename Input> -> UnionMember::ptr {
+      members.push_back(
+        irs::ResolveInput(*doc, [&]<typename Input> -> UnionMember::ptr {
           return memory::make_managed<TermUnionMember<Input>>(
             posting.state.cookie, *doc, irs::detail::LayoutOf(own), segment,
             own, posting.Args(&ctx.fetcher));

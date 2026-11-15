@@ -229,8 +229,8 @@ class PostingPrunedDisj : public PrunedProbeBase<InputType> {
     }
     const auto len = _leaf.Len();
     if (_last != _masked_max) {
-      _leaf.template Materialize<!InputType::CONTIGUOUS>(
-        _base, std::end(_docs) - len);
+      _leaf.template Materialize<!InputType::CONTIGUOUS>(_base,
+                                                         std::end(_docs) - len);
       DecodeLazyFreqs();
       _len = len;
       _scored = false;

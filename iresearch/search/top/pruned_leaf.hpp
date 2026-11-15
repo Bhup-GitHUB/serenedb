@@ -550,8 +550,8 @@ class PrunedProbeBase : public PrunedLeafBase<InputType, false> {
        .cap = n},
       in, n, blocks, [&](uint32_t landed) IRS_FORCE_INLINE {
         if constexpr (InputType::CONTIGUOUS) {
-          const auto begin = reinterpret_cast<uintptr_t>(
-            In().Data() + _walk.BlockStart(landed));
+          const auto begin =
+            reinterpret_cast<uintptr_t>(In().Data() + _walk.BlockStart(landed));
           const auto end = landed + 1 != size
                              ? reinterpret_cast<uintptr_t>(
                                  In().Data() + _walk.BlockStart(landed + 1))
