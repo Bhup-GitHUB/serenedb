@@ -382,6 +382,45 @@ def test_a_request_that_never_connects_is_retried_whatever_its_method(
     assert attempts == 4, attempts
 
 
+@pytest.mark.parametrize("kind", ["s3", "azure"])
+def test_a_tablespace_asks_for_nothing_above_its_location(tmp_path: Path,
+                                                          kind: str) -> None:
+    prefix = f"above-{tmp_path.name}/deep/er/ts"
+    with FakeS3() if kind == "s3" else FakeAzure() as fake:
+        server = _Server(tmp_path / "data")
+        try:
+            assert server.wait_ready(), server.output()
+            with server.connect() as conn:
+                if kind == "s3":
+                    bucket, keys = "bucket", fake.keys
+                    conn.execute(
+                        "CREATE PERSISTENT SECRET wide (TYPE s3, KEY_ID 'key', "
+                        f"SECRET 'secret', ENDPOINT '{fake.endpoint}', "
+                        "URL_STYLE 'path', USE_SSL false, SCOPE 's3://bucket')")
+                else:
+                    bucket, keys = "indexes", fake.names
+                    conn.execute(
+                        "CREATE PERSISTENT SECRET wide (TYPE azure, "
+                        f"CONNECTION_STRING '{fake.connection_string}', "
+                        "SCOPE 'az://indexes')")
+                scheme = "s3" if kind == "s3" else "az"
+                trace: list[dict] = []
+                if kind == "s3":
+                    fake.trace = trace
+                conn.execute(
+                    f"CREATE TABLESPACE idx LOCATION '{scheme}://{bucket}/{prefix}'")
+                conn.execute("CREATE TABLE notes(id INTEGER) TABLESPACE idx")
+                conn.execute("INSERT INTO notes VALUES (1)")
+                conn.execute("VACUUM (FLUSH_TABLE) notes")
+        finally:
+            server.stop()
+        assert not [entry for entry in trace
+                    if not entry["key"].startswith(prefix)], trace
+        stored = keys(bucket)
+        assert stored and not [key for key in stored
+                               if not key.startswith(prefix)], stored
+
+
 def test_index_files_on_s3(tmp_path: Path, s3_store: _Store) -> None:
     prefix = f"tablespace-{tmp_path.name}"
     location = f"s3://{s3_store.bucket}/{prefix}"
@@ -1423,9 +1462,10 @@ def test_a_restart_opens_its_tables_with_the_replaced_secret(
                 conn.execute("DROP TABLE gone")
                 fake.session_tokens = {"first", "second"}
                 conn.execute(_token_secret(store, location, "second"))
-            fake.session_tokens = {"second"}
         finally:
             server.stop()
+        fake.session_tokens = {"second"}
+        fake.reset()
         again = _Server(datadir)
         try:
             assert again.wait_ready(), again.output()

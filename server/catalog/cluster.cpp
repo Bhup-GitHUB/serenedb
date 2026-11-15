@@ -285,11 +285,29 @@ std::string NormalizeLocation(std::string_view location) {
   return result;
 }
 
-std::string TablespaceDirectory(std::string_view location) {
+std::string SystemDirectory(std::string_view location) {
   return duckdb::FileSystem::JoinPath(
     location,
-    absl::StrCat(backup::PositionSource::Instance().SystemIdentifier()),
-    kEngineDir);
+    absl::StrCat(backup::PositionSource::Instance().SystemIdentifier()));
+}
+
+std::string TablespaceDirectory(std::string_view location) {
+  return duckdb::FileSystem::JoinPath(SystemDirectory(location), kEngineDir);
+}
+
+void CreateTablespaceDirectory(const std::string& location) {
+  auto& fs = StorageFileSystem();
+  if (!duckdb::Path::FromString(location).IsRemote()) {
+    fs.CreateDirectoryExtended(
+      TablespaceDirectory(location),
+      {.mode = duckdb::CreateDirectoryMode::RECURSIVE, .sync = true});
+    return;
+  }
+  for (const auto& level :
+       {location, SystemDirectory(location), TablespaceDirectory(location)}) {
+    fs.CreateDirectoryExtended(
+      level, {.mode = duckdb::CreateDirectoryMode::SINGLE, .sync = true});
+  }
 }
 
 class BuiltinTablespaces final : public duckdb::DefaultGenerator {
@@ -650,9 +668,7 @@ duckdb::optional_ptr<duckdb::CatalogEntry> ClusterCatalog::CreateTablespace(
   if (!_tablespaces.Create(transaction, std::move(entry))) {
     exists();
   }
-  StorageFileSystem().CreateDirectoryExtended(
-    tablespace.Directory(),
-    {.mode = duckdb::CreateDirectoryMode::RECURSIVE, .sync = true});
+  CreateTablespaceDirectory(info.location);
   return &tablespace;
 }
 

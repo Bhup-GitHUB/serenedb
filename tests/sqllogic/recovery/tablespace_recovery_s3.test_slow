@@ -1,5 +1,9 @@
 control substitution on
 
+# Tables in a tablespace on an object store through crashes: rows only the log
+# holds, a checkpoint cut off before it drops the log it covers, and a flush
+# cut off after its files were written but before the log named them.
+
 statement ok
 CREATE OR REPLACE PERSISTENT SECRET trs (
   TYPE s3,
@@ -30,15 +34,15 @@ statement ok
 VACUUM (FLUSH_TABLE) docs;
 
 statement ok
-CREATE TABLE notes (id INT, body TEXT);
+CREATE TABLE notes (id INT, body TEXT)
+  WITH (compaction_interval = 0)
+  TABLESPACE ts_s3;
+
+statement ok
+CREATE INDEX notes_idx ON notes USING inverted(body trs_english);
 
 statement ok
 INSERT INTO notes SELECT i, 'saved' FROM range(0, 1000) r(i);
-
-statement ok
-CREATE INDEX notes_idx ON notes USING inverted(body trs_english)
-  WITH (compaction_interval = 0)
-  TABLESPACE ts_s3;
 
 statement ok
 SET sdb_faults = 'crash_on_packet';
@@ -76,7 +80,11 @@ INSERT INTO notes SELECT i, 'finished' FROM range(1000, 1100) r(i);
 
 connection after_restart
 statement ok
-SET sdb_faults = 'crash_before_index_checkpoint_finish';
+VACUUM (FLUSH_TABLE) notes;
+
+connection after_restart
+statement ok
+SET sdb_faults = 'crash_before_log_truncate';
 
 connection after_restart
 statement error connection closed
@@ -104,11 +112,25 @@ INSERT INTO notes SELECT i, 'discarded' FROM range(1100, 1150) r(i);
 
 connection after_finish
 statement ok
-SET sdb_faults = 'crash_after_index_checkpoint_prepare';
+SET sdb_faults = 'pause_search_write_out';
+
+connection flusher
+statement async error connection closed
+VACUUM (FLUSH_TABLE) notes;
+
+connection after_finish
+statement ok retry 40 backoff 250ms
+SET sdb_faults = '-pause_search_write_out:parked';
+
+connection after_finish
+statement ok
+SET sdb_faults = 'crash_on_packet';
 
 connection after_finish
 statement error connection closed
-CHECKPOINT;
+SELECT 1;
+
+wait
 
 
 connection after_discard
@@ -132,11 +154,15 @@ INSERT INTO notes SELECT i, 'committed' FROM range(1150, 1160) r(i);
 
 connection after_discard
 statement ok
-SET sdb_faults = 'Search::CrashAfterCommit';
+VACUUM (FLUSH_TABLE) notes;
+
+connection after_discard
+statement ok
+SET sdb_faults = 'crash_on_packet';
 
 connection after_discard
 statement error connection closed
-VACUUM (FLUSH_TABLE) notes;
+SELECT 1;
 
 
 connection after_commit
@@ -161,7 +187,7 @@ DROP TABLE docs;
 
 connection after_commit
 statement ok
-DROP INDEX notes_idx;
+DROP TABLE notes;
 
 connection after_commit
 statement ok
@@ -174,10 +200,6 @@ FROM glob('s3://${MINIO_BUCKET}/recovery${__TEST_DIR__}/ts/*/engine_v1/**');
 ----
 left_on_s3
 0
-
-connection after_commit
-statement ok
-DROP TABLE notes;
 
 connection after_commit
 statement ok

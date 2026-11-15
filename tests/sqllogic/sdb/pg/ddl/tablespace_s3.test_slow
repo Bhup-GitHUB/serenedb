@@ -88,7 +88,9 @@ VACUUM (FLUSH_TABLE) docs;
 
 
 statement ok
-CREATE TABLE notes (id INT, body TEXT);
+CREATE TABLE notes (id INT, body TEXT)
+  WITH (optimize_top_k = 'bm25(1.2, 0.75)')
+  TABLESPACE ts_s3_${__DATABASE__};
 
 
 statement ok
@@ -97,23 +99,43 @@ FROM generate_series(1, 300) AS s(i);
 
 
 statement ok
-CREATE INDEX notes_idx ON notes USING inverted(body ts_s3_english)
-  WITH (optimize_top_k = 'bm25(1.2, 0.75)')
-  TABLESPACE ts_s3_${__DATABASE__};
+CREATE INDEX notes_idx ON notes USING inverted(body ts_s3_english);
 
 
 statement ok
 VACUUM (FLUSH_TABLE) notes;
 
 
+statement count 2
+COPY (SELECT 1 AS id, 'red fox' AS body UNION ALL SELECT 2, 'blue whale')
+TO '${__TEST_DIR__}/ts_s3_events.parquet' (FORMAT PARQUET);
+
+
+statement ok
+CREATE VIEW events AS SELECT * FROM read_parquet('${__TEST_DIR__}/ts_s3_events.parquet');
+
+
+statement ok
+CREATE INDEX events_idx ON events USING inverted(id, body ts_s3_english)
+  TABLESPACE ts_s3_${__DATABASE__};
+
+
 query
 SELECT c.relname, t.spcname = 'ts_s3_${__DATABASE__}' AS in_ts
 FROM pg_class c JOIN pg_tablespace t ON t.oid = c.reltablespace
-WHERE c.relname IN ('docs', 'notes_idx') ORDER BY c.relname;
+WHERE c.relname IN ('docs', 'notes_idx', 'events_idx') ORDER BY c.relname;
 ----
 relname	in_ts
 docs	t
+events_idx	t
 notes_idx	t
+
+
+query
+SELECT id FROM events_idx WHERE body @@ ts_phrase('fox') ORDER BY id;
+----
+id
+1
 
 
 query
@@ -208,6 +230,10 @@ DROP TABLE docs;
 
 statement ok
 DROP TABLE notes;
+
+
+statement ok
+DROP VIEW events;
 
 
 statement ok
