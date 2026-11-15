@@ -40,8 +40,6 @@ namespace irs {
 
 struct FieldMeta;
 
-// The files a posting list lives in; `pos` and `pay` are null for a field that
-// stores neither.
 struct PostingsHandles {
   const duckdb::InputFile* doc = nullptr;
   const duckdb::InputFile* pos = nullptr;
