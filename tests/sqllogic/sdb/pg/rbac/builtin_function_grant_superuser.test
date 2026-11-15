@@ -139,3 +139,63 @@ DROP TABLE bfgs_t;
 
 statement ok
 DROP ROLE bfgs_pragma;
+
+
+statement ok
+DROP ROLE IF EXISTS bfgs_granted;
+
+
+statement ok
+DROP ROLE IF EXISTS bfgs_checkpointer;
+
+
+statement ok
+CREATE ROLE bfgs_granted;
+
+
+statement ok
+CREATE ROLE bfgs_checkpointer;
+
+
+statement ok
+GRANT pg_checkpoint TO bfgs_checkpointer;
+
+
+statement ok
+GRANT EXECUTE ON FUNCTION force_checkpoint() TO bfgs_granted;
+
+
+statement ok
+SET ROLE bfgs_checkpointer;
+
+
+statement ok
+FORCE CHECKPOINT;
+
+
+statement ok
+RESET ROLE;
+
+
+statement ok
+SET ROLE bfgs_granted;
+
+
+statement ok
+FORCE CHECKPOINT;
+
+
+statement ok
+RESET ROLE;
+
+
+statement ok
+REVOKE EXECUTE ON FUNCTION force_checkpoint() FROM bfgs_granted;
+
+
+statement ok
+DROP ROLE bfgs_granted;
+
+
+statement ok
+DROP ROLE bfgs_checkpointer;

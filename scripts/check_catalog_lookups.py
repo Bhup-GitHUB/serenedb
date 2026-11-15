@@ -21,21 +21,17 @@ ALLOWED = {
     f"{PLANNER}/binder/statement/bind_copy.cpp": 1,
     f"{PLANNER}/binder/statement/bind_create.cpp": 3,
     f"{PLANNER}/binder/statement/bind_create_table.cpp": 2,
-    f"{PLANNER}/binder/statement/bind_delete.cpp": 2,
+    f"{PLANNER}/binder/statement/bind_delete.cpp": 1,
     f"{PLANNER}/binder/statement/bind_drop.cpp": 1,
-    f"{PLANNER}/binder/statement/bind_export.cpp": 1,
     f"{PLANNER}/binder/statement/bind_grant.cpp": 2,
     f"{PLANNER}/binder/statement/bind_merge_into.cpp": 1,
-    f"{PLANNER}/binder/statement/bind_pragma.cpp": 3,
     f"{PLANNER}/binder/statement/bind_update.cpp": 1,
     f"{PLANNER}/binder/tableref/bind_pivot.cpp": 2,
     f"{PLANNER}/binder/tableref/bind_showref.cpp": 3,
-    f"{PLANNER}/operator/logical_copy_to_file.cpp": 1,
     f"{PLANNER}/operator/logical_create.cpp": 1,
     f"{PLANNER}/operator/logical_create_index.cpp": 2,
     f"{PLANNER}/operator/logical_create_table.cpp": 1,
     f"{PLANNER}/operator/logical_delete.cpp": 1,
-    f"{PLANNER}/operator/logical_export.cpp": 1,
     f"{PLANNER}/operator/logical_insert.cpp": 1,
     f"{PLANNER}/operator/logical_merge_into.cpp": 1,
     f"{PLANNER}/operator/logical_update.cpp": 1,
@@ -43,9 +39,7 @@ ALLOWED = {
     f"{FUNCTIONS}/aggregate/distributive/minmax.cpp": 1,
     f"{FUNCTIONS}/scalar/sequence/nextval.cpp": 1,
     f"{FUNCTIONS}/table/table_scan.cpp": 3,
-    f"{EXTENSIONS}/core_functions/aggregate/distributive/sum.cpp": 1,
     f"{EXTENSIONS}/core_functions/scalar/generic/system_functions.cpp": 3,
-    f"{ICEBERG}/execution/scan/iceberg_task_executor.cpp": 1,
     f"{SERVER}/catalog/catalog_subscription.cpp": 1,
     f"{SERVER}/connector/copy_from_batches.cpp": 1,
     f"{SERVER}/connector/functions/jobs.cpp": 1,
@@ -53,7 +47,7 @@ ALLOWED = {
     f"{SERVER}/connector/index_source_native.cpp": 1,
     f"{SERVER}/connector/iresearch_replacement_scan.cpp": 1,
     f"{SERVER}/connector/scan/scan_bind.cpp": 1,
-    f"{SERVER}/connector/view_fast_path.cpp": 2,
+    f"{SERVER}/connector/view_fast_path.cpp": 1,
     f"{SERVER}/docs/builder/docs_loader.cpp": 1,
     f"{SERVER}/network/pg/pg_wire_session.cpp": 1,
     f"{SERVER}/pg/catalog/engine/scan_function.cpp": 1,
@@ -80,28 +74,39 @@ def direct_lookups(path):
 
 def main():
     failed = False
+    script = os.path.relpath(__file__, ROOT)
     for tree, route in ROUTE.items():
         top = os.path.join(ROOT, tree)
         if not os.path.isdir(top):
             continue
+        walked = set()
         for directory, _, files in os.walk(top):
             for name in sorted(files):
                 if not name.endswith(".cpp"):
                     continue
                 path = os.path.join(directory, name)
                 relative = os.path.relpath(path, ROOT)
+                walked.add(relative)
                 lines = direct_lookups(path)
                 allowed = ALLOWED.get(relative, 0)
-                if len(lines) > allowed:
-                    failed = True
-                    where = ", ".join(str(line) for line in lines)
-                    print(
-                        f"{relative}: {len(lines)} direct catalog lookups (lines {where}), "
-                        f"{allowed} allowed: {route}, which checks schema USAGE and cross-database "
-                        f"CONNECT, or raise the count in {os.path.relpath(__file__, ROOT)} for an "
-                        f"internal lookup",
-                        file=sys.stderr,
-                    )
+                if len(lines) == allowed:
+                    continue
+                failed = True
+                where = f" (lines {', '.join(str(line) for line in lines)})" if lines else ""
+                fix = (
+                    f"{route}, which checks schema USAGE and cross-database CONNECT, or raise the count in "
+                    f"{script} for an internal lookup"
+                    if len(lines) > allowed
+                    else f"lower the count in {script}"
+                )
+                print(
+                    f"{relative}: {len(lines)} direct catalog lookups{where}, {allowed} allowed: {fix}",
+                    file=sys.stderr,
+                )
+        for relative in sorted(ALLOWED):
+            if relative.startswith(f"{tree}/") and relative not in walked:
+                failed = True
+                print(f"{relative}: listed in {script} but not found: remove it", file=sys.stderr)
     return 1 if failed else 0
 
 

@@ -249,7 +249,7 @@ WHERE s.srvname = 'analytics';
 
 </DocCallout>
 
-`pg_foreign_data_wrapper` lists the three wrappers, and `srvfdw` points at the server's one, so psql's `\des` and `\dew` and `information_schema.foreign_servers` show them. The wrappers grant `USAGE` to no role, so only superusers create servers. See [System Table Compatibility](../../../compatibility/system-table-compatibility.md).
+`pg_foreign_data_wrapper` lists the five wrappers, and `srvfdw` points at the server's one, so psql's `\des` and `\dew` and `information_schema.foreign_servers` show them. The wrappers grant `USAGE` to no role, so only superusers create servers. See [System Table Compatibility](../../../compatibility/system-table-compatibility.md).
 
 ## Privileges
 
