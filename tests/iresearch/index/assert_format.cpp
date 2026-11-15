@@ -32,7 +32,7 @@
 #include <iresearch/analysis/token_attributes.hpp>
 #include <iresearch/analysis/token_sinks.hpp>
 #include <iresearch/analysis/tokenizer.hpp>
-#include <iresearch/index/directory_reader.hpp>
+#include <iresearch/index/composite_reader.hpp>
 #include <iresearch/index/field_meta.hpp>
 #include <iresearch/index/index_features.hpp>
 #include <iresearch/index/norm.hpp>

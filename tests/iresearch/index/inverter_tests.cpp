@@ -26,7 +26,7 @@
 #include <iresearch/analysis/token_attributes.hpp>
 #include <iresearch/analysis/tokenizer.hpp>
 #include <iresearch/analysis/tokenizer_config.hpp>
-#include <iresearch/index/directory_reader.hpp>
+#include <iresearch/index/composite_reader.hpp>
 #include <iresearch/index/index_writer.hpp>
 #include <iresearch/index/inverter/columnar_readers.hpp>
 #include <iresearch/utils/duckdb_engine.hpp>

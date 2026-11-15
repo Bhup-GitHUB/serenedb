@@ -30,7 +30,7 @@
 #include <iresearch/formats/hnsw/hnsw_graph.hpp>
 #include <iresearch/formats/hnsw/hnsw_reader.hpp>
 #include <iresearch/formats/index/idx_reader.hpp>
-#include <iresearch/index/directory_reader.hpp>
+#include <iresearch/index/composite_reader.hpp>
 #include <iresearch/index/file_names.hpp>
 #include <iresearch/index/index_writer.hpp>
 #include <iresearch/search/ann/family.hpp>
@@ -132,7 +132,7 @@ void WriteNullAt(irs::ColWriter& cs, irs::doc_id_t doc, float payload) {
             /*count=*/1);
 }
 
-irs::DirectoryReader BuildIndex(const tests::IndexDir& dir,
+irs::CompositeReader BuildIndex(const tests::IndexDir& dir,
                                 const std::vector<std::vector<float>>& vecs,
                                 irs::VectorMetric metric,
                                 irs::VectorQuantization quant,
@@ -192,7 +192,7 @@ std::vector<irs::doc_id_t> BruteForceTopK(
   return out;
 }
 
-std::vector<irs::doc_id_t> RunKnn(const irs::DirectoryReader& reader,
+std::vector<irs::doc_id_t> RunKnn(const irs::CompositeReader& reader,
                                   irs::ByVectorSimilarity& filter,
                                   size_t k = 128) {
   irs::VectorSimilarityScorer scorer;
@@ -444,7 +444,7 @@ TEST_P(HnswIndexTest, NullRowsStayOutOfTrainingAndResults) {
   }
 
   const auto queries = MakeVectors(20, 43);
-  const auto check = [&](const irs::DirectoryReader& reader, size_t count,
+  const auto check = [&](const irs::CompositeReader& reader, size_t count,
                          std::string_view stage) {
     const std::span<const std::vector<float>> rows{vecs.data(), count};
     const std::span<const irs::doc_id_t> want_docs{docs.data(), count};
@@ -786,7 +786,7 @@ std::vector<std::vector<float>> MakeDecayingVectors(size_t n, uint32_t seed,
 }
 
 std::vector<std::shared_ptr<const std::vector<float>>> SegmentBases(
-  const irs::DirectoryReader& reader) {
+  const irs::CompositeReader& reader) {
   std::vector<std::shared_ptr<const std::vector<float>>> out;
   for (const auto& segment : reader) {
     const auto* ann = static_cast<const irs::HnswIndex*>(segment.Ann(kVec));

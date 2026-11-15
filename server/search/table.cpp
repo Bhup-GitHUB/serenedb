@@ -31,7 +31,7 @@
 #include <duckdb/common/types/data_chunk.hpp>
 #include <iresearch/formats/column/col_reader.hpp>
 #include <iresearch/formats/column/hot_column_reader.hpp>
-#include <iresearch/index/directory_reader.hpp>
+#include <iresearch/index/composite_reader.hpp>
 #include <iresearch/index/docs_mask/docs_mask.hpp>
 #include <iresearch/index/file_names.hpp>
 #include <iresearch/index/segment_writer.hpp>
@@ -637,7 +637,7 @@ void Table::Publish(std::shared_ptr<TableState> state, Tick tick) {
   _versions.Publish(std::move(state), tick);
 }
 
-irs::DirectoryReader Table::BuildReader(const TableState& prev,
+irs::CompositeReader Table::BuildReader(const TableState& prev,
                                         const TableState& next) const {
   std::vector<irs::SegmentReader> readers;
   readers.reserve(next.units.size());
@@ -713,7 +713,7 @@ OwnSegment Table::OpenSegment(uint64_t id, uint8_t kinds,
   return opened;
 }
 
-irs::DirectoryReader Table::View(const TableState& state,
+irs::CompositeReader Table::View(const TableState& state,
                                  const OwnWrites& own) const {
   SDB_ASSERT(HasOwn(own));
   return Build(state, own, Scope::All);
@@ -727,7 +727,7 @@ TableRead Table::Read(const OwnWrites& own) const {
   return read;
 }
 
-irs::DirectoryReader Table::Build(const TableState& state, const OwnWrites& own,
+irs::CompositeReader Table::Build(const TableState& state, const OwnWrites& own,
                                   Scope scope) const {
   Mapped own_removed;
   for (const auto& removal : own.removals) {
@@ -845,7 +845,7 @@ uint64_t Table::ByteSize() const {
   return bytes;
 }
 
-irs::DirectoryReader Table::PieceView(
+irs::CompositeReader Table::PieceView(
   std::span<const std::shared_ptr<const TableUnit>> pieces,
   bool keep_deleted) const {
   std::vector<irs::SegmentReader> readers;

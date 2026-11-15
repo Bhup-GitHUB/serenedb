@@ -322,7 +322,7 @@ std::optional<KeySpec> IndexKeySpec(const catalog::SearchTableEntry& table,
 }
 
 void VerifyUniqueKey(duckdb::ClientContext& context,
-                     const irs::DirectoryReader& reader, const KeySpec& spec) {
+                     const irs::CompositeReader& reader, const KeySpec& spec) {
   std::vector<KeyProbe::Segment> segments;
   for (const auto& segment : reader) {
     segments.push_back({.sub = &segment});

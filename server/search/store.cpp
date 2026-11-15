@@ -39,7 +39,7 @@
 #include <duckdb/storage/storage_manager.hpp>
 #include <duckdb/transaction/duck_transaction_manager.hpp>
 #include <duckdb/transaction/meta_transaction.hpp>
-#include <iresearch/index/directory_reader.hpp>
+#include <iresearch/index/composite_reader.hpp>
 #include <iresearch/index/doc_removal.hpp>
 #include <iresearch/index/file_names.hpp>
 #include <iresearch/index/segment_reader.hpp>
@@ -311,7 +311,7 @@ bool Store::Absent() const {
   return _on_disk && !catalog::StorageFileSystem().DirectoryExists(_path);
 }
 
-void Store::ClaimColumnOids(const irs::DirectoryReader& reader) const {
+void Store::ClaimColumnOids(const irs::CompositeReader& reader) const {
   auto& db_manager =
     duckdb::DatabaseManager::Get(irs::DuckDBEngine::Instance().instance());
   const auto claim = [&](irs::field_id id) {
@@ -347,7 +347,7 @@ bool Store::FreeVersions() {
   return _table && _table->Versions().FreeRetired();
 }
 
-irs::DirectoryReader Store::BuildSnapshot() {
+irs::CompositeReader Store::BuildSnapshot() {
   SDB_ASSERT(_table);
   WriteOut();
   return _table->ColdView();
@@ -361,7 +361,7 @@ bool Store::Settle() {
   return true;
 }
 
-void Store::OptimizeInMemory() {
+void Store::Pack() {
   SDB_ASSERT(_table);
   auto& fs = catalog::StorageFileSystem();
   const auto state = _table->State();

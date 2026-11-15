@@ -80,11 +80,11 @@ class ScorePruneTestCase : public tests::IndexTestBase {
   static irs::IndexWriterOptions GetWriterOptions(irs::ScorerPtr scorer,
                                                   bool write_norms);
 
-  std::vector<Doc> Collect(const irs::DirectoryReader& index,
+  std::vector<Doc> Collect(const irs::CompositeReader& index,
                            const irs::Filter& filter, irs::ScorerPtr scorer,
                            bool score_prune, bool can_prune, size_t limit);
 
-  void AssertResults(const irs::DirectoryReader& index,
+  void AssertResults(const irs::CompositeReader& index,
                      const irs::Filter& filter, irs::ScorerPtr scorer,
                      bool score_prune, bool can_prune, size_t limit);
 
@@ -134,7 +134,7 @@ class ScorePruneTestCase : public tests::IndexTestBase {
   void AssertWithNewSegmentsDense(irs::Scorer* scorer);
 };
 
-std::vector<Doc> ScorePruneTestCase::Collect(const irs::DirectoryReader& index,
+std::vector<Doc> ScorePruneTestCase::Collect(const irs::CompositeReader& index,
                                              const irs::Filter& filter,
                                              irs::ScorerPtr scorer,
                                              bool score_prune, bool can_prune,
@@ -195,7 +195,7 @@ std::vector<Doc> ScorePruneTestCase::Collect(const irs::DirectoryReader& index,
   return {std::begin(sorted), std::end(sorted)};
 }
 
-void ScorePruneTestCase::AssertResults(const irs::DirectoryReader& index,
+void ScorePruneTestCase::AssertResults(const irs::CompositeReader& index,
                                        const irs::Filter& filter,
                                        irs::ScorerPtr scorer, bool score_prune,
                                        bool can_prune, size_t limit) {

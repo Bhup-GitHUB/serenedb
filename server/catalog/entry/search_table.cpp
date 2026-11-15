@@ -66,7 +66,7 @@
 #include <iresearch/formats/column/col_reader.hpp>
 #include <iresearch/formats/column/column_reader.hpp>
 #include <iresearch/formats/column/read_context.hpp>
-#include <iresearch/index/directory_reader.hpp>
+#include <iresearch/index/composite_reader.hpp>
 #include <iresearch/utils/pg/errcodes.hpp>
 #include <iresearch/utils/pg/sql_exception_macro.hpp>
 #include <iresearch/utils/type_limits.hpp>
@@ -465,7 +465,7 @@ void WalkIResearchColumn(const duckdb::QueryContext& context,
 }  // namespace
 
 duckdb::vector<duckdb::ColumnSegmentInfo> SearchTableEntry::ColumnSegmentRows(
-  const duckdb::QueryContext& context, const irs::DirectoryReader& reader,
+  const duckdb::QueryContext& context, const irs::CompositeReader& reader,
   const duckdb::TableCatalogEntry& table, duckdb::column_t key_column,
   bool segment_info) {
   duckdb::vector<duckdb::ColumnSegmentInfo> result;

@@ -228,7 +228,7 @@ class ScorePruneNormMergeCase : public tests::IndexTestBase {
 
   // Run BM25 ExecuteTopK twice and assert pruned == unpruned. Returns the
   // pruning-off baseline so callers can diff across snapshots.
-  std::vector<irs::ScoreDoc> RunBM25(const irs::DirectoryReader& reader,
+  std::vector<irs::ScoreDoc> RunBM25(const irs::CompositeReader& reader,
                                      const irs::Scorer& scorer,
                                      irs::field_id field, size_t k) {
     irs::ByTerm filter;
@@ -237,7 +237,7 @@ class ScorePruneNormMergeCase : public tests::IndexTestBase {
     return RunBM25(reader, scorer, filter, k);
   }
 
-  std::vector<irs::ScoreDoc> RunBM25(const irs::DirectoryReader& reader,
+  std::vector<irs::ScoreDoc> RunBM25(const irs::CompositeReader& reader,
                                      const irs::Scorer& scorer,
                                      const irs::Filter& filter, size_t k) {
     std::vector<irs::ScoreDoc> hits_unpruned(k);

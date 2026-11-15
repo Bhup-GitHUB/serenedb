@@ -116,14 +116,14 @@ class SegmentReaderImpl final : public SubReader {
   const ColumnReader* Column(field_id field) const final;
   const AnnIndex* Ann(field_id field) const final;
   const ColReader* GetColReader() const final {
-    return _data ? _data->col_reader.get() : nullptr;
+    return _readers ? _readers->col_reader.get() : nullptr;
   }
 
  private:
-  struct ColumnData {
+  struct Readers {
     std::unique_ptr<ColReader> col_reader;
     std::unique_ptr<IdxReader> idx_reader;
-    std::shared_ptr<ColumnData> base;
+    std::shared_ptr<Readers> base;
 
     const IdxReader* Idx() const noexcept {
       return idx_reader ? idx_reader.get() : base ? base->Idx() : nullptr;
@@ -139,7 +139,7 @@ class SegmentReaderImpl final : public SubReader {
   uint64_t _id = 0;
   uint64_t _patch_tick = 0;
   uint64_t _patched_docs = 0;
-  std::shared_ptr<ColumnData> _data;
+  std::shared_ptr<Readers> _readers;
   std::shared_ptr<term_dict::FieldReader> _field_reader;
   std::shared_ptr<const PieceFields> _pieces;
 };

@@ -327,7 +327,7 @@ IteratorFactory QueryIterator(bench::Executor& executor,
 }
 
 template<typename Body>
-void ForEachCombination(const irs::DirectoryReader& reader,
+void ForEachCombination(const irs::CompositeReader& reader,
                         const std::vector<IteratorFactory>& factories,
                         std::span<const irs::doc_id_t> window_sizes,
                         Body&& body) {
@@ -349,7 +349,7 @@ void ForEachCombination(const irs::DirectoryReader& reader,
   }
 }
 
-void TestAdvanceVsFillBlock(const irs::DirectoryReader& reader,
+void TestAdvanceVsFillBlock(const irs::CompositeReader& reader,
                             const std::vector<IteratorFactory>& factories,
                             std::span<const irs::doc_id_t> window_sizes) {
   ForEachCombination(
@@ -379,7 +379,7 @@ void TestAdvanceVsFillBlock(const irs::DirectoryReader& reader,
     });
 }
 
-void TestAdvanceVsEmitDocs(const irs::DirectoryReader& reader,
+void TestAdvanceVsEmitDocs(const irs::CompositeReader& reader,
                            const std::vector<IteratorFactory>& factories,
                            std::span<const irs::doc_id_t> window_sizes) {
   ForEachCombination(
@@ -409,7 +409,7 @@ void TestAdvanceVsEmitDocs(const irs::DirectoryReader& reader,
     });
 }
 
-void TestSeekVsFillBlock(const irs::DirectoryReader& reader,
+void TestSeekVsFillBlock(const irs::CompositeReader& reader,
                          const std::vector<IteratorFactory>& factories,
                          std::span<const irs::doc_id_t> window_sizes) {
   ForEachCombination(reader, factories, window_sizes,
@@ -430,7 +430,7 @@ void TestSeekVsFillBlock(const irs::DirectoryReader& reader,
                      });
 }
 
-void TestInterleavedSeekFillBlock(const irs::DirectoryReader& reader,
+void TestInterleavedSeekFillBlock(const irs::CompositeReader& reader,
                                   const std::vector<IteratorFactory>& factories,
                                   std::span<const irs::doc_id_t> window_sizes) {
   ForEachCombination(
@@ -454,7 +454,7 @@ void TestInterleavedSeekFillBlock(const irs::DirectoryReader& reader,
     });
 }
 
-void TestAdvanceSkipFillBlock(const irs::DirectoryReader& reader,
+void TestAdvanceSkipFillBlock(const irs::CompositeReader& reader,
                               const std::vector<IteratorFactory>& factories,
                               std::span<const irs::doc_id_t> window_sizes,
                               std::span<const size_t> skip_counts) {
@@ -482,7 +482,7 @@ void TestAdvanceSkipFillBlock(const irs::DirectoryReader& reader,
     });
 }
 
-void TestSeekSkipFillBlock(const irs::DirectoryReader& reader,
+void TestSeekSkipFillBlock(const irs::CompositeReader& reader,
                            const std::vector<IteratorFactory>& factories,
                            std::span<const irs::doc_id_t> window_sizes,
                            std::span<const irs::doc_id_t> skip_deltas) {
@@ -681,7 +681,7 @@ void BuildIndex(const std::string& corpus_path,
   });
 }
 
-std::vector<std::string> BuildDocIdMap(const irs::DirectoryReader& reader) {
+std::vector<std::string> BuildDocIdMap(const irs::CompositeReader& reader) {
   std::vector<std::string> id_map(reader.docs_count());
   uint64_t base = 0;
   for (auto& segment : reader) {
@@ -932,7 +932,7 @@ struct ScoredPrepare {
   std::vector<irs::QueryBuilder::ptr> queries;
 
   ScoredPrepare(bench::Executor& executor, std::string_view query,
-                const irs::Scorer& scorer, const irs::DirectoryReader& reader)
+                const irs::Scorer& scorer, const irs::CompositeReader& reader)
     : filter{executor.ParseFilter(query, true)},
       stats{duckdb::Allocator::DefaultAllocator()} {
     SDB_ASSERT(filter);
@@ -956,7 +956,7 @@ std::vector<irs::doc_id_t> WindowBounds(irs::doc_id_t max_doc,
   return bounds;
 }
 
-void TestCountRangeMatchesWhole(const irs::DirectoryReader& reader,
+void TestCountRangeMatchesWhole(const irs::CompositeReader& reader,
                                 const std::vector<IteratorFactory>& factories,
                                 std::span<const irs::doc_id_t> window_sizes) {
   ForEachCombination(reader, factories, window_sizes,
@@ -980,7 +980,7 @@ void TestCountRangeMatchesWhole(const irs::DirectoryReader& reader,
                      });
 }
 
-void TestDocsRangeMatchesWhole(const irs::DirectoryReader& reader,
+void TestDocsRangeMatchesWhole(const irs::CompositeReader& reader,
                                const std::vector<IteratorFactory>& factories,
                                std::span<const irs::doc_id_t> window_sizes) {
   ForEachCombination(
@@ -1017,7 +1017,7 @@ void TestDocsRangeMatchesWhole(const irs::DirectoryReader& reader,
     });
 }
 
-void TestHitsRangeMatchesWhole(const irs::DirectoryReader& reader,
+void TestHitsRangeMatchesWhole(const irs::CompositeReader& reader,
                                const std::vector<IteratorFactory>& factories,
                                std::span<const irs::doc_id_t> window_sizes,
                                bench::Executor& executor,
@@ -1086,7 +1086,7 @@ void TestHitsRangeMatchesWhole(const irs::DirectoryReader& reader,
   }
 }
 
-void TestTopRangeMatchesWhole(const irs::DirectoryReader& reader,
+void TestTopRangeMatchesWhole(const irs::CompositeReader& reader,
                               const std::vector<IteratorFactory>& factories,
                               std::span<const irs::doc_id_t> window_sizes,
                               bench::Executor& executor,

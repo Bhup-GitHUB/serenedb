@@ -1001,7 +1001,7 @@ struct Terms {
 };
 
 std::shared_ptr<const irs::DocRemoval> RemovalOf(
-  const irs::DirectoryReader& reader, const Terms& terms);
+  const irs::CompositeReader& reader, const Terms& terms);
 
 inline std::shared_ptr<const irs::DocRemoval> RemovalOf(
   const tests::IndexWriter& writer, const Terms& terms) {
@@ -1009,7 +1009,7 @@ inline std::shared_ptr<const irs::DocRemoval> RemovalOf(
 }
 
 inline LazyRemoval RemovalOfTerms(Terms terms) {
-  return [terms = std::move(terms)](const irs::DirectoryReader& reader) {
+  return [terms = std::move(terms)](const irs::CompositeReader& reader) {
     return RemovalOf(reader, terms);
   };
 }

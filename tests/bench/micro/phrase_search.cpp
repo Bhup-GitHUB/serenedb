@@ -31,7 +31,7 @@
 #include <iresearch/analysis/token_sinks.hpp>
 #include <iresearch/analysis/tokenizer.hpp>
 #include <iresearch/analysis/tokenizer_config.hpp>
-#include <iresearch/index/directory_reader.hpp>
+#include <iresearch/index/composite_reader.hpp>
 #include <iresearch/index/index_writer.hpp>
 #include <iresearch/search/count/make.hpp>
 #include <iresearch/search/detail/column_collector.hpp>
@@ -195,7 +195,7 @@ constexpr Strategy kStrategies[] = {
 struct Index {
   const Strategy* strategy;
   std::unique_ptr<irs::analysis::Tokenizer> tokenizer;
-  irs::DirectoryReader reader;
+  irs::CompositeReader reader;
 };
 
 std::unique_ptr<irs::analysis::Tokenizer> MakeTokenizer(
@@ -354,7 +354,7 @@ irs::Filter::ptr MakePhrase(const Index& index, std::string_view text,
   return MakeLoweredPhrase(std::move(phrase));
 }
 
-uint64_t Count(const irs::DirectoryReader& reader, const irs::Filter& filter) {
+uint64_t Count(const irs::CompositeReader& reader, const irs::Filter& filter) {
   uint64_t hits = 0;
   for (const auto& segment : reader) {
     auto query = filter.PrepareSegment(segment, {});
@@ -368,7 +368,7 @@ uint64_t Count(const irs::DirectoryReader& reader, const irs::Filter& filter) {
   return hits;
 }
 
-double Scored(const irs::DirectoryReader& reader, const irs::Filter& filter,
+double Scored(const irs::CompositeReader& reader, const irs::Filter& filter,
               uint64_t& hits) {
   static const irs::BM25 kScorer;
   irs::StatsArena stats{duckdb::Allocator::DefaultAllocator()};

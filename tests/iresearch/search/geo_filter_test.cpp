@@ -19,7 +19,7 @@
 ////////////////////////////////////////////////////////////////////////////////
 
 #include <algorithm>
-#include <iresearch/index/directory_reader.hpp>
+#include <iresearch/index/composite_reader.hpp>
 #include <iresearch/index/index_writer.hpp>
 #include <iresearch/index/iterators.hpp>
 #include <iresearch/search/detail/collectors.hpp>
@@ -265,7 +265,7 @@ TEST(GeoFilterTest, check_reads_the_stored_shape) {
 
   ::tests::IndexDir dir{irs::DuckDBEngine::Instance().instance(),
                         TestEnv::MemoryRoot()};
-  irs::DirectoryReader reader;
+  irs::CompositeReader reader;
   {
     auto writer = ::tests::IndexWriter::Make(
       dir, ::tests::kOmCreate, irs::tests::DefaultWriterOptions());
@@ -416,7 +416,7 @@ TEST(GeoFilterTest, query) {
 
   ::tests::IndexDir dir{irs::DuckDBEngine::Instance().instance(),
                         TestEnv::MemoryRoot()};
-  irs::DirectoryReader reader;
+  irs::CompositeReader reader;
 
   // index data
   {
@@ -793,7 +793,7 @@ TEST(GeoFilterTest, checkScorer) {
 
   ::tests::IndexDir dir{irs::DuckDBEngine::Instance().instance(),
                         TestEnv::MemoryRoot()};
-  irs::DirectoryReader reader;
+  irs::CompositeReader reader;
 
   // index data
   {
@@ -1031,7 +1031,7 @@ TEST(GeoFilterTest, per_node_scorer_override) {
 
   ::tests::IndexDir dir{irs::DuckDBEngine::Instance().instance(),
                         TestEnv::MemoryRoot()};
-  irs::DirectoryReader reader;
+  irs::CompositeReader reader;
   {
     auto writer = ::tests::IndexWriter::Make(
       dir, ::tests::kOmCreate, irs::tests::DefaultWriterOptions());

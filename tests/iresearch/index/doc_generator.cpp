@@ -752,7 +752,7 @@ void NormStringJsonFieldFactory(Document& doc, const std::string& name,
 }
 
 std::shared_ptr<const irs::DocRemoval> RemovalOf(
-  const irs::DirectoryReader& reader, const Terms& terms) {
+  const irs::CompositeReader& reader, const Terms& terms) {
   irs::DocRemovalBuilder removal;
   for (uint32_t index = 0; index != reader.size(); ++index) {
     const auto& segment = reader[index];

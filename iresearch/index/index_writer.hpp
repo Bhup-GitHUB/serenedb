@@ -41,7 +41,7 @@
 
 #include "iresearch/formats/hnsw/hnsw_bases.hpp"
 #include "iresearch/index/column_info.hpp"
-#include "iresearch/index/directory_reader.hpp"
+#include "iresearch/index/composite_reader.hpp"
 #include "iresearch/index/doc_removal.hpp"
 #include "iresearch/index/field_meta.hpp"
 #include "iresearch/index/index_features.hpp"
@@ -262,24 +262,24 @@ class IndexWriter : private util::Noncopyable {
   };
 
   struct Merged {
-    DirectoryReader source;
+    CompositeReader source;
     MergeClaim claim;
     SegmentMeta meta;
     std::shared_ptr<const SegmentReaderImpl> reader;
     std::vector<DocMap> maps;
   };
 
-  auto MergeAsync(const CompactionPolicy& policy, DirectoryReader source,
+  auto MergeAsync(const CompactionPolicy& policy, CompositeReader source,
                   const IndexFieldOptions* field_options,
                   const MergeWriter::FlushProgress& progress,
                   const AnnBuildEnv* env) -> yaclib::Future<Merged>;
 
-  auto WriteAsync(DirectoryReader source, uint64_t id,
+  auto WriteAsync(CompositeReader source, uint64_t id,
                   const IndexFieldOptions* field_options,
                   const MergeWriter::FlushProgress& progress,
                   const AnnBuildEnv* env) -> yaclib::Future<Merged>;
 
-  Merged MergePieces(DirectoryReader source, uint64_t id,
+  Merged MergePieces(CompositeReader source, uint64_t id,
                      const IndexFieldOptions* field_options);
 
   class [[nodiscard]] CompactionFloorGuard : private util::Noncopyable {

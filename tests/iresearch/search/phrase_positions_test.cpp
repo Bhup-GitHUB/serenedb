@@ -28,7 +28,7 @@
 #include <iresearch/analysis/text/term_view.hpp>
 #include <iresearch/analysis/token_batch.hpp>
 #include <iresearch/analysis/tokenizer.hpp>
-#include <iresearch/index/directory_reader.hpp>
+#include <iresearch/index/composite_reader.hpp>
 #include <iresearch/index/file_names.hpp>
 #include <iresearch/index/index_writer.hpp>
 #include <iresearch/search/detail/phrase_slop_matcher.hpp>

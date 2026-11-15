@@ -29,7 +29,7 @@
 #include <filesystem>
 #include <iresearch/analysis/keyword_tokenizer.hpp>
 #include <iresearch/analysis/text_tokenizer.hpp>
-#include <iresearch/index/directory_reader.hpp>
+#include <iresearch/index/composite_reader.hpp>
 #include <iresearch/index/index_features.hpp>
 #include <iresearch/index/index_writer.hpp>
 #include <iresearch/search/detail/search_range.hpp>
@@ -141,7 +141,7 @@ class FilterPrepareFixture : public benchmark::Fixture {
   }
 
   void TearDown(const ::benchmark::State&) override {
-    _reader = irs::DirectoryReader{};
+    _reader = irs::CompositeReader{};
     if (!_dir_path.empty()) {
       std::error_code ec;
       std::filesystem::remove_all(_dir_path, ec);
@@ -153,7 +153,7 @@ class FilterPrepareFixture : public benchmark::Fixture {
   void BuildIndex(size_t num_segments);
 
   std::filesystem::path _dir_path;
-  irs::DirectoryReader _reader;
+  irs::CompositeReader _reader;
 
   irs::BM25 _bm25;
   irs::TFIDF _tfidf;
@@ -181,7 +181,7 @@ class FilterPrepareFixtureT : public FilterPrepareFixture {
 };
 
 void FilterPrepareFixture::BuildIndex(size_t num_segments) {
-  _reader = irs::DirectoryReader{};
+  _reader = irs::CompositeReader{};
 
   if (_dir_path.empty()) {
     _dir_path =
@@ -339,7 +339,7 @@ void SetUpNot(irs::BooleanFilter& n) {
 }
 
 void RunPrepare(const irs::Filter::ptr& filter,
-                const irs::DirectoryReader& reader, const irs::Scorer* scorer) {
+                const irs::CompositeReader& reader, const irs::Scorer* scorer) {
   // No scorer means this variant does not score, so it builds no collector at
   // all -- which is what an unscored prepare now costs.
   auto& allocator = duckdb::Allocator::DefaultAllocator();

@@ -27,7 +27,7 @@
 #include <cstdint>
 #include <duckdb/common/identifier.hpp>
 #include <duckdb/main/client_context.hpp>
-#include <iresearch/index/directory_reader.hpp>
+#include <iresearch/index/composite_reader.hpp>
 #include <iresearch/index/index_writer.hpp>
 #include <iresearch/utils/containers/flat_hash_map.hpp>
 #include <iresearch/utils/containers/node_hash_map.hpp>
@@ -65,11 +65,11 @@ struct StoreWrites {
   uint64_t revision = 0;
   struct Pin {
     const TableState* state = nullptr;
-    std::optional<irs::DirectoryReader> own;
+    std::optional<irs::CompositeReader> own;
     const FileManifest* manifest = nullptr;
     uint64_t revision = 0;
 
-    const irs::DirectoryReader& Reader() const noexcept {
+    const irs::CompositeReader& Reader() const noexcept {
       return own ? *own : state->reader;
     }
   };
@@ -185,7 +185,7 @@ class Writes {
 
   ReadView Read(duckdb::ClientContext& context, Store& store);
   Tick PlanVersion(const Store& store);
-  const irs::DirectoryReader& PinnedReader(duckdb::ClientContext& context,
+  const irs::CompositeReader& PinnedReader(duckdb::ClientContext& context,
                                            Store& store);
   void ResetPins(bool all) noexcept;
   TableRead LatestView(duckdb::ClientContext& context, Store& store);

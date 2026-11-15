@@ -26,7 +26,7 @@
 #include <duckdb/common/vector/array_vector.hpp>
 #include <iresearch/formats/index/idx_reader.hpp>
 #include <iresearch/formats/ivf/centroids.hpp>
-#include <iresearch/index/directory_reader.hpp>
+#include <iresearch/index/composite_reader.hpp>
 #include <iresearch/index/file_names.hpp>
 #include <iresearch/index/index_writer.hpp>
 #include <iresearch/index/iterators.hpp>
@@ -115,7 +115,7 @@ void WriteVectorAt(irs::ColWriter& cs, irs::doc_id_t doc, float x) {
 }
 
 // Docs 1..n with emb = [doc, 0, 0, 0].
-irs::DirectoryReader BuildIndex(
+irs::CompositeReader BuildIndex(
   const ::tests::IndexDir& dir, irs::doc_id_t n,
   irs::IndexWriterOptions opts = MakeWriterOptions()) {
   auto writer =
@@ -206,7 +206,7 @@ class VectorSimilarityQueryTest : public ::testing::Test {
   irs::doc_id_t _docs = 0;
   ::tests::IndexDir _dir{irs::DuckDBEngine::Instance().instance(),
                          TestEnv::MemoryRoot()};
-  irs::DirectoryReader _reader;
+  irs::CompositeReader _reader;
   irs::ByVectorSimilarity _filter;
   irs::ColumnArgsFetcher _fetcher;
   std::optional<::tests::PreparedFilter> _prepared;
@@ -484,7 +484,7 @@ class RerankExactDistancesTest
 
   ::tests::IndexDir _dir{irs::DuckDBEngine::Instance().instance(),
                          TestEnv::MemoryRoot()};
-  irs::DirectoryReader _reader;
+  irs::CompositeReader _reader;
 };
 
 TEST_P(RerankExactDistancesTest, Rerank) {

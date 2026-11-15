@@ -18,7 +18,7 @@
 /// Copyright holder is ArangoDB GmbH, Cologne, Germany
 ////////////////////////////////////////////////////////////////////////////////
 
-#include <iresearch/index/directory_reader.hpp>
+#include <iresearch/index/composite_reader.hpp>
 #include <iresearch/index/field_meta.hpp>
 #include <iresearch/index/index_writer.hpp>
 #include <iresearch/index/iterators.hpp>
@@ -411,7 +411,7 @@ TEST(GeoDistanceFilterTest, query) {
 
   ::tests::IndexDir dir{irs::DuckDBEngine::Instance().instance(),
                         TestEnv::MemoryRoot()};
-  irs::DirectoryReader reader;
+  irs::CompositeReader reader;
 
   // index data
   {
@@ -921,7 +921,7 @@ TEST(GeoDistanceFilterTest, checkScorer) {
 
   ::tests::IndexDir dir{irs::DuckDBEngine::Instance().instance(),
                         TestEnv::MemoryRoot()};
-  irs::DirectoryReader reader;
+  irs::CompositeReader reader;
 
   // index data
   {

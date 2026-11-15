@@ -26,7 +26,7 @@
 #include <duckdb/common/vector/flat_vector.hpp>
 #include <duckdb/common/vector/struct_vector.hpp>
 #include <initializer_list>
-#include <iresearch/index/directory_reader.hpp>
+#include <iresearch/index/composite_reader.hpp>
 #include <iresearch/index/doc_removal.hpp>
 #include <iresearch/index/index_writer.hpp>
 #include <iresearch/index/segment_reader.hpp>

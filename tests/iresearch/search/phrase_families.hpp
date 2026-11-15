@@ -25,7 +25,7 @@
 #include <atomic>
 #include <bit>
 #include <functional>
-#include <iresearch/index/directory_reader.hpp>
+#include <iresearch/index/composite_reader.hpp>
 #include <iresearch/index/iterators.hpp>
 #include <iresearch/search/count/root.hpp>
 #include <iresearch/search/detail/column_collector.hpp>
@@ -121,7 +121,7 @@ inline void ExpectFamilies(const Families& expected, const Families& actual) {
 
 class FamilyIndex {
  public:
-  const irs::DirectoryReader& Reader() const noexcept { return _reader; }
+  const irs::CompositeReader& Reader() const noexcept { return _reader; }
 
   std::vector<irs::doc_id_t> Docs(const irs::Filter& filter) const {
     PreparedFilter prepared{filter, _reader};
@@ -309,7 +309,7 @@ class FamilyIndex {
     }
   }
 
-  irs::DirectoryReader _reader;
+  irs::CompositeReader _reader;
 };
 
 }  // namespace tests

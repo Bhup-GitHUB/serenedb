@@ -28,7 +28,6 @@
 #include <cstdio>
 #include <duckdb/common/serializer/write_stream.hpp>
 #include <duckdb/main/database.hpp>
-#include <filesystem>
 #include <iresearch/index/file_names.hpp>
 #include <iresearch/index/segment_hold.hpp>
 #include <iresearch/index/segment_list.hpp>
@@ -67,9 +66,13 @@ static irs::IndexWriterOptions MakeWriterOptions(irs::ScorerPtr scorer_ptr,
   return writer_opts;
 }
 
-static std::string MakeDirectory(std::string_view path) {
-  std::filesystem::create_directories(path);
-  return std::string{path};
+static std::string MakeDirectory(duckdb::FileSystem& fs,
+                                 std::string_view path) {
+  std::string root{path};
+  if (!fs.DirectoryExists(root)) {
+    fs.CreateDirectory(root);
+  }
+  return root;
 }
 
 IndexBuilder::IndexBuilder(std::string_view path,
@@ -79,7 +82,7 @@ IndexBuilder::IndexBuilder(std::string_view path,
     _scorer{irs::BM25::Make(irs::BM25::Options{})},
     _fs{duckdb::FileSystem::GetFileSystem(
       ::irs::DuckDBEngine::Instance().instance())},
-    _root{MakeDirectory(path)} {
+    _root{MakeDirectory(_fs, path)} {
   auto options =
     MakeWriterOptions(_scorer_ptr, opts.indexer_threads, config.segment_mem_max,
                       opts.row_group_size, opts.segment_docs_max);
@@ -88,7 +91,7 @@ IndexBuilder::IndexBuilder(std::string_view path,
                                    _fs, _root, std::move(options));
 }
 
-irs::DirectoryReader IndexBuilder::GetReader() {
+irs::CompositeReader IndexBuilder::GetReader() {
   std::vector<irs::SegmentReader> readers;
   absl::MutexLock lock{&_mutex};
   readers.reserve(_segments.size());
@@ -153,23 +156,6 @@ void IndexBuilder::Compact(const irs::CompactionPolicy& policy) {
     _segments.push_back(merged.meta);
   }
   irs::RemoveReleased(_fs, _root, *_reader_options.released);
-}
-
-void IndexBuilder::Settle() {
-  const auto policy =
-    irs::index_utils::MakePolicy(irs::index_utils::CompactionTier{});
-  const auto count = [&] {
-    absl::MutexLock lock{&_mutex};
-    return _segments.size();
-  };
-  for (auto segments = count(); segments > 1;) {
-    Compact(policy);
-    const auto left = count();
-    if (left >= segments) {
-      break;
-    }
-    segments = left;
-  }
 }
 
 void IndexBuilder::WriteSegmentList() {
@@ -336,10 +322,6 @@ void IndexBuilder::IndexFrom(LineSource& source, BatchHandlerFactory factory) {
     absl::PrintF("Compacting all segments:\n");
     std::fflush(stdout);
     Compact(irs::index_utils::MakePolicy(irs::index_utils::CompactionCount()));
-  } else if (_opts.settle) {
-    absl::PrintF("Settling segments:\n");
-    std::fflush(stdout);
-    Settle();
   }
   WriteSegmentList();
 }

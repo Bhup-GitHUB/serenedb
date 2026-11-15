@@ -115,7 +115,7 @@ weekends
 
 
 statement ok
-VACUUM (OPTIMIZE_IN_MEMORY_TABLE) temp_docs;
+VACUUM (PACK_TABLE) temp_docs;
 
 
 query
@@ -183,10 +183,10 @@ CREATE TABLE plain_docs (id INTEGER, body TEXT);
 
 
 statement error
-VACUUM (OPTIMIZE_IN_MEMORY_TABLE) plain_docs;
+VACUUM (PACK_TABLE) plain_docs;
 ----
 db error: ERROR: "plain_docs" is not an in-memory table
-DETAIL: VACUUM (OPTIMIZE_IN_MEMORY_TABLE) applies to temporary tables.
+DETAIL: VACUUM (PACK_TABLE) applies to temporary tables.
 
 
 statement ok

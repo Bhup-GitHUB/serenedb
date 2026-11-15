@@ -46,18 +46,18 @@ struct FieldTermRange {
   uint64_t docs = 0;
 };
 
-class DirectoryReader final : public IndexReader {
+class CompositeReader final : public IndexReader {
  public:
-  DirectoryReader() = default;
-  DirectoryReader(const IndexReaderOptions& opts,
+  CompositeReader() = default;
+  CompositeReader(const IndexReaderOptions& opts,
                   std::vector<SegmentReader> readers, bool stats);
-  DirectoryReader(const DirectoryReader& base,
+  CompositeReader(const CompositeReader& base,
                   std::vector<SegmentReader> readers,
                   std::span<const SegmentReader> added,
                   std::span<const SegmentReader> patched,
                   std::span<const SegmentReader> removed);
-  DirectoryReader(DirectoryReader&&) noexcept = default;
-  DirectoryReader& operator=(DirectoryReader&&) noexcept = default;
+  CompositeReader(CompositeReader&&) noexcept = default;
+  CompositeReader& operator=(CompositeReader&&) noexcept = default;
 
   const SubReader& operator[](size_t i) const final { return *_readers[i]; }
 

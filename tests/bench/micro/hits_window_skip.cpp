@@ -26,7 +26,7 @@
 #include <duckdb/common/file_system.hpp>
 #include <filesystem>
 #include <iresearch/analysis/delimited_tokenizer.hpp>
-#include <iresearch/index/directory_reader.hpp>
+#include <iresearch/index/composite_reader.hpp>
 #include <iresearch/index/index_features.hpp>
 #include <iresearch/index/index_writer.hpp>
 #include <iresearch/search/detail/column_collector.hpp>
@@ -92,7 +92,7 @@ std::string MakeBody(size_t i) {
 
 struct Index {
   std::filesystem::path path;
-  irs::DirectoryReader reader;
+  irs::CompositeReader reader;
 };
 
 const Index& IndexOf(size_t docs) {

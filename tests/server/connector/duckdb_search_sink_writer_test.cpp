@@ -33,7 +33,7 @@
 #include <iresearch/formats/column/col_reader.hpp>
 #include <iresearch/formats/column/column_reader.hpp>
 #include <iresearch/formats/column/internal/gather_arms.hpp>
-#include <iresearch/index/directory_reader.hpp>
+#include <iresearch/index/composite_reader.hpp>
 #include <iresearch/index/doc_removal.hpp>
 #include <iresearch/utils/bytes_utils.hpp>
 #include <iresearch/utils/duckdb_engine.hpp>

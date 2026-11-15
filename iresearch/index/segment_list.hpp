@@ -25,7 +25,7 @@
 #include <string>
 #include <string_view>
 
-#include "iresearch/index/directory_reader.hpp"
+#include "iresearch/index/composite_reader.hpp"
 #include "iresearch/index/index_meta.hpp"
 
 namespace irs {
@@ -33,7 +33,7 @@ namespace irs {
 void AppendSegmentList(std::string& out, uint64_t id, uint8_t kinds,
                        doc_id_t docs);
 
-DirectoryReader OpenSegmentList(duckdb::DatabaseInstance& db,
+CompositeReader OpenSegmentList(duckdb::DatabaseInstance& db,
                                 duckdb::FileSystem& fs, std::string_view root,
                                 std::string_view text,
                                 const IndexReaderOptions& options);

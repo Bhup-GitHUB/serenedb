@@ -24,7 +24,7 @@
 #include <filesystem>
 #include <iresearch/analysis/keyword_tokenizer.hpp>
 #include <iresearch/formats/term_reader.hpp>
-#include <iresearch/index/directory_reader.hpp>
+#include <iresearch/index/composite_reader.hpp>
 #include <iresearch/index/index_features.hpp>
 #include <iresearch/index/index_writer.hpp>
 #include <iresearch/search/detail/term_acceptor.hpp>
@@ -82,7 +82,7 @@ std::string TermAt(size_t i) {
 
 struct CachedIndex {
   std::filesystem::path path;
-  irs::DirectoryReader reader;
+  irs::CompositeReader reader;
   std::vector<std::string> terms;
 };
 

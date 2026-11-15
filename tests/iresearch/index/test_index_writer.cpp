@@ -41,7 +41,7 @@
 namespace tests {
 namespace {
 
-irs::DirectoryReader Open(const IndexDir& dir,
+irs::CompositeReader Open(const IndexDir& dir,
                           const irs::IndexReaderOptions& options) {
   const auto committed = dir.Committed();
   const auto reader_options = dir.ReaderOptions(options);
@@ -357,8 +357,8 @@ std::vector<irs::SegmentMeta> IndexWriter::Apply(
   for (size_t i = 0; i < units.size(); ++i) {
     positions.emplace(SegmentId(units[i].meta), i);
   }
-  std::optional<irs::DirectoryReader> current;
-  const auto open = [&] -> const irs::DirectoryReader& {
+  std::optional<irs::CompositeReader> current;
+  const auto open = [&] -> const irs::CompositeReader& {
     if (!current) {
       std::vector<irs::SegmentReader> readers;
       readers.reserve(units.size());
@@ -565,7 +565,7 @@ bool IndexWriter::RefreshCommit() {
   return modified;
 }
 
-irs::DirectoryReader IndexWriter::GetSnapshot() const {
+irs::CompositeReader IndexWriter::GetSnapshot() const {
   return Open(_dir, _reader_options);
 }
 
@@ -609,7 +609,7 @@ CompactionResult IndexWriter::Compact(
   return {.size = size, .error = CompactionError::Ok};
 }
 
-irs::DirectoryReader OpenReader(const IndexDir& dir,
+irs::CompositeReader OpenReader(const IndexDir& dir,
                                 const irs::IndexReaderOptions& options) {
   return Open(dir, options);
 }

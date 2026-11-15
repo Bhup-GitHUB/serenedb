@@ -51,7 +51,7 @@
 #include <duckdb/common/serializer/write_stream.hpp>
 #include <filesystem>
 #include <fstream>
-#include <iresearch/index/directory_reader.hpp>
+#include <iresearch/index/composite_reader.hpp>
 #include <iresearch/index/index_features.hpp>
 #include <iresearch/index/index_writer.hpp>
 #include <iresearch/search/count/make.hpp>
@@ -357,7 +357,7 @@ constexpr irs::PosAttr::value_t kSlopValues[] = {1, 2, 5};
 
 struct Corpus {
   std::filesystem::path dir_path;
-  irs::DirectoryReader reader;
+  irs::CompositeReader reader;
 };
 
 [[noreturn]] void Die(const char* msg) {
@@ -880,7 +880,7 @@ struct BenchPrepared {
 
 template<typename Filter>
 BenchPrepared Prepare(
-  const Filter& q, const irs::DirectoryReader& rdr,
+  const Filter& q, const irs::CompositeReader& rdr,
   irs::IResourceManager& memory = irs::IResourceManager::gNoop) {
   BenchPrepared out;
   out.queries.reserve(rdr.size());
@@ -894,7 +894,7 @@ BenchPrepared Prepare(
 }
 
 template<typename MakeFn>
-void BenchPrepare(benchmark::State& state, const irs::DirectoryReader& rdr,
+void BenchPrepare(benchmark::State& state, const irs::CompositeReader& rdr,
                   MakeFn make) {
   {
     auto q = make();
@@ -918,7 +918,7 @@ void BenchPrepare(benchmark::State& state, const irs::DirectoryReader& rdr,
 
 template<typename MakeFn>
 [[gnu::noinline]] void BenchExecuteOnly(benchmark::State& state,
-                                        const irs::DirectoryReader& rdr,
+                                        const irs::CompositeReader& rdr,
                                         MakeFn make) {
   auto q = make();
   auto prepared = Prepare(q, rdr);
@@ -1014,7 +1014,7 @@ irs::BooleanFilter MakeDisjunctionEquivalentVariadic4(
 // pos->next() per matched doc.
 template<typename PhraseQueryT = irs::FixedPhraseQuery, typename MakeFn>
 [[gnu::noinline]] void BenchExecuteWithOffsets(benchmark::State& state,
-                                               const irs::DirectoryReader& rdr,
+                                               const irs::CompositeReader& rdr,
                                                MakeFn make) {
   auto q = make();
   auto prepared = Prepare(q, rdr);
@@ -1444,7 +1444,7 @@ void RegisterAll() {
 static int Main(int argc, char** argv) {
   benchmark::Initialize(&argc, argv);
   // iresearch indexes require a process-wide duckdb::DatabaseInstance,
-  // passed to IndexWriter::Make and DirectoryReader. The
+  // passed to IndexWriter::Make and CompositeReader. The
   // corpora are built lazily inside the benchmark lambdas, so the engine
   // must be up before RunSpecifiedBenchmarks. Not torn down here: the
   // cached Corpus statics (reader + directory) outlive main and touch the

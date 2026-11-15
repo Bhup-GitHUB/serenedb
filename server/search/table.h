@@ -34,7 +34,7 @@
 #include <duckdb/common/types/column/column_data_collection.hpp>
 #include <duckdb/main/database.hpp>
 #include <iresearch/formats/column/hot_column_reader.hpp>
-#include <iresearch/index/directory_reader.hpp>
+#include <iresearch/index/composite_reader.hpp>
 #include <iresearch/index/doc_removal.hpp>
 #include <iresearch/index/document_mask.hpp>
 #include <iresearch/index/index_meta.hpp>
@@ -177,14 +177,14 @@ struct TableState {
   std::shared_ptr<const FileManifest> manifest;
   Tick tick = 0;
   uint64_t memory_end = 0;
-  irs::DirectoryReader reader;
+  irs::CompositeReader reader;
 };
 
 struct TableRead {
   std::shared_ptr<const TableState> state;
-  std::optional<irs::DirectoryReader> own;
+  std::optional<irs::CompositeReader> own;
 
-  const irs::DirectoryReader& Reader() const noexcept {
+  const irs::CompositeReader& Reader() const noexcept {
     return own ? *own : state->reader;
   }
 };
@@ -268,16 +268,16 @@ class Table final {
   }
   VersionChain<TableState>& Versions() noexcept { return _versions; }
 
-  static const irs::DirectoryReader& Reader(const TableState& state) noexcept {
+  static const irs::CompositeReader& Reader(const TableState& state) noexcept {
     return state.reader;
   }
-  irs::DirectoryReader View(const TableState& state,
+  irs::CompositeReader View(const TableState& state,
                             const OwnWrites& own) const;
   TableRead Read(const OwnWrites& own) const;
-  irs::DirectoryReader ColdView() const {
+  irs::CompositeReader ColdView() const {
     return Build(*State(), {}, Scope::Cold);
   }
-  irs::DirectoryReader PieceView(
+  irs::CompositeReader PieceView(
     std::span<const std::shared_ptr<const TableUnit>> pieces,
     bool keep_deleted) const;
   StoreStats Stats() const;
@@ -363,9 +363,9 @@ class Table final {
 
   const TableVersion& Head() const noexcept { return _versions.Head(); }
 
-  irs::DirectoryReader Build(const TableState& state, const OwnWrites& own,
+  irs::CompositeReader Build(const TableState& state, const OwnWrites& own,
                              Scope scope) const;
-  irs::DirectoryReader BuildReader(const TableState& prev,
+  irs::CompositeReader BuildReader(const TableState& prev,
                                    const TableState& next) const;
   std::shared_ptr<TableState> SameUnits() const
     ABSL_EXCLUSIVE_LOCKS_REQUIRED(_state_mutex);

@@ -308,7 +308,7 @@ TEST(PieceTest, WrittenPiecesReadLikeFlushedSegment) {
   const auto files = piece_dir.Files().size();
   EXPECT_EQ(0, files);
 
-  DirectoryReader source{irs::tests::DefaultReaderOptions(), std::move(pieces),
+  CompositeReader source{irs::tests::DefaultReaderOptions(), std::move(pieces),
                          /*stats=*/false};
   ::tests::IndexDir written_dir{DuckDBEngine::Instance().instance(),
                                 TestEnv::MemoryRoot()};
@@ -361,7 +361,7 @@ TEST(PieceTest, MergedPiecesReadLikeFlushedSegment) {
   }
   ASSERT_EQ(kDocs, first);
 
-  DirectoryReader source{irs::tests::DefaultReaderOptions(), std::move(pieces),
+  CompositeReader source{irs::tests::DefaultReaderOptions(), std::move(pieces),
                          /*stats=*/false};
   ::tests::IndexDir merged_dir{DuckDBEngine::Instance().instance(),
                                TestEnv::MemoryRoot()};

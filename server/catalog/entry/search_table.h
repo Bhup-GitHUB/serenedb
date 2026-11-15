@@ -38,7 +38,7 @@
 #include <duckdb/planner/expression.hpp>
 #include <duckdb/storage/storage_info.hpp>
 #include <duckdb/storage/table_storage_info.hpp>
-#include <iresearch/index/directory_reader.hpp>
+#include <iresearch/index/composite_reader.hpp>
 #include <iresearch/types.hpp>
 #include <memory>
 #include <span>
@@ -63,7 +63,7 @@ struct BoundCreateTableInfo;
 }  // namespace duckdb
 namespace irs {
 
-class DirectoryReader;
+class CompositeReader;
 
 }  // namespace irs
 namespace sdb::search {
@@ -136,7 +136,7 @@ class SearchTableEntry final : public duckdb::TableCatalogEntry {
     duckdb::vector<duckdb::ColumnSegmentInfo>& result) final;
 
   static duckdb::vector<duckdb::ColumnSegmentInfo> ColumnSegmentRows(
-    const duckdb::QueryContext& context, const irs::DirectoryReader& reader,
+    const duckdb::QueryContext& context, const irs::CompositeReader& reader,
     const duckdb::TableCatalogEntry& table, duckdb::column_t key_column,
     bool segment_info);
 

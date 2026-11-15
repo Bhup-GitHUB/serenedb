@@ -313,7 +313,7 @@ void IndexWriter::MergeClaim::Release() noexcept {
 }
 
 auto IndexWriter::MergeAsync(const CompactionPolicy& policy,
-                             DirectoryReader source,
+                             CompositeReader source,
                              const IndexFieldOptions* field_options,
                              const MergeWriter::FlushProgress& progress,
                              const AnnBuildEnv* env) -> yaclib::Future<Merged> {
@@ -368,7 +368,7 @@ auto IndexWriter::MergeAsync(const CompactionPolicy& policy,
                                 field_options, progress, env);
 }
 
-auto IndexWriter::WriteAsync(DirectoryReader source, uint64_t id,
+auto IndexWriter::WriteAsync(CompositeReader source, uint64_t id,
                              const IndexFieldOptions* field_options,
                              const MergeWriter::FlushProgress& progress,
                              const AnnBuildEnv* env) -> yaclib::Future<Merged> {
@@ -387,7 +387,7 @@ auto IndexWriter::WriteAsync(DirectoryReader source, uint64_t id,
 }
 
 IndexWriter::Merged IndexWriter::MergePieces(
-  DirectoryReader source, uint64_t id, const IndexFieldOptions* field_options) {
+  CompositeReader source, uint64_t id, const IndexFieldOptions* field_options) {
   Merged merged;
   merged.source = std::move(source);
   auto& candidates = merged.claim.candidates;

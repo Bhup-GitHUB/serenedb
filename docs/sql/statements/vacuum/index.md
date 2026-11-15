@@ -53,9 +53,9 @@ Tables and inverted indexes on views also compact in the background by default (
 
 <SqlLogicTest id="sql/statements/vacuum/index/example_011" />
 
-### Optimizing in-memory tables — `OPTIMIZE_IN_MEMORY_TABLE`
+### Packing in-memory tables — `PACK_TABLE`
 
-A [temporary table](../create_table/index.md#temporary-tables) and its inverted indexes are kept in memory. Each segment the table writes out of its newest rows or merges is laid out so that queries read it as fast as a segment on a local disk. A segment written when the memory limit left no room to lay it out is kept as it was written: queries on it are slower, and under memory pressure its memory is written to the temporary directory. `VACUUM (OPTIMIZE_IN_MEMORY_TABLE) table` lays out every such segment of the table:
+A [temporary table](../create_table/index.md#temporary-tables) and its inverted indexes are kept in memory. Each segment the table writes out of its newest rows or merges is packed, each of its files into one allocation, so that queries read it as fast as a segment on a local disk. A segment written when the memory limit left no room to pack it is kept as it was written: queries on it are slower, and under memory pressure its memory is written to the temporary directory. `VACUUM (PACK_TABLE) table` packs every such segment of the table:
 
 <SqlLogicTest id="sql/statements/vacuum/index/example_012" />
 
@@ -63,7 +63,7 @@ The option takes a table name and applies only to temporary tables:
 
 ```text
 ERROR:  "articles" is not an in-memory table
-DETAIL:  VACUUM (OPTIMIZE_IN_MEMORY_TABLE) applies to temporary tables.
+DETAIL:  VACUUM (PACK_TABLE) applies to temporary tables.
 ```
 
 ### Scopes

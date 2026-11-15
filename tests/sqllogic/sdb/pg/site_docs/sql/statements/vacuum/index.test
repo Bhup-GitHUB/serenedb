@@ -142,7 +142,7 @@ INSERT INTO session_notes VALUES (1, 'the quick brown fox'), (2, 'a lazy dog');
 
 # DOCS_TEST_BODY
 statement ok
-VACUUM (OPTIMIZE_IN_MEMORY_TABLE) session_notes;
+VACUUM (PACK_TABLE) session_notes;
 
 query
 SELECT id FROM session_notes_idx WHERE body @@ ts_phrase('fox');

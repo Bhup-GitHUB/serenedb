@@ -69,7 +69,7 @@ class SpaceField : public tests::FieldBase {
 class BoostQueryTestCase : public tests::IndexTestBase {
  protected:
   // Collect all (score, doc_id) results sorted by score descending.
-  std::vector<irs::ScoreDoc> CollectAll(const irs::DirectoryReader& reader,
+  std::vector<irs::ScoreDoc> CollectAll(const irs::CompositeReader& reader,
                                         const irs::Filter& filter) {
     constexpr size_t kK = 1024;
     irs::TFIDF scorer{/*normalize=*/false};
@@ -139,7 +139,7 @@ class BoostQueryTestCase : public tests::IndexTestBase {
   //   doc B - "open source"           (required + 1 optional)
   //   doc C - "open source software"  (required + 2 optionals)
   //   doc D - "source software"       (no required term -> must be excluded)
-  irs::DirectoryReader CreateIndex() {
+  irs::CompositeReader CreateIndex() {
     auto writer = open_writer(tests::kOmCreate);
 
     auto insert = [&](std::string_view content) {

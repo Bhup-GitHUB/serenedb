@@ -41,7 +41,7 @@
 #include <iresearch/analysis/tokenizer.hpp>
 #include <iresearch/formats/column/col_writer.hpp>
 #include <iresearch/formats/column/column_writer.hpp>
-#include <iresearch/index/directory_reader.hpp>
+#include <iresearch/index/composite_reader.hpp>
 #include <iresearch/index/index_writer.hpp>
 #include <iresearch/search/count/make.hpp>
 #include <iresearch/search/detail/column_collector.hpp>
@@ -182,7 +182,7 @@ struct Field {
 };
 
 struct Index {
-  irs::DirectoryReader reader;
+  irs::CompositeReader reader;
 };
 
 const Index& IndexOf(size_t dictionary) {
@@ -323,7 +323,7 @@ irs::Filter::ptr MakeFilter(size_t dictionary,
   return root;
 }
 
-uint64_t Count(const irs::DirectoryReader& reader, const irs::Filter& filter) {
+uint64_t Count(const irs::CompositeReader& reader, const irs::Filter& filter) {
   uint64_t hits = 0;
   for (const auto& segment : reader) {
     auto query = filter.PrepareSegment(segment, {});
@@ -337,7 +337,7 @@ uint64_t Count(const irs::DirectoryReader& reader, const irs::Filter& filter) {
   return hits;
 }
 
-double Scored(const irs::DirectoryReader& reader, const irs::Filter& filter,
+double Scored(const irs::CompositeReader& reader, const irs::Filter& filter,
               uint64_t& hits) {
   irs::StatsArena stats{duckdb::Allocator::DefaultAllocator()};
   irs::PreparedCollector collector{filter, Bm25(), stats, 1};
@@ -371,7 +371,7 @@ double Scored(const irs::DirectoryReader& reader, const irs::Filter& filter,
   return total;
 }
 
-std::vector<irs::score_t> Top(const irs::DirectoryReader& reader,
+std::vector<irs::score_t> Top(const irs::CompositeReader& reader,
                               const irs::Filter& filter) {
   std::vector<irs::ScoreDoc> hits(kTopK);
   irs::ExecuteTopK(reader, filter, Bm25(), kTopK, true, hits);

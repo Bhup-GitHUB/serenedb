@@ -131,7 +131,7 @@ VACUUM (FLUSH_TABLE) temp_docs;
 
 
 statement ok
-VACUUM (OPTIMIZE_IN_MEMORY_TABLE) temp_docs;
+VACUUM (PACK_TABLE) temp_docs;
 
 
 query

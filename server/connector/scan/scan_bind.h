@@ -339,7 +339,7 @@ struct DeferredBuild {
 
 DeferredBuild BuildDeferredFilter(duckdb::ClientContext& context,
                                   const ScanBindData& scan,
-                                  const irs::DirectoryReader& reader);
+                                  const irs::CompositeReader& reader);
 
 bool RowsOnlySegment(const irs::SubReader& segment);
 

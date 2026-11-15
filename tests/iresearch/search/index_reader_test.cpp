@@ -62,7 +62,7 @@ auto StoreName() {
 
 }  // namespace
 
-TEST(directory_reader_test, term_ranges_span_segments) {
+TEST(composite_reader_test, term_ranges_span_segments) {
   constexpr irs::field_id kBoth = 7;
   constexpr irs::field_id kFirst = 8;
   constexpr irs::field_id kAbsent = 9;
@@ -112,7 +112,7 @@ TEST(directory_reader_test, term_ranges_span_segments) {
   EXPECT_FALSE(reader.GetTermRange(kBoth, irs::StringLayout::kNulls));
 }
 
-TEST(directory_reader_test, open) {
+TEST(composite_reader_test, open) {
   tests::JsonDocGenerator gen(
     TestBase::resource("simple_sequential.json"),
     [](tests::Document& doc, const std::string& name,
@@ -354,7 +354,7 @@ TEST(segment_reader_test, open) {
 
   tests::IndexDir dir{irs::DuckDBEngine::Instance().instance(),
                       TestEnv::MemoryRoot()};
-  irs::DirectoryReader writer_snapshot;
+  irs::CompositeReader writer_snapshot;
   {
     // open writer
     auto writer = tests::IndexWriter::Make(dir, tests::kOmCreate,

@@ -35,7 +35,7 @@
 
 namespace irs {
 
-class DirectoryReader;
+class CompositeReader;
 
 struct DocMap {
   uint64_t source = 0;
@@ -66,7 +66,7 @@ class DocRemovalBuilder {
       _groups, [](const auto& group) { return group.second.Empty(); });
   }
 
-  std::shared_ptr<const DocRemoval> Finish(const DirectoryReader& reader) &&;
+  std::shared_ptr<const DocRemoval> Finish(const CompositeReader& reader) &&;
 
  private:
   std::vector<std::pair<uint32_t, DocumentMaskBuilder>> _groups;

@@ -688,7 +688,7 @@ Tick Writes::PlanVersion(const Store& store) {
                                   : last;
 }
 
-const irs::DirectoryReader& Writes::PinnedReader(duckdb::ClientContext& context,
+const irs::CompositeReader& Writes::PinnedReader(duckdb::ClientContext& context,
                                                  Store& store) {
   auto* w = FindStoreWrites(store.GetId());
   SDB_ENSURE(w, "table ", store.GetId(),

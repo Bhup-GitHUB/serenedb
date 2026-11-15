@@ -691,7 +691,7 @@ std::optional<uint64_t> UniqueColumnBound(const ScanBindData& scan,
 
 DeferredBuild BuildDeferredFilter(duckdb::ClientContext& context,
                                   const ScanBindData& scan,
-                                  const irs::DirectoryReader& reader) {
+                                  const irs::CompositeReader& reader) {
   SDB_ASSERT(scan.plan_cache.deferred);
   const auto& claim = *scan.plan_cache.deferred;
   const auto bound = [&](const std::shared_ptr<const duckdb::Expression>& e) {

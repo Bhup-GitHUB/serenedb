@@ -40,7 +40,7 @@
 #include "iresearch/formats/column/norm_writer.hpp"
 #include "iresearch/formats/norm_reader_impl.hpp"
 #include "iresearch/formats/term_reader.hpp"
-#include "iresearch/index/directory_reader.hpp"
+#include "iresearch/index/composite_reader.hpp"
 #include "iresearch/utils/duckdb_engine.hpp"
 #include "iresearch/utils/type_limits.hpp"
 #include "memory_output.hpp"

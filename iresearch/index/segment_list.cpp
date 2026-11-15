@@ -60,7 +60,7 @@ void AppendSegmentList(std::string& out, uint64_t id, uint8_t kinds,
   absl::StrAppend(&out, id, " ", static_cast<uint32_t>(kinds), " ", docs, "\n");
 }
 
-DirectoryReader OpenSegmentList(duckdb::DatabaseInstance& db,
+CompositeReader OpenSegmentList(duckdb::DatabaseInstance& db,
                                 duckdb::FileSystem& fs, std::string_view root,
                                 std::string_view text,
                                 const IndexReaderOptions& options) {

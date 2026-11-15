@@ -20,7 +20,7 @@
 
 #include <iresearch/analysis/token_sinks.hpp>
 #include <iresearch/analysis/wildcard_tokenizer.hpp>
-#include <iresearch/index/directory_reader.hpp>
+#include <iresearch/index/composite_reader.hpp>
 #include <iresearch/index/index_writer.hpp>
 #include <iresearch/search/filters/wildcard_ngram_filter.hpp>
 #include <iresearch/utils/duckdb_engine.hpp>

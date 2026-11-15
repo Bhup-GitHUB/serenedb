@@ -27,7 +27,7 @@
 #include <optional>
 #include <utility>
 
-#include "iresearch/index/directory_reader.hpp"
+#include "iresearch/index/composite_reader.hpp"
 #include "iresearch/index/segment_reader.hpp"
 #include "iresearch/index/segment_reader_impl.hpp"
 #include "iresearch/utils/assert.hpp"
@@ -101,7 +101,7 @@ void DocRemovalBuilder::AddRange(uint32_t index, doc_id_t first,
 }
 
 std::shared_ptr<const DocRemoval> DocRemovalBuilder::Finish(
-  const DirectoryReader& reader) && {
+  const CompositeReader& reader) && {
   auto removal = std::make_shared<DocRemoval>();
   removal->groups.reserve(_groups.size());
   for (auto& [index, docs] : _groups) {

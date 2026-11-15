@@ -40,7 +40,7 @@
 #include <iresearch/analysis/token_sinks.hpp>
 #include <iresearch/formats/column/column_reader.hpp>
 #include <iresearch/formats/column/read_context.hpp>
-#include <iresearch/index/directory_reader.hpp>
+#include <iresearch/index/composite_reader.hpp>
 #include <iresearch/index/docs_mask/docs_mask.hpp>
 #include <iresearch/index/file_names.hpp>
 #include <iresearch/index/index_meta.hpp>
@@ -199,7 +199,7 @@ bool OfKind(const Object& object, std::string_view kind) {
   return kind.empty() || absl::EqualsIgnoreCase(object.kind, kind);
 }
 
-irs::DirectoryReader LoadIndex(duckdb::DatabaseInstance& db,
+irs::CompositeReader LoadIndex(duckdb::DatabaseInstance& db,
                                duckdb::MemoryFileSystem& fs,
                                std::span<const IndexFile> files) {
   const auto root = absl::StrCat(duckdb::MemoryFileSystem::PREFIX, "docs");
@@ -226,11 +226,11 @@ class EmbeddedIndex {
   EmbeddedIndex(duckdb::DatabaseInstance& db, std::span<const IndexFile> files)
     : _reader{LoadIndex(db, _fs, files)} {}
 
-  const irs::DirectoryReader& Reader() const noexcept { return _reader; }
+  const irs::CompositeReader& Reader() const noexcept { return _reader; }
 
  private:
   duckdb::MemoryFileSystem _fs;
-  irs::DirectoryReader _reader;
+  irs::CompositeReader _reader;
 };
 
 class DocsIndex final : public duckdb::ObjectCacheEntry {
@@ -245,9 +245,9 @@ class DocsIndex final : public duckdb::ObjectCacheEntry {
   std::string GetObjectType() final { return ObjectType(); }
   duckdb::optional_idx GetEstimatedCacheMemory() const final { return {}; }
 
-  const irs::DirectoryReader& Reader() const noexcept { return _docs.Reader(); }
+  const irs::CompositeReader& Reader() const noexcept { return _docs.Reader(); }
   const Layout& Fields() const noexcept { return _layout; }
-  const irs::DirectoryReader& ObjectReader() const noexcept {
+  const irs::CompositeReader& ObjectReader() const noexcept {
     return _objects.Reader();
   }
   const ObjectLayout& ObjectFields() const noexcept { return _object_layout; }
@@ -441,7 +441,7 @@ class ObjectFetcher {
 };
 
 template<typename MakeFetcher, typename Fn>
-void ForEachMatchIn(const irs::DirectoryReader& reader,
+void ForEachMatchIn(const irs::CompositeReader& reader,
                     const irs::Filter& filter, MakeFetcher&& make, Fn&& fn) {
   for (const auto& segment : reader) {
     auto query = filter.PrepareSegment(segment, {});

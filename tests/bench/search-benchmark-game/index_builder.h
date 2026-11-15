@@ -78,7 +78,6 @@ struct IndexBuilderOptions {
   bool compact_all = true;
   uint32_t row_group_size = DEFAULT_ROW_GROUP_SIZE;
   uint32_t segment_docs_max = 0;
-  bool settle = false;
 };
 
 class IndexBuilder {
@@ -88,13 +87,12 @@ class IndexBuilder {
 
   void IndexFrom(LineSource& source, BatchHandlerFactory factory);
 
-  irs::DirectoryReader GetReader();
+  irs::CompositeReader GetReader();
   void Remove(const irs::DocRemoval& removal);
 
  private:
   void Add(std::span<const irs::IndexWriter::FlushedSegment> flushed);
   void Compact(const irs::CompactionPolicy& policy);
-  void Settle();
   void WriteSegmentList();
 
   IndexBuilderOptions _opts;

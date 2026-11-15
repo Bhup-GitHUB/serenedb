@@ -28,7 +28,7 @@
 #include <duckdb/common/vector/flat_vector.hpp>
 #include <duckdb/common/vector/unified_vector_format.hpp>
 #include <iresearch/analysis/token_attributes.hpp>
-#include <iresearch/index/directory_reader.hpp>
+#include <iresearch/index/composite_reader.hpp>
 #include <iresearch/index/doc_removal.hpp>
 #include <iresearch/index/index_writer.hpp>
 #include <iresearch/index/inverter/fields_inverter.hpp>
@@ -302,7 +302,7 @@ class IndexUnderTest {
                                       std::move(options));
   }
 
-  DirectoryReader Read() {
+  CompositeReader Read() {
     return ::tests::OpenReader(_dir, irs::tests::DefaultReaderOptions());
   }
 
@@ -681,7 +681,7 @@ bool FillDocument(const IndexWriter::Document& doc,
   return true;
 }
 
-std::shared_ptr<const DocRemoval> ByKey(const DirectoryReader& snapshot,
+std::shared_ptr<const DocRemoval> ByKey(const CompositeReader& snapshot,
                                         std::string_view key) {
   return ::tests::RemovalOf(snapshot, {kKey, {std::string{key}}});
 }

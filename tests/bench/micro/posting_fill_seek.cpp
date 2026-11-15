@@ -68,7 +68,7 @@
 #include <filesystem>
 #include <iresearch/analysis/delimited_tokenizer.hpp>
 #include <iresearch/analysis/tokenizer.hpp>
-#include <iresearch/index/directory_reader.hpp>
+#include <iresearch/index/composite_reader.hpp>
 #include <iresearch/index/index_features.hpp>
 #include <iresearch/index/index_writer.hpp>
 #include <iresearch/search/count/make.hpp>
@@ -225,7 +225,7 @@ struct BodyField {
 
 struct Index {
   std::filesystem::path path;
-  irs::DirectoryReader reader;
+  irs::CompositeReader reader;
 };
 
 // One segment, one commit, no compaction: the block encodings a query walks are

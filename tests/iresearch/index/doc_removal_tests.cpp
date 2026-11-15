@@ -52,7 +52,7 @@ constexpr uint32_t kSegments = 8;
 struct IndexOfSegments {
   tests::IndexDir dir{irs::DuckDBEngine::Instance().instance(),
                       TestEnv::MemoryRoot()};
-  irs::DirectoryReader reader = [this] {
+  irs::CompositeReader reader = [this] {
     auto writer = tests::IndexWriter::Make(
       dir, tests::kOmCreate,
       tests::EnsureNormColumnId(tests::CsDefaultWriterOptions()));
@@ -70,7 +70,7 @@ struct IndexOfSegments {
 
 std::unique_ptr<IndexOfSegments> gSegments;
 
-const irs::DirectoryReader& Segments() { return gSegments->reader; }
+const irs::CompositeReader& Segments() { return gSegments->reader; }
 
 class SegmentsTest : public testing::Test {
  protected:

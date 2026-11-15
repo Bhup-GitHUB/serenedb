@@ -25,7 +25,7 @@
 
 #include <iresearch/analysis/token_attributes.hpp>
 #include <iresearch/analysis/tokenizer.hpp>
-#include <iresearch/index/directory_reader.hpp>
+#include <iresearch/index/composite_reader.hpp>
 #include <iresearch/index/index_writer.hpp>
 #include <iresearch/utils/timer_utils.hpp>
 
@@ -98,8 +98,8 @@ struct CallbackFileSystem : HookFileSystem {
 
 typedef std::tuple<tests::DirParam> index_test_context;
 
-void AssertSnapshotEquality(const irs::DirectoryReader& lhs,
-                            const irs::DirectoryReader& rhs);
+void AssertSnapshotEquality(const irs::CompositeReader& lhs,
+                            const irs::CompositeReader& rhs);
 
 // A posting list is written before anything is deleted, so a reader walking
 // one sees documents the segment no longer has. Only a plan knows about the
@@ -139,7 +139,7 @@ class IndexTestBase : public virtual TestParamBase<index_test_context> {
                                     EnsureNormColumnId(std::move(options)));
   }
 
-  irs::DirectoryReader open_reader(
+  irs::CompositeReader open_reader(
     const irs::IndexReaderOptions& options = CsDefaultReaderOptions()) const {
     return tests::OpenReader(*_dir, options);
   }

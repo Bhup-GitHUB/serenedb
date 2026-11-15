@@ -38,7 +38,7 @@ namespace sdb::connector {
 namespace {
 
 const duckdb::BaseStatistics* StoredColumnStats(
-  const ScanBindData& bind, const irs::DirectoryReader& reader,
+  const ScanBindData& bind, const irs::CompositeReader& reader,
   ColumnId col_id) {
   if (bind.relation.IsInvertedIndex()) {
     const auto* info = bind.relation.ScannedIndex().FindColumnInfo(col_id);
@@ -56,7 +56,7 @@ duckdb::string_t AsStringT(irs::bytes_view bytes) {
           static_cast<uint32_t>(bytes.size())};
 }
 
-uint64_t RowsOnlyDocs(const irs::DirectoryReader& reader) {
+uint64_t RowsOnlyDocs(const irs::CompositeReader& reader) {
   uint64_t docs = 0;
   for (const auto& segment : reader) {
     if (RowsOnlySegment(segment)) {
@@ -87,7 +87,7 @@ bool ExactBounds(const duckdb::BaseStatistics& stats) {
 }
 
 duckdb::unique_ptr<duckdb::BaseStatistics> KeywordBounds(
-  const ScanBindData& bind, const irs::DirectoryReader& reader,
+  const ScanBindData& bind, const irs::CompositeReader& reader,
   duckdb::idx_t column_index, uint64_t& distinct) {
   if (!bind.relation.inverted_config ||
       bind.columns.types[column_index] != duckdb::LogicalType::VARCHAR) {
@@ -124,7 +124,7 @@ duckdb::unique_ptr<duckdb::BaseStatistics> KeywordBounds(
 }
 
 uint64_t KeyDistinct(const ScanBindData& bind,
-                     const irs::DirectoryReader& reader, ColumnId column) {
+                     const irs::CompositeReader& reader, ColumnId column) {
   if (!bind.relation.IsSearchTable() || !bind.relation.inverted_config) {
     return 0;
   }
@@ -149,7 +149,7 @@ uint64_t KeyDistinct(const ScanBindData& bind,
 }
 
 duckdb::unique_ptr<duckdb::BaseStatistics> ColumnStats(
-  const ScanBindData& bind, const irs::DirectoryReader& reader,
+  const ScanBindData& bind, const irs::CompositeReader& reader,
   duckdb::idx_t column_index) {
   if (column_index >= bind.columns.ids.size()) {
     return nullptr;
@@ -186,7 +186,7 @@ duckdb::unique_ptr<duckdb::BaseStatistics> ColumnStats(
 
 class ScanPartition final : public duckdb::PartitionRowGroup {
  public:
-  ScanPartition(const ScanBindData& bind, const irs::DirectoryReader& reader)
+  ScanPartition(const ScanBindData& bind, const irs::CompositeReader& reader)
     : _bind{bind}, _reader{reader} {}
 
   duckdb::unique_ptr<duckdb::BaseStatistics> GetColumnStatistics(
@@ -204,7 +204,7 @@ class ScanPartition final : public duckdb::PartitionRowGroup {
 
  private:
   const ScanBindData& _bind;
-  const irs::DirectoryReader& _reader;
+  const irs::CompositeReader& _reader;
 };
 
 }  // namespace

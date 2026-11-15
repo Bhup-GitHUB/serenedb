@@ -223,7 +223,7 @@ class BlockScoringTestCase : public IndexTestBase {
   }
 
   // Helper to verify a doc has expected value in any segment (for multi-seg)
-  bool VerifyDocValueInAnySegment(const irs::DirectoryReader& reader, auto& doc,
+  bool VerifyDocValueInAnySegment(const irs::CompositeReader& reader, auto& doc,
                                   std::string_view column_name,
                                   std::string_view expected_value) {
     if (!IsValidDoc(doc)) {

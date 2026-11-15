@@ -84,7 +84,7 @@ bool StripSuffix(std::string_view& name, std::string_view suffix) {
 
 }  // namespace
 
-irs::DirectoryReader OpenIndex(duckdb::DatabaseInstance& db,
+irs::CompositeReader OpenIndex(duckdb::DatabaseInstance& db,
                                duckdb::FileSystem& fs, std::string_view root,
                                const irs::IndexReaderOptions& options) {
   const auto text = irs::ReadWhole<std::string>(
@@ -146,7 +146,7 @@ Executor::Executor(std::string_view path)
                         ::irs::DuckDBEngine::Instance().instance()),
                       path, {.scorer = _scorer_ptr})} {}
 
-Executor::Executor(irs::DirectoryReader reader)
+Executor::Executor(irs::CompositeReader reader)
   : _scorer{irs::BM25::Make(irs::BM25::Options{})},
     _tokenizer{irs::analysis::TextTokenizer::Make(
       irs::analysis::TextTokenizer::Options{})},

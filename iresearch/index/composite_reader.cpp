@@ -21,7 +21,7 @@
 /// @author Vasiliy Nabatchikov
 ////////////////////////////////////////////////////////////////////////////////
 
-#include "directory_reader.hpp"
+#include "composite_reader.hpp"
 
 #include <absl/algorithm/container.h>
 
@@ -59,7 +59,7 @@ uint64_t DistinctOfOverlapping(uint64_t terms, uint64_t docs, uint64_t sum) {
 
 }  // namespace
 
-DirectoryReader::DirectoryReader(const IndexReaderOptions& opts,
+CompositeReader::CompositeReader(const IndexReaderOptions& opts,
                                  std::vector<SegmentReader> readers, bool stats)
   : _opts{opts}, _readers{std::move(readers)}, _stats{stats} {
   Count();
@@ -68,7 +68,7 @@ DirectoryReader::DirectoryReader(const IndexReaderOptions& opts,
   }
 }
 
-DirectoryReader::DirectoryReader(const DirectoryReader& base,
+CompositeReader::CompositeReader(const CompositeReader& base,
                                  std::vector<SegmentReader> readers,
                                  std::span<const SegmentReader> added,
                                  std::span<const SegmentReader> patched,
@@ -112,7 +112,7 @@ DirectoryReader::DirectoryReader(const DirectoryReader& base,
   Publish();
 }
 
-void DirectoryReader::Count() noexcept {
+void CompositeReader::Count() noexcept {
   _docs = 0;
   _live = 0;
   _patched = 0;
@@ -123,7 +123,7 @@ void DirectoryReader::Count() noexcept {
   }
 }
 
-void DirectoryReader::Build() {
+void CompositeReader::Build() {
   for (const auto& reader : _readers) {
     AddTerms(*reader, /*keep_sorted=*/false);
     AddColumns(*reader, /*new_docs=*/true);
@@ -134,7 +134,7 @@ void DirectoryReader::Build() {
   Publish();
 }
 
-void DirectoryReader::AddTerms(const SubReader& reader, bool keep_sorted) {
+void CompositeReader::AddTerms(const SubReader& reader, bool keep_sorted) {
   for (const auto id : reader.field_ids()) {
     for (const auto* field : reader.fields(id)) {
       if (field->size() == 0) {
@@ -155,7 +155,7 @@ void DirectoryReader::AddTerms(const SubReader& reader, bool keep_sorted) {
   }
 }
 
-void DirectoryReader::RemoveTerms(const SubReader& reader) {
+void CompositeReader::RemoveTerms(const SubReader& reader) {
   for (const auto id : reader.field_ids()) {
     for (const auto* field : reader.fields(id)) {
       if (field->size() == 0) {
@@ -174,7 +174,7 @@ void DirectoryReader::RemoveTerms(const SubReader& reader) {
   }
 }
 
-void DirectoryReader::AddColumns(const SubReader& reader, bool new_docs) {
+void CompositeReader::AddColumns(const SubReader& reader, bool new_docs) {
   const auto* col_reader = reader.GetColReader();
   if (!col_reader) {
     return;
@@ -199,7 +199,7 @@ void DirectoryReader::AddColumns(const SubReader& reader, bool new_docs) {
   }
 }
 
-void DirectoryReader::Publish() {
+void CompositeReader::Publish() {
   for (auto& [field, column] : _columns) {
     column.published = column.merged->ToUnique();
     if (column.docs < _docs) {
@@ -235,13 +235,13 @@ void DirectoryReader::Publish() {
   }
 }
 
-const duckdb::BaseStatistics* DirectoryReader::GetColumnStats(
+const duckdb::BaseStatistics* CompositeReader::GetColumnStats(
   field_id field) const {
   const auto it = _columns.find(field);
   return it == _columns.end() ? nullptr : it->second.published.get();
 }
 
-const FieldTermRange* DirectoryReader::GetTermRange(field_id field,
+const FieldTermRange* CompositeReader::GetTermRange(field_id field,
                                                     DictRef dict) const {
   const auto it = _terms.find(std::pair{field, dict});
   return it == _terms.end() ? nullptr : &it->second.range;

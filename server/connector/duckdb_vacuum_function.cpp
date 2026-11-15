@@ -67,7 +67,7 @@ enum class Scope : uint8_t {
 enum class Action : uint8_t {
   Compact,
   Flush,
-  OptimizeInMemory,
+  Pack,
 };
 
 struct Verb {
@@ -87,7 +87,7 @@ std::optional<Verb> ParseOption(std::string_view option) {
     {"flush_table", {Action::Flush, Scope::Table}},
     {"flush_index", {Action::Flush, Scope::Index}},
     {"flush_all", {Action::Flush, Scope::All}},
-    {"optimize_in_memory_table", {Action::OptimizeInMemory, Scope::Table}},
+    {"pack_table", {Action::Pack, Scope::Table}},
   };
   for (const auto& [name, verb] : kVerbs) {
     if (option == name) {
@@ -433,13 +433,12 @@ void DispatchStores(duckdb::ClientContext& context, ConnectionContext& conn_ctx,
     }
   } else {
     ForEachTable(context, scope, target, [&](duckdb::TableCatalogEntry& table) {
-      if (action == Action::OptimizeInMemory && !table.catalog.InMemory()) {
+      if (action == Action::Pack && !table.catalog.InMemory()) {
         THROW_SQL_ERROR(
           ERR_CODE(ERRCODE_WRONG_OBJECT_TYPE),
           ERR_MSG("\"", table.name.GetIdentifierName(),
                   "\" is not an in-memory table"),
-          ERR_DETAIL(
-            "VACUUM (OPTIMIZE_IN_MEMORY_TABLE) applies to temporary tables."));
+          ERR_DETAIL("VACUUM (PACK_TABLE) applies to temporary tables."));
       }
       if (MayMaintain(conn_ctx, table.permissions,
                       table.name.GetIdentifierName(), verb)) {
@@ -457,8 +456,8 @@ void DispatchStores(duckdb::ClientContext& context, ConnectionContext& conn_ctx,
       if (step.search_data) {
         step.search_data->Settle();
       }
-    } else if (action == Action::OptimizeInMemory) {
-      (step.storage ? step.storage : step.search_data)->OptimizeInMemory();
+    } else if (action == Action::Pack) {
+      (step.storage ? step.storage : step.search_data)->Pack();
     } else if (step.storage) {
       CompactInvertedStorage(*step.storage, *step.field_options, context,
                              progress);

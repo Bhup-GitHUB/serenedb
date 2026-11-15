@@ -298,8 +298,8 @@ irs::IndexReaderOptions CsDefaultReaderOptions() {
   return irs::tests::DefaultReaderOptions();
 }
 
-void AssertSnapshotEquality(const irs::DirectoryReader& lhs,
-                            const irs::DirectoryReader& rhs) {
+void AssertSnapshotEquality(const irs::CompositeReader& lhs,
+                            const irs::CompositeReader& rhs) {
   ASSERT_EQ(lhs.size(), rhs.size());
   ASSERT_EQ(lhs.docs_count(), rhs.docs_count());
   ASSERT_EQ(lhs.live_docs_count(), rhs.live_docs_count());

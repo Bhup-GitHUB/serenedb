@@ -94,7 +94,7 @@ struct OffsetMatch {
 
 template<typename PhraseQueryT>
 std::vector<OffsetMatch> CollectOffsets(const tests::PreparedFilter& prepared,
-                                        const irs::DirectoryReader& rdr) {
+                                        const irs::CompositeReader& rdr) {
   std::vector<OffsetMatch> out;
   size_t i = 0;
   for (auto sub = rdr.begin(); sub != rdr.end(); ++sub, ++i) {

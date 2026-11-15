@@ -35,7 +35,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iresearch/analysis/tokenizer.hpp>
-#include <iresearch/index/directory_reader.hpp>
+#include <iresearch/index/composite_reader.hpp>
 #include <iresearch/index/index_features.hpp>
 #include <iresearch/index/index_writer.hpp>
 #include <iresearch/search/count/make.hpp>
@@ -310,7 +310,7 @@ constexpr int kRepetitions = 5;
 
 struct Corpus {
   std::filesystem::path dir_path;
-  irs::DirectoryReader reader;
+  irs::CompositeReader reader;
 };
 
 [[noreturn]] void Die(const char* msg) {
@@ -431,7 +431,7 @@ irs::ByRegexp MakeRegexp(std::string_view pattern) {
 // gNoop
 
 template<typename MakeFn>
-void BenchPrepare(benchmark::State& state, const irs::DirectoryReader& rdr,
+void BenchPrepare(benchmark::State& state, const irs::CompositeReader& rdr,
                   MakeFn make) {
   // Sanity check before entering the timed loop. A null prepared
   // filter means an invalid pattern slipped through. The timed loop
@@ -460,7 +460,7 @@ void BenchPrepare(benchmark::State& state, const irs::DirectoryReader& rdr,
 }
 
 template<typename MakeFn>
-void BenchExecuteOnly(benchmark::State& state, const irs::DirectoryReader& rdr,
+void BenchExecuteOnly(benchmark::State& state, const irs::CompositeReader& rdr,
                       MakeFn make) {
   auto q = make();
   std::vector<irs::QueryBuilder::ptr> prepared;

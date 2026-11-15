@@ -26,7 +26,7 @@
 #include <cstdint>
 #include <functional>
 #include <iresearch/formats/hnsw/hnsw_bases.hpp>
-#include <iresearch/index/directory_reader.hpp>
+#include <iresearch/index/composite_reader.hpp>
 #include <iresearch/index/doc_removal.hpp>
 #include <iresearch/index/index_meta.hpp>
 #include <iresearch/index/index_writer.hpp>
@@ -69,7 +69,7 @@ struct CompactionResult {
 };
 
 using LazyRemoval = std::function<std::shared_ptr<const irs::DocRemoval>(
-  const irs::DirectoryReader&)>;
+  const irs::CompositeReader&)>;
 
 class IndexWriter {
   struct Span {
@@ -150,7 +150,7 @@ class IndexWriter {
   bool RefreshCommit();
   bool Commit() { return RefreshCommit(); }
 
-  irs::DirectoryReader GetSnapshot() const;
+  irs::CompositeReader GetSnapshot() const;
 
   CompactionResult Compact(
     const irs::CompactionPolicy& policy,
@@ -213,7 +213,7 @@ class IndexWriter {
   std::optional<Staged> _staged ABSL_GUARDED_BY(_mutex);
 };
 
-irs::DirectoryReader OpenReader(const IndexDir& dir,
+irs::CompositeReader OpenReader(const IndexDir& dir,
                                 const irs::IndexReaderOptions& options = {});
 
 }  // namespace tests

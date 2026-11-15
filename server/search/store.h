@@ -81,7 +81,7 @@ using persistence::InvertedIndexSettings;
 namespace sdb::search {
 
 struct ReadView {
-  const irs::DirectoryReader* reader = nullptr;
+  const irs::CompositeReader* reader = nullptr;
   const TableState* state = nullptr;
   const FileManifest* manifest = nullptr;
 };
@@ -149,7 +149,7 @@ class Store final : public std::enable_shared_from_this<Store>,
     return _dropped.load(std::memory_order_acquire);
   }
 
-  irs::DirectoryReader BuildSnapshot();
+  irs::CompositeReader BuildSnapshot();
   void PruneVersions(std::span<const Tick> running, Tick published);
   bool FreeVersions();
 
@@ -215,7 +215,7 @@ class Store final : public std::enable_shared_from_this<Store>,
   std::shared_ptr<const irs::IndexFieldOptions> CompactionOptions();
 
   bool Settle();
-  void OptimizeInMemory();
+  void Pack();
   [[nodiscard]] absl::Status VacuumCompact(duckdb::ClientContext& context,
                                            uint32_t target_segments);
 
@@ -366,7 +366,7 @@ class Store final : public std::enable_shared_from_this<Store>,
   bool OwnsFiles() const noexcept { return _on_disk && !_read_only; }
   bool CloseFiles();
   absl::Status RemoveReleased();
-  void ClaimColumnOids(const irs::DirectoryReader& reader) const;
+  void ClaimColumnOids(const irs::CompositeReader& reader) const;
   void SyncSegments() const;
   bool OwnerDropped() const noexcept {
     return Dropped() || _directory->Dropped();

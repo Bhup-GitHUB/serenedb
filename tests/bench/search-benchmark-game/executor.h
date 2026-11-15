@@ -22,7 +22,7 @@
 
 #include <cstdio>
 #include <iresearch/analysis/tokenizer.hpp>
-#include <iresearch/index/directory_reader.hpp>
+#include <iresearch/index/composite_reader.hpp>
 #include <iresearch/index/index_writer.hpp>
 #include <iresearch/search/detail/doc_collector.hpp>
 #include <iresearch/search/docs/root.hpp>
@@ -37,7 +37,7 @@ namespace bench {
 
 inline constexpr std::string_view kSegmentListFile = "segments";
 
-irs::DirectoryReader OpenIndex(duckdb::DatabaseInstance& db,
+irs::CompositeReader OpenIndex(duckdb::DatabaseInstance& db,
                                duckdb::FileSystem& fs, std::string_view root,
                                const irs::IndexReaderOptions& options);
 
@@ -90,7 +90,7 @@ struct EmitResult {
 class Executor {
  public:
   explicit Executor(std::string_view path);
-  explicit Executor(irs::DirectoryReader reader);
+  explicit Executor(irs::CompositeReader reader);
 
   size_t ExecuteTopK(size_t k, std::string_view query);
   size_t ExecuteTopKWithCount(size_t k, std::string_view query);
@@ -105,7 +105,7 @@ class Executor {
   EmitResult ExecuteEmitDocs(std::string_view query, Report report = {});
   EmitResult ExecuteEmitHits(std::string_view query, Report report = {});
 
-  const irs::DirectoryReader& GetReader() const { return _reader; }
+  const irs::CompositeReader& GetReader() const { return _reader; }
   auto GetResults(this auto& self) {
     return std::span{self._results.data(), self._result_count};
   }
@@ -131,7 +131,7 @@ class Executor {
   irs::Scorer::ptr _scorer;
   irs::Scorer* _scorer_ptr{_scorer.get()};
   irs::analysis::Tokenizer::ptr _tokenizer;
-  irs::DirectoryReader _reader;
+  irs::CompositeReader _reader;
 };
 
 }  // namespace bench
