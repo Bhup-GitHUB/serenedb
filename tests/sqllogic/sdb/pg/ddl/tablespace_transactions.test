@@ -19,6 +19,12 @@ CREATE TABLE plain (id INT, body TEXT);
 statement ok
 INSERT INTO plain VALUES (1, 'kept fox'), (2, 'kept dog');
 
+statement count 2
+COPY (SELECT id, body FROM plain ORDER BY id) TO '${__TEST_DIR__}/tx_plain.parquet' (FORMAT PARQUET);
+
+statement ok
+CREATE VIEW plain_view AS SELECT * FROM read_parquet('${__TEST_DIR__}/tx_plain.parquet');
+
 statement ok
 BEGIN;
 
@@ -29,7 +35,7 @@ statement ok
 INSERT INTO rolled_back VALUES (1, 'never committed');
 
 statement ok
-CREATE INDEX rolled_back_index ON plain USING inverted(body tx_words) TABLESPACE tx_other_${__DATABASE__};
+CREATE INDEX rolled_back_index ON plain_view USING inverted(id, body tx_words) TABLESPACE tx_other_${__DATABASE__};
 
 statement ok
 ROLLBACK;
@@ -97,10 +103,10 @@ statement ok
 CREATE TABLE tx_schema.inside (id INT, body TEXT) TABLESPACE tx_other_${__DATABASE__};
 
 statement ok
-CREATE TABLE tx_schema.plain_inside (id INT, body TEXT);
+CREATE VIEW tx_schema.view_inside AS SELECT * FROM read_parquet('${__TEST_DIR__}/tx_plain.parquet');
 
 statement ok
-CREATE INDEX plain_inside_body ON tx_schema.plain_inside USING inverted(body tx_words) TABLESPACE tx_other_${__DATABASE__};
+CREATE INDEX view_inside_body ON tx_schema.view_inside USING inverted(id, body tx_words) TABLESPACE tx_other_${__DATABASE__};
 
 statement ok
 INSERT INTO tx_schema.inside VALUES (1, 'in the schema');
@@ -133,10 +139,7 @@ other_files
 0
 
 statement ok
-CREATE TABLE indexed (id INT, body TEXT);
-
-statement ok
-CREATE INDEX indexed_body ON indexed USING inverted(body tx_words) TABLESPACE tx_ts_${__DATABASE__};
+CREATE INDEX indexed_body ON plain_view USING inverted(id, body tx_words) TABLESPACE tx_ts_${__DATABASE__};
 
 statement ok
 DROP TABLE committed;
@@ -148,7 +151,7 @@ db error: ERROR: tablespace "<slt:ignore>" is not empty
 
 
 statement ok
-DROP TABLE indexed;
+DROP VIEW plain_view;
 
 statement ok
 DROP TABLESPACE tx_ts_${__DATABASE__};

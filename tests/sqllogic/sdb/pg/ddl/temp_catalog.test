@@ -9,19 +9,19 @@ CREATE TEMP TABLE temp_rel (a INT, b TEXT);
 statement error
 CREATE TEMP SEQUENCE temp_rel;
 ----
-db error: ERROR: Table with name "temp_rel" already exists!
+db error: ERROR: relation "temp_rel" already exists
 
 
 statement error
 CREATE TEMP VIEW temp_rel AS SELECT 1 AS x;
 ----
-db error: ERROR: Table with name "temp_rel" already exists!
+db error: ERROR: relation "temp_rel" already exists
 
 
 statement error
 CREATE INDEX temp_rel ON temp_rel (a);
 ----
-db error: ERROR: Table with name "temp_rel" already exists!
+db error: ERROR: relation "temp_rel" already exists
 
 
 statement ok
@@ -61,58 +61,41 @@ CREATE TEMP SEQUENCE temp_rel_seq;
 statement error
 CREATE TEMP TABLE temp_rel_seq (a INT);
 ----
-db error: ERROR: Sequence with name "temp_rel_seq" already exists!
+db error: ERROR: relation "temp_rel_seq" already exists
+
+
+statement ok
+CREATE TEMP TABLE temp_partitioned (a INT, b TEXT) PARTITIONED BY (a);
+
+
+statement ok
+CREATE TEMP TABLE temp_sorted (a INT, b TEXT) SORTED BY (a);
+
+
+statement ok
+CREATE TEMP TABLE temp_option (a INT) WITH (compaction_interval = 0);
 
 
 statement error
-CREATE TABLE partitioned (a INT) PARTITIONED BY (a);
-----
-db error: ERROR: PARTITIONED BY is not supported
-
-
-statement error
-CREATE TABLE sorted (a INT) SORTED BY (a);
-----
-db error: ERROR: SORTED BY is not supported
-
-
-statement error
-CREATE TEMP TABLE temp_partitioned (a INT) PARTITIONED BY (a);
-----
-db error: ERROR: PARTITIONED BY is not supported
-
-
-statement error
-CREATE TEMP TABLE temp_sorted (a INT) SORTED BY (a);
-----
-db error: ERROR: SORTED BY is not supported
-
-
-statement error
-CREATE TEMP TABLE temp_search (id INT, body TEXT);
-----
-db error: ERROR: a temporary table cannot be a search table
-
-
-statement error
-CREATE TEMP TABLE temp_option (a INT) WITH (fillfactor = 10);
+CREATE TEMP TABLE temp_unknown_option (a INT) WITH (fillfactor = 10);
 ----
 db error: ERROR: unrecognized parameter "fillfactor"
 
 
 statement ok
-CREATE TEMP TABLE temp_transactional (a INT) WITH (storage = 'transactional');
+INSERT INTO temp_partitioned VALUES (2, 'two'), (1, 'one');
 
 
 statement ok
-INSERT INTO temp_transactional VALUES (1), (2);
+INSERT INTO temp_sorted VALUES (2, 'two'), (1, 'one');
 
 
 query
-SELECT sum(a) AS total FROM temp_transactional;
+SELECT (SELECT sum(a) FROM temp_partitioned) AS partitioned,
+       (SELECT string_agg(b, ',' ORDER BY a) FROM temp_sorted) AS sorted;
 ----
-total
-3
+partitioned	sorted
+3	one,two
 
 
 statement error
@@ -128,7 +111,15 @@ db error: ERROR: Only TEMPORARY table names can use the "temp" catalog
 
 
 statement ok
-DROP TABLE temp_transactional;
+DROP TABLE temp_option;
+
+
+statement ok
+DROP TABLE temp_sorted;
+
+
+statement ok
+DROP TABLE temp_partitioned;
 
 
 statement ok

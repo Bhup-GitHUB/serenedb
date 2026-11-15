@@ -1,8 +1,8 @@
 control substitution on
 
-# default_tablespace places a search table or an inverted index that names no
-# tablespace; an explicit TABLESPACE wins, and an empty value means the
-# database's tablespace.
+# default_tablespace places a table or an inverted index on a view that names
+# no tablespace; an explicit TABLESPACE wins, and an empty value means the
+# database's tablespace. An index on a table is stored with its table.
 
 statement ok
 CREATE TABLESPACE def_x_${__DATABASE__} LOCATION '${__TEST_DIR__}/def/x';
@@ -21,6 +21,12 @@ CREATE TABLE plain_src (id INT, body TEXT);
 
 statement ok
 INSERT INTO plain_src VALUES (1, 'quick fox'), (2, 'lazy dog');
+
+statement count 2
+COPY (SELECT id, body FROM plain_src ORDER BY id) TO '${__TEST_DIR__}/def_src.parquet' (FORMAT PARQUET);
+
+statement ok
+CREATE VIEW view_src AS SELECT * FROM read_parquet('${__TEST_DIR__}/def_src.parquet');
 
 query
 SELECT current_setting('default_tablespace') = '' AS unset;
@@ -41,13 +47,22 @@ statement ok
 CREATE TABLE implicit_table (id INT, body TEXT);
 
 statement ok
-CREATE INDEX implicit_index ON plain_src USING inverted(body def_words);
+CREATE INDEX implicit_table_index ON implicit_table (id);
+
+statement ok
+CREATE INDEX implicit_index ON view_src USING inverted(id, body def_words);
 
 statement ok
 CREATE TABLE explicit_y (id INT) TABLESPACE def_y_${__DATABASE__};
 
 statement ok
-CREATE INDEX explicit_y_index ON plain_src USING inverted(body def_words) TABLESPACE def_y_${__DATABASE__};
+CREATE INDEX explicit_y_index ON view_src USING inverted(id, body def_words) TABLESPACE def_y_${__DATABASE__};
+
+statement error
+CREATE INDEX explicit_y_table_index ON implicit_table (body) TABLESPACE def_y_${__DATABASE__};
+----
+db error: ERROR: an index on a table is stored with the table and cannot be placed in a tablespace
+
 
 statement ok
 CREATE TABLE explicit_default (id INT) TABLESPACE pg_default;
@@ -59,10 +74,7 @@ statement ok
 CREATE TABLE ctas_explicit TABLESPACE def_y_${__DATABASE__} AS SELECT * FROM plain_src;
 
 statement ok
-CREATE TABLE plain_ignores (id INT);
-
-statement ok
-CREATE INDEX art_ignores ON plain_src (id);
+CREATE INDEX with_its_table ON plain_src (id);
 
 statement ok
 SET default_tablespace = '';
@@ -92,14 +104,13 @@ query
 SELECT c.relname,
        coalesce(replace(replace(t.spcname, '_${__DATABASE__}', ''), ' ${__DATABASE__}', ''), '(database)') AS tablespace
 FROM pg_class c LEFT JOIN pg_tablespace t ON t.oid = c.reltablespace
-WHERE c.relname IN ('implicit_table', 'implicit_index', 'explicit_y', 'explicit_y_index', 'explicit_default',
-                    'ctas_implicit', 'ctas_explicit', 'plain_ignores', 'art_ignores', 'plain_src',
+WHERE c.relname IN ('implicit_table', 'implicit_table_index', 'implicit_index', 'explicit_y', 'explicit_y_index',
+                    'explicit_default', 'ctas_implicit', 'ctas_explicit', 'with_its_table', 'plain_src',
                     'empty_default', 'named_default', 'mixed_case', 'after_reset')
 ORDER BY c.relname;
 ----
 relname	tablespace
 after_reset	(database)
-art_ignores	(database)
 ctas_explicit	def_y
 ctas_implicit	def_x
 empty_default	(database)
@@ -108,10 +119,11 @@ explicit_y	def_y
 explicit_y_index	def_y
 implicit_index	def_x
 implicit_table	def_x
+implicit_table_index	def_x
 mixed_case	Def Mixed
 named_default	(database)
-plain_ignores	(database)
 plain_src	(database)
+with_its_table	(database)
 
 statement ok
 VACUUM (FLUSH_TABLE) ctas_implicit;
@@ -125,9 +137,6 @@ SELECT i.id, e.body FROM ctas_implicit i JOIN ctas_explicit e USING (id) ORDER B
 id	body
 1	quick fox
 2	lazy dog
-
-statement ok
-VACUUM (FLUSH_TABLE) plain_src;
 
 query
 SELECT id FROM implicit_index WHERE body @@ ts_phrase('fox') ORDER BY id;
@@ -317,9 +326,6 @@ statement ok
 DROP TABLE empty_default;
 
 statement ok
-DROP TABLE plain_ignores;
-
-statement ok
 DROP TABLE ctas_explicit;
 
 statement ok
@@ -333,6 +339,15 @@ DROP TABLE explicit_y;
 
 statement ok
 DROP TABLE implicit_table;
+
+statement ok
+DROP INDEX implicit_index;
+
+statement ok
+DROP INDEX explicit_y_index;
+
+statement ok
+DROP VIEW view_src;
 
 statement ok
 DROP TABLE plain_src;

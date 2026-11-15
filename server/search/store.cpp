@@ -1051,6 +1051,9 @@ std::shared_ptr<const TableState> Store::ReplaceSegments(
   std::vector<OwnSegment> opened(replacements.size());
   irs::ForEach(irs::DuckDBEngine::Instance().instance(), _root,
                replacements.size(), [&](size_t i) {
+                 SDB_IF_FAILURE("search_replacement_open_fails") {
+                   THROW_SQL_ERROR(ERR_MSG("intentional debug error"));
+                 }
                  opened[i] = OpenOwn(std::move(replacements[i].meta));
                });
   for (size_t i = 0; i != replacements.size(); ++i) {

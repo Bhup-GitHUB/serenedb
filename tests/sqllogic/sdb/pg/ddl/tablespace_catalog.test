@@ -21,14 +21,26 @@ SELECT pg_tablespace_size('cat_ts_${__DATABASE__}') AS by_name,
 by_name	by_oid
 0	0
 
+statement ok
+CREATE TABLE cat_default_docs (id INT);
+
+statement ok
+INSERT INTO cat_default_docs SELECT i FROM range(1000) t(i);
+
+statement ok
+VACUUM (FLUSH_TABLE) cat_default_docs;
+
 query
-SELECT pg_tablespace_size('pg_default') > 0 AS default_holds_databases,
-       pg_tablespace_size('pg_global') > 0 AS global_holds_the_catalog,
+SELECT pg_tablespace_size('pg_default') > 0 AS default_holds_tables,
+       pg_tablespace_size('pg_global') > 0 AS global_holds_the_log,
        pg_tablespace_size(1663) > 0 AS default_by_oid,
        pg_tablespace_size(1664) > 0 AS global_by_oid;
 ----
-default_holds_databases	global_holds_the_catalog	default_by_oid	global_by_oid
+default_holds_tables	global_holds_the_log	default_by_oid	global_by_oid
 t	t	t	t
+
+statement ok
+DROP TABLE cat_default_docs;
 
 statement error
 SELECT pg_tablespace_size(0::oid);
@@ -39,7 +51,7 @@ db error: ERROR: tablespace with OID 0 does not exist
 statement error
 SELECT pg_tablespace_size('missing_${__DATABASE__}');
 ----
-db error: ERROR: Tablespace with name <slt:ignore> does not exist!
+db error: ERROR: tablespace "<slt:ignore>" does not exist
 
 
 statement ok
@@ -112,4 +124,4 @@ DROP TABLESPACE cat_ts_${__DATABASE__};
 statement error
 SELECT pg_tablespace_size('cat_ts_${__DATABASE__}');
 ----
-db error: ERROR: Tablespace with name <slt:ignore> does not exist!
+db error: ERROR: tablespace "<slt:ignore>" does not exist

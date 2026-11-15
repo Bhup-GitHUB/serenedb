@@ -1133,6 +1133,10 @@ duckdb::unique_ptr<SearchTableEntry> SearchTableEntry::Altered(
     std::move(definition), ParentSchema(context),
     bound_defaults ? *bound_defaults : unused_defaults, info.bind_mode);
   for (const auto& dependency : dependencies.Set()) {
+    if (dependency.entry.type == duckdb::CatalogType::TABLESPACE_ENTRY) {
+      bound->Base().dependencies.AddDependency(dependency);
+      continue;
+    }
     if (!dependency.owned_by) {
       continue;
     }

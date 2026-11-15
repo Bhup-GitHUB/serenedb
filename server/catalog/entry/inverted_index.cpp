@@ -777,6 +777,7 @@ duckdb::unique_ptr<duckdb::CatalogEntry> InvertedIndexEntry::Copy(
   duckdb::ClientContext& context) const {
   auto info_copy = duckdb::IndexCatalogEntry::GetInfo();
   auto& index_info = info_copy->Cast<duckdb::CreateIndexInfo>();
+  index_info.tablespace_oid = _tablespace;
   auto result = duckdb::make_uniq<InvertedIndexEntry>(
     catalog, ParentSchema(context), index_info, nullptr);
   result->_storage = _storage;

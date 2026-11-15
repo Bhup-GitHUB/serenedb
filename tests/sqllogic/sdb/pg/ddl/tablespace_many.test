@@ -28,17 +28,24 @@ CREATE TABLE comments (id INT, article INT, body TEXT) TABLESPACE many_b_${__DAT
 statement ok
 CREATE TABLE tags (article INT, tag TEXT);
 
-statement ok
-CREATE TABLE notes (id INT, head TEXT, body TEXT);
+statement count 3
+COPY (SELECT * FROM (VALUES (1, 'fox notes', 'the quick brown fox'),
+                            (2, 'whale notes', 'a blue whale sings'),
+                            (3, 'bread notes', 'the fox steals bread')) AS t(id, head, body)
+      ORDER BY id)
+TO '${__TEST_DIR__}/many_notes.parquet' (FORMAT PARQUET);
 
 statement ok
-CREATE INDEX notes_head ON notes USING inverted(head many_words) TABLESPACE many_a_${__DATABASE__};
+CREATE VIEW notes AS SELECT * FROM read_parquet('${__TEST_DIR__}/many_notes.parquet');
 
 statement ok
-CREATE INDEX notes_body ON notes USING inverted(body many_words) TABLESPACE many_c_${__DATABASE__};
+CREATE INDEX notes_head ON notes USING inverted(id, head many_words) TABLESPACE many_a_${__DATABASE__};
 
 statement ok
-CREATE INDEX notes_both ON notes USING inverted(head many_words, body many_words) INCLUDE (id);
+CREATE INDEX notes_body ON notes USING inverted(id, body many_words) TABLESPACE many_c_${__DATABASE__};
+
+statement ok
+CREATE INDEX notes_both ON notes USING inverted(id, head many_words, body many_words);
 
 statement ok
 INSERT INTO articles VALUES (1, 'Foxes in winter'), (2, 'Whales of the north'), (3, 'Bread at dawn');
@@ -50,9 +57,6 @@ statement ok
 INSERT INTO tags VALUES (1, 'animals'), (2, 'animals'), (3, 'food');
 
 statement ok
-INSERT INTO notes VALUES (1, 'fox notes', 'the quick brown fox'), (2, 'whale notes', 'a blue whale sings'), (3, 'bread notes', 'the fox steals bread');
-
-statement ok
 VACUUM (FLUSH_TABLE) articles;
 
 statement ok
@@ -60,9 +64,6 @@ VACUUM (FLUSH_TABLE) comments;
 
 statement ok
 VACUUM (FLUSH_TABLE) tags;
-
-statement ok
-VACUUM (FLUSH_TABLE) notes;
 
 query
 SELECT c.relname, coalesce(replace(t.spcname, '_${__DATABASE__}', ''), '(database)') AS tablespace
@@ -201,7 +202,10 @@ id
 2
 
 statement ok
-DROP TABLE notes;
+DROP INDEX notes_both;
+
+statement ok
+DROP VIEW notes;
 
 statement ok
 DROP TABLE tags;

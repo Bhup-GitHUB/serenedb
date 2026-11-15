@@ -203,13 +203,16 @@ void RefuseDependents(duckdb::ClientContext& context, ClusterCatalog& cluster,
                                     db->GetName().GetIdentifierName()));
     }
   }
-  cluster.Set(duckdb::CatalogType::DATABASE_ENTRY)
-    .Scan(cluster_transaction, [&](duckdb::CatalogEntry& entry) {
+  for (const auto& [type, kind] :
+       {std::pair{duckdb::CatalogType::DATABASE_ENTRY, "database "},
+        std::pair{duckdb::CatalogType::TABLESPACE_ENTRY, "tablespace "}}) {
+    cluster.Set(type).Scan(cluster_transaction, [&](duckdb::CatalogEntry& entry) {
       if (const auto use = UseOf(entry, role.oid); use != RoleUse::None) {
         lines.push_back(Describe(
-          use, absl::StrCat("database ", entry.name.GetIdentifierName())));
+          use, absl::StrCat(kind, entry.name.GetIdentifierName())));
       }
     });
+  }
   absl::c_move(remote, std::back_inserter(lines));
   if (lines.empty()) {
     return;

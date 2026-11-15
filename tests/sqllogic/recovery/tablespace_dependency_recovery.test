@@ -1,8 +1,8 @@
 control substitution on
 
 # Every object placed in a tablespace keeps the tablespace from being dropped,
-# across a restart, a search table rebuilt by ALTER TABLE and a rewrite of the
-# catalog log; a DROP TABLESPACE cut off before its commit leaves it.
+# across a restart, a table changed by ALTER TABLE and a rewrite of the log; a
+# DROP TABLESPACE cut off before its commit leaves it.
 
 statement ok
 CREATE TEXT SEARCH DICTIONARY dep_english AS
@@ -29,8 +29,14 @@ CREATE TABLE dep_notes (id INT, body TEXT);
 statement ok
 INSERT INTO dep_notes VALUES (1, 'red fox');
 
+statement count 1
+COPY (SELECT id, body FROM dep_notes) TO '${__TEST_DIR__}/dep_notes.parquet' (FORMAT PARQUET);
+
 statement ok
-CREATE INDEX dep_notes_idx ON dep_notes USING inverted(body dep_english) TABLESPACE for_index;
+CREATE VIEW dep_notes_view AS SELECT * FROM read_parquet('${__TEST_DIR__}/dep_notes.parquet');
+
+statement ok
+CREATE INDEX dep_notes_idx ON dep_notes_view USING inverted(id, body dep_english) TABLESPACE for_index;
 
 statement ok
 CREATE DATABASE dep_db TABLESPACE for_database;
@@ -166,6 +172,10 @@ SELECT count(*) AS files_left FROM glob('${__TEST_DIR__}/for_*/**');
 ----
 files_left
 0
+
+connection after_cut_drop
+statement ok
+DROP VIEW dep_notes_view;
 
 connection after_cut_drop
 statement ok

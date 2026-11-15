@@ -241,9 +241,8 @@ REVOKE ALL ON SCHEMA public FROM priv_other_${__DATABASE__};
 statement error
 DROP ROLE priv_other_${__DATABASE__};
 ----
-db error: ERROR: Cannot drop entry "<slt:ignore>" because there are entries that depend on it.
-tablespace "<slt:ignore>" depends on role "<slt:ignore>".
-Use DROP...CASCADE to drop all dependents.
+db error: ERROR: role "<slt:ignore>" cannot be dropped because some objects depend on it
+DETAIL: owner of tablespace <slt:ignore>
 
 
 statement ok

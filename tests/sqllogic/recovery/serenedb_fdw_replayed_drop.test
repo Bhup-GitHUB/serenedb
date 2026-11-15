@@ -1,23 +1,32 @@
 control substitution on
 
-# A read-only attach replays the catalog log of the directory it opens, drops
-# included. A drop replayed there leaves the files of the dropped search table
-# and inverted index where they are: the attach changes nothing it reads.
+# A read-only attach replays the log of the directory it opens, drops included.
+# A drop replayed there leaves the files of the dropped table and inverted
+# index where they are: the attach changes nothing it reads.
 
 statement ok retry $RETRY_ATTEMPTS backoff $BACKOFF_DURATION
-CREATE TABLE postgres.public.frd_docs(id INTEGER PRIMARY KEY, body VARCHAR);
+CREATE TABLE postgres.public.frd_docs(id INTEGER PRIMARY KEY, body VARCHAR)
+  WITH (compaction_interval = 0);
 
 statement ok
 INSERT INTO postgres.public.frd_docs VALUES (1, 'alpha');
 
 statement ok
-CREATE TABLE postgres.public.frd_plain(id INTEGER, body VARCHAR);
+CREATE TABLE postgres.public.frd_plain(id INTEGER, body VARCHAR)
+  WITH (compaction_interval = 0);
 
 statement ok
 INSERT INTO postgres.public.frd_plain VALUES (1, 'alpha'), (2, 'beta');
 
+statement count 2
+COPY (SELECT 1 AS id, 'alpha' AS body UNION ALL SELECT 2, 'beta')
+TO '${__TEST_DIR__}/frd_src.parquet' (FORMAT PARQUET);
+
 statement ok
-CREATE INDEX frd_plain_idx ON postgres.public.frd_plain USING inverted (body);
+CREATE VIEW postgres.public.frd_view AS SELECT * FROM read_parquet('${__TEST_DIR__}/frd_src.parquet');
+
+statement ok
+CREATE INDEX frd_view_idx ON postgres.public.frd_view USING inverted (id, body);
 
 statement ok
 VACUUM (FLUSH_TABLE) postgres.public.frd_docs;
@@ -26,22 +35,19 @@ statement ok
 VACUUM (FLUSH_TABLE) postgres.public.frd_plain;
 
 statement ok
-CHECKPOINT postgres;
+CHECKPOINT;
 
 system ok
-rm -rf $__TEST_DIR__/frd && mkdir $__TEST_DIR__/frd && cp -r ${SDB_DATADIR}/engine_v1/5 $__TEST_DIR__/frd/5
+rm -rf $__TEST_DIR__/frd && mkdir -p $__TEST_DIR__/frd/engine_v1 && cp -r ${SDB_DATADIR}/engine_v1/store $__TEST_DIR__/frd/engine_v1/ && cp ${SDB_DATADIR}/PG_VERSION $__TEST_DIR__/frd/
 
 statement ok
 DROP TABLE postgres.public.frd_docs;
 
 statement ok
-DROP INDEX postgres.public.frd_plain_idx;
-
-statement ok
-CHECKPOINT postgres;
+DROP INDEX postgres.public.frd_view_idx;
 
 system ok
-rm -f $__TEST_DIR__/frd/5/data.db* && cp ${SDB_DATADIR}/engine_v1/5/data.db* $__TEST_DIR__/frd/5/ && cp ${SDB_DATADIR}/engine_v1/catalog.wal $__TEST_DIR__/frd/catalog.wal
+cp -r ${SDB_DATADIR}/engine_v1/wal $__TEST_DIR__/frd/engine_v1/
 
 statement ok
 CREATE TABLE frd_files AS
@@ -54,7 +60,7 @@ stored
 t
 
 statement ok
-CREATE SERVER frd FOREIGN DATA WRAPPER serenedb_fdw OPTIONS (path '${__TEST_DIR__}/frd/5');
+CREATE SERVER frd FOREIGN DATA WRAPPER serenedb_fdw OPTIONS (path '${__TEST_DIR__}/frd');
 
 query
 SELECT id, body FROM frd.public.frd_plain ORDER BY id;

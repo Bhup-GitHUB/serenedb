@@ -31,7 +31,7 @@ connection dropper
 statement async error
 DROP TABLESPACE contested;
 ----
-db error: ERROR: tablespace "contested" is not empty
+db error: ERROR: Failed to commit: Could not commit DROP of "contested" because a dependency was created after the transaction started
 
 
 connection default
@@ -115,13 +115,13 @@ DROP DATABASE late_db;
 
 
 connection default
-statement ok
-CREATE TABLE notes (id INT, body TEXT);
+statement count 1
+COPY (SELECT 1 AS id, 'red fox' AS body) TO '${__TEST_DIR__}/race_notes.parquet' (FORMAT PARQUET);
 
 
 connection default
 statement ok
-INSERT INTO notes VALUES (1, 'red fox');
+CREATE VIEW notes AS SELECT * FROM read_parquet('${__TEST_DIR__}/race_notes.parquet');
 
 
 connection default
@@ -133,7 +133,7 @@ connection dropper
 statement async error
 DROP TABLESPACE leaving;
 ----
-db error: ERROR: tablespace "leaving" is not empty
+db error: ERROR: Failed to commit: Could not commit DROP of "leaving" because a dependency was created after the transaction started
 
 
 connection default
@@ -143,7 +143,7 @@ SET sdb_faults = '-pause_tablespace_drop:parked';
 
 connection default
 statement ok
-CREATE INDEX notes_idx ON notes USING inverted(body race_english) TABLESPACE leaving;
+CREATE INDEX notes_idx ON notes USING inverted(id, body race_english) TABLESPACE leaving;
 
 
 connection default
@@ -393,7 +393,7 @@ DROP TABLESPACE recreated;
 
 connection default
 statement ok
-DROP TABLE notes;
+DROP VIEW notes;
 
 
 connection default
