@@ -20,15 +20,13 @@ statement ok
 CREATE TEXT SEARCH DICTIONARY many_words AS split_text(case := 'lower') WITH (frequency, position, norm);
 
 statement ok
-CREATE TABLE articles (id INT, title TEXT)
-  WITH (storage = 'search') TABLESPACE many_a_${__DATABASE__};
+CREATE TABLE articles (id INT, title TEXT) TABLESPACE many_a_${__DATABASE__};
 
 statement ok
-CREATE TABLE comments (id INT, article INT, body TEXT)
-  WITH (storage = 'search') TABLESPACE many_b_${__DATABASE__};
+CREATE TABLE comments (id INT, article INT, body TEXT) TABLESPACE many_b_${__DATABASE__};
 
 statement ok
-CREATE TABLE tags (article INT, tag TEXT) WITH (storage = 'search');
+CREATE TABLE tags (article INT, tag TEXT);
 
 statement ok
 CREATE TABLE notes (id INT, head TEXT, body TEXT);
@@ -55,16 +53,16 @@ statement ok
 INSERT INTO notes VALUES (1, 'fox notes', 'the quick brown fox'), (2, 'whale notes', 'a blue whale sings'), (3, 'bread notes', 'the fox steals bread');
 
 statement ok
-VACUUM (REFRESH_TABLE) articles;
+VACUUM (FLUSH_TABLE) articles;
 
 statement ok
-VACUUM (REFRESH_TABLE) comments;
+VACUUM (FLUSH_TABLE) comments;
 
 statement ok
-VACUUM (REFRESH_TABLE) tags;
+VACUUM (FLUSH_TABLE) tags;
 
 statement ok
-VACUUM (REFRESH_TABLE) notes;
+VACUUM (FLUSH_TABLE) notes;
 
 query
 SELECT c.relname, coalesce(replace(t.spcname, '_${__DATABASE__}', ''), '(database)') AS tablespace

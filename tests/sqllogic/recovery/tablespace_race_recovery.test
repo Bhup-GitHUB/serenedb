@@ -41,7 +41,7 @@ SET sdb_faults = '-pause_tablespace_drop:parked';
 
 connection default
 statement ok
-CREATE TABLE placed (id INT, body TEXT) WITH (storage = 'search') TABLESPACE contested;
+CREATE TABLE placed (id INT, body TEXT) TABLESPACE contested;
 
 
 connection default
@@ -175,7 +175,7 @@ BEGIN;
 
 connection placer
 statement ok
-CREATE TABLE late (id INT, body TEXT) WITH (storage = 'search') TABLESPACE leaving;
+CREATE TABLE late (id INT, body TEXT) TABLESPACE leaving;
 
 
 connection placer
@@ -303,7 +303,7 @@ CREATE TABLESPACE held_once_more LOCATION '${__TEST_DIR__}/held';
 
 connection default
 statement ok
-CREATE TABLE held_rows (id INT, body TEXT) WITH (storage = 'search') TABLESPACE held_once_more;
+CREATE TABLE held_rows (id INT, body TEXT) TABLESPACE held_once_more;
 
 
 connection default
@@ -313,7 +313,7 @@ INSERT INTO held_rows VALUES (1, 'placed after two drops');
 
 connection default
 statement ok
-VACUUM (REFRESH_TABLE) held_rows;
+VACUUM (FLUSH_TABLE) held_rows;
 
 
 connection default

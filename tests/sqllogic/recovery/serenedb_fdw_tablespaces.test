@@ -8,13 +8,13 @@ CREATE DATABASE sft_tables;
 
 statement ok
 CREATE TABLE sft_tables.public.notes(id BIGINT PRIMARY KEY, body TEXT)
-  WITH (storage = 'search', refresh_interval = 0, compaction_interval = 0) TABLESPACE sft_space;
+  WITH (compaction_interval = 0) TABLESPACE sft_space;
 
 statement ok
 INSERT INTO sft_tables.public.notes VALUES (1, 'placed');
 
 statement ok
-VACUUM (REFRESH_TABLE) sft_tables.public.notes;
+VACUUM (FLUSH_TABLE) sft_tables.public.notes;
 
 statement ok
 CREATE DATABASE sft_indexes;
@@ -24,26 +24,26 @@ CREATE TABLE sft_indexes.public.docs(id INTEGER PRIMARY KEY, body VARCHAR);
 
 statement ok
 CREATE INDEX docs_idx ON sft_indexes.public.docs USING inverted(id, body)
-  WITH (refresh_interval = 0, compaction_interval = 0) TABLESPACE sft_space;
+  WITH (compaction_interval = 0) TABLESPACE sft_space;
 
 statement ok
 INSERT INTO sft_indexes.public.docs VALUES (1, 'placed');
 
 statement ok
-VACUUM (REFRESH_INDEX) sft_indexes.public.docs_idx;
+VACUUM (FLUSH_INDEX) sft_indexes.public.docs_idx;
 
 statement ok
 CREATE DATABASE sft_placed TABLESPACE sft_space;
 
 statement ok
 CREATE TABLE sft_placed.public.notes(id BIGINT PRIMARY KEY, body TEXT)
-  WITH (storage = 'search', refresh_interval = 0, compaction_interval = 0);
+  WITH (compaction_interval = 0);
 
 statement ok
 INSERT INTO sft_placed.public.notes VALUES (1, 'beside');
 
 statement ok
-VACUUM (REFRESH_TABLE) sft_placed.public.notes;
+VACUUM (FLUSH_TABLE) sft_placed.public.notes;
 
 statement ok
 CHECKPOINT sft_tables;

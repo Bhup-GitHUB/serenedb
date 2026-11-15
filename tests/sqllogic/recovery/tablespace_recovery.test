@@ -8,7 +8,7 @@ CREATE TEXT SEARCH DICTIONARY ts_english AS
     split_text() | normalize_tokens('en_US.UTF-8', accent := false);
 
 statement ok
-CREATE TABLE docs (id INT, body TEXT) WITH (storage = 'search') TABLESPACE ts;
+CREATE TABLE docs (id INT, body TEXT) TABLESPACE ts;
 
 statement ok
 INSERT INTO docs VALUES (1, 'quick brown fox'), (2, 'lazy dog');
@@ -178,7 +178,7 @@ SET sdb_faults = 'crash_before_catalog_commit';
 
 connection after_half_create
 statement error connection closed
-CREATE TABLE orphan (id INT, body TEXT) WITH (storage = 'search') TABLESPACE half_created;
+CREATE TABLE orphan (id INT, body TEXT) TABLESPACE half_created;
 
 
 connection after_orphan

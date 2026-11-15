@@ -1022,6 +1022,11 @@ std::shared_ptr<const SegmentReaderImpl> MergeWriter::FlushPiece(
   const auto merged_norm_ids =
     MergeNorms(*col_writer, sources, field_meta_map, _field_options);
   auto norms = col_writer->SealNorms(segment.docs_count);
+  duckdb::shared_ptr<duckdb::InputFile> norms_file;
+  if (!norms.empty()) {
+    norms_file = _fs.OpenInputFile(_fs.JoinPath(_root, FileName(segment.name)),
+                                   duckdb::MappedFileAccess::RANDOM);
+  }
   auto columns = ConcatInMemory(_db, sources, _field_options);
 
   auto fields = std::make_shared<PieceFields>();
@@ -1041,7 +1046,8 @@ std::shared_ptr<const SegmentReaderImpl> MergeWriter::FlushPiece(
   col_writer.reset();
 
   flushed = tracker.Flush();
-  segment.byte_size = flushed.bytes;
+  segment.byte_size =
+    flushed.bytes + (norms_file ? norms_file->GetSize() : 0);
   for (const auto& column : columns) {
     segment.byte_size += utils::downCast<HotColumnReader>(*column).Bytes();
   }
@@ -1049,11 +1055,6 @@ std::shared_ptr<const SegmentReaderImpl> MergeWriter::FlushPiece(
   fields->Open(
     ReaderState{.db = _db, .fs = _fs, .root = _root, .meta = segment},
     field_writer.Features());
-  duckdb::shared_ptr<duckdb::InputFile> norms_file;
-  if (!norms.empty()) {
-    norms_file = _fs.OpenInputFile(_fs.JoinPath(_root, FileName(segment.name)),
-                                   duckdb::MappedFileAccess::RANDOM);
-  }
   return SegmentReaderImpl::OpenPiece(
     segment, id,
     std::make_unique<ColReader>(_db, std::move(columns), std::move(norms_file),

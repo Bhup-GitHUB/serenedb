@@ -61,22 +61,23 @@ CREATE TEXT SEARCH DICTIONARY ts_english AS
     split_text() | normalize_tokens('en_US.UTF-8', accent := false);
 
 statement ok
-CREATE TABLE docs (id INT, body TEXT) WITH (storage = 'search') TABLESPACE ts_${__DATABASE__};
+CREATE TABLE docs (id INT, body TEXT) TABLESPACE ts_${__DATABASE__};
 
 statement ok
 INSERT INTO docs VALUES (1, 'quick brown fox'), (2, 'lazy dog');
 
-statement ok
-CREATE TABLE notes (id INT, body TEXT);
+statement count 2
+COPY (SELECT 1 AS id, 'red fox' AS body UNION ALL SELECT 2, 'blue whale')
+TO '${__TEST_DIR__}/notes.parquet' (FORMAT PARQUET);
 
 statement ok
-INSERT INTO notes VALUES (1, 'red fox'), (2, 'blue whale');
+CREATE VIEW notes AS SELECT * FROM read_parquet('${__TEST_DIR__}/notes.parquet');
 
 statement ok
-CREATE INDEX notes_idx ON notes USING inverted(body ts_english) TABLESPACE ts_${__DATABASE__};
+CREATE INDEX notes_idx ON notes USING inverted(id, body ts_english) TABLESPACE ts_${__DATABASE__};
 
 statement ok
-VACUUM (REFRESH_TABLE) docs;
+VACUUM (FLUSH_TABLE) docs;
 
 query
 SELECT c.relname, t.spcname = 'ts_${__DATABASE__}' AS in_ts
@@ -101,21 +102,16 @@ id
 1
 
 query
-SELECT count(*) > 0 AS stored_in_ts FROM glob('${__TEST_DIR__}/ts/*/engine_v1/*/*/*');
+SELECT count(DISTINCT parse_dirpath(file)) AS stores_in_ts
+FROM glob('${__TEST_DIR__}/ts/*/engine_v1/store/*/*');
 ----
-stored_in_ts
-t
+stores_in_ts
+2
 
 statement error
 CREATE TABLESPACE beside_${__DATABASE__} LOCATION '${__TEST_DIR__}/ts';
 ----
 db error: ERROR: tablespace location "<slt:ignore>/ts" is already used by tablespace "<slt:ignore>"
-
-
-statement error
-CREATE TABLE plain (id INT) TABLESPACE ts_${__DATABASE__};
-----
-db error: ERROR: only a table created WITH (storage = 'search') can be placed in a tablespace
 
 
 statement ok
@@ -124,45 +120,53 @@ CREATE TABLE plain (id INT) TABLESPACE pg_default;
 statement error
 CREATE INDEX plain_id ON plain (id) TABLESPACE ts_${__DATABASE__};
 ----
-db error: ERROR: only a search index (USING inverted) can be placed in a tablespace
+db error: ERROR: an index on a table is stored with the table and cannot be placed in a tablespace
 
 
 statement error
 CREATE INDEX docs_idx ON docs USING inverted(body ts_english) TABLESPACE ts_${__DATABASE__};
 ----
-db error: ERROR: an index on a search-backed table is stored with the table and cannot be placed in a tablespace
+db error: ERROR: an index on a table is stored with the table and cannot be placed in a tablespace
+
+
+statement ok
+ATTACH '${__TEST_DIR__}/duck.duckdb' AS duck_${__DATABASE__};
 
 
 statement error
-CREATE TABLE memory.main.plain_${__DATABASE__} (id INT) TABLESPACE ts_${__DATABASE__};
+CREATE TABLE duck_${__DATABASE__}.main.plain (id INT) TABLESPACE ts_${__DATABASE__};
 ----
 db error: ERROR: TABLESPACE is not supported for tables in a duckdb catalog
 
 
 statement ok
-CREATE TABLE memory.main.plain_${__DATABASE__} (id INT);
+CREATE TABLE duck_${__DATABASE__}.main.plain (id INT);
 
 
 statement error
-CREATE INDEX plain_id_${__DATABASE__} ON memory.main.plain_${__DATABASE__} (id) TABLESPACE ts_${__DATABASE__};
+CREATE INDEX plain_id ON duck_${__DATABASE__}.main.plain (id) TABLESPACE ts_${__DATABASE__};
 ----
 db error: ERROR: TABLESPACE is not supported for indexes in a duckdb catalog
 
 
 statement ok
-DROP TABLE memory.main.plain_${__DATABASE__};
+DROP TABLE duck_${__DATABASE__}.main.plain;
+
+
+statement ok
+DETACH duck_${__DATABASE__};
 
 
 statement error
-CREATE TABLE in_global (id INT) WITH (storage = 'search') TABLESPACE pg_global;
+CREATE TABLE in_global (id INT) TABLESPACE pg_global;
 ----
 db error: ERROR: only shared relations can be placed in pg_global tablespace
 
 
 statement error
-CREATE TABLE in_missing (id INT) WITH (storage = 'search') TABLESPACE missing_${__DATABASE__};
+CREATE TABLE in_missing (id INT) TABLESPACE missing_${__DATABASE__};
 ----
-db error: ERROR: Tablespace with name <slt:ignore> does not exist!
+db error: ERROR: tablespace "<slt:ignore>" does not exist
 
 
 statement error
@@ -176,25 +180,25 @@ statement ok
 SET default_tablespace = 'ts_${__DATABASE__}';
 
 statement ok
-CREATE TABLE implicit_search (id INT) WITH (storage = 'search');
+CREATE TABLE implicit (id INT);
 
 statement ok
-CREATE TABLE implicit_plain (id INT);
+CREATE INDEX implicit_id ON implicit (id);
 
 statement ok
-CREATE TABLE explicit_default (id INT) WITH (storage = 'search') TABLESPACE pg_default;
+CREATE TABLE explicit_default (id INT) TABLESPACE pg_default;
 
 statement ok
 RESET default_tablespace;
 
 query
 SELECT relname, reltablespace <> 0 AS placed FROM pg_class
-WHERE relname IN ('implicit_search', 'implicit_plain', 'explicit_default') ORDER BY relname;
+WHERE relname IN ('implicit', 'implicit_id', 'explicit_default') ORDER BY relname;
 ----
 relname	placed
 explicit_default	f
-implicit_plain	f
-implicit_search	t
+implicit	t
+implicit_id	t
 
 statement error
 DROP TABLESPACE ts_${__DATABASE__};
@@ -218,7 +222,7 @@ statement ok
 SET ROLE ts_user_${__DATABASE__};
 
 statement error
-CREATE TABLE user_docs (id INT) WITH (storage = 'search') TABLESPACE ts_${__DATABASE__};
+CREATE TABLE user_docs (id INT) TABLESPACE ts_${__DATABASE__};
 ----
 db error: ERROR: permission denied for tablespace <slt:ignore>
 
@@ -259,7 +263,7 @@ statement ok
 SET ROLE ts_user_${__DATABASE__};
 
 statement ok
-CREATE TABLE user_docs (id INT) WITH (storage = 'search') TABLESPACE ts_${__DATABASE__};
+CREATE TABLE user_docs (id INT) TABLESPACE ts_${__DATABASE__};
 
 statement ok
 DROP TABLE user_docs;
@@ -317,7 +321,8 @@ WHERE t.spcname = 'renamed_${__DATABASE__}' ORDER BY c.relname;
 ----
 relname
 docs
-implicit_search
+implicit
+implicit_id
 notes_idx
 
 statement ok
@@ -327,7 +332,7 @@ statement ok
 DROP INDEX notes_idx;
 
 statement ok
-DROP TABLE implicit_search;
+DROP TABLE implicit;
 
 statement ok
 BEGIN;
@@ -371,7 +376,7 @@ db error: ERROR: pg_global cannot be used as default tablespace
 statement error
 CREATE DATABASE missing_db_${__DATABASE__} TABLESPACE missing_ts_${__DATABASE__};
 ----
-db error: ERROR: Tablespace with name <slt:ignore> does not exist!
+db error: ERROR: tablespace "<slt:ignore>" does not exist
 
 
 statement ok
@@ -417,11 +422,30 @@ in_ts_db	in_db_ts
 f	f
 t	t
 
+statement ok
+CREATE TABLE ts_db_${__DATABASE__}.public.stored (id INT);
+
+statement ok
+INSERT INTO ts_db_${__DATABASE__}.public.stored VALUES (1);
+
+statement ok
+VACUUM (FLUSH_TABLE) ts_db_${__DATABASE__}.public.stored;
+
 query
-SELECT count(*) AS data_files FROM glob('${__TEST_DIR__}/db_ts/*/engine_v1/*/data.db');
+SELECT count(DISTINCT parse_dirpath(file)) AS stores_in_db_ts
+FROM glob('${__TEST_DIR__}/db_ts/*/engine_v1/store/*/*');
 ----
-data_files
+stores_in_db_ts
 1
+
+statement error
+DROP TABLESPACE db_ts_${__DATABASE__};
+----
+db error: ERROR: tablespace "<slt:ignore>" is not empty
+
+
+statement ok
+DROP TABLE ts_db_${__DATABASE__}.public.stored;
 
 statement error
 DROP TABLESPACE db_ts_${__DATABASE__};
@@ -442,13 +466,10 @@ statement ok
 DROP TABLE plain;
 
 statement ok
-DROP TABLE implicit_plain;
-
-statement ok
 DROP TABLE explicit_default;
 
 statement ok
-DROP TABLE notes;
+DROP VIEW notes;
 
 statement ok
 DROP TEXT SEARCH DICTIONARY ts_english;

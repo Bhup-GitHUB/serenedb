@@ -330,11 +330,6 @@ duckdb::FileSystem& DatabaseFileSystem() {
     irs::DuckDBEngine::Instance().instance());
 }
 
-IndexDir OverFileSystem(const IndexDir& files, duckdb::FileSystem& fs) {
-  SDB_ASSERT(files.Kind() != tests::StorageKind::Memory);
-  return IndexDir{files.Db(), fs, files.Root()};
-}
-
 std::shared_ptr<IndexDir> IndexTestBase::get_directory(
   const TestBase& ctx) const {
   return std::get<0>(GetParam()).factory(&ctx);
@@ -865,7 +860,7 @@ class IndexTestCase : public tests::IndexTestBase {
     {
       OverrideSyncFileSystem override_fs{
         [](std::string_view) { return false; }};
-      auto override_dir = tests::OverFileSystem(dir(), override_fs);
+      auto override_dir = dir().Over(override_fs);
 
       tests::JsonDocGenerator gen(resource("simple_sequential.json"),
                                   &tests::GenericJsonFieldFactory);
@@ -890,7 +885,7 @@ class IndexTestCase : public tests::IndexTestBase {
         uint64_t id = 0;
         return !irs::ParseSegmentId(name, id);
       }};
-      auto override_dir = tests::OverFileSystem(dir(), override_fs);
+      auto override_dir = dir().Over(override_fs);
 
       tests::JsonDocGenerator gen(resource("simple_sequential.json"),
                                   &tests::GenericJsonFieldFactory);
@@ -1115,7 +1110,7 @@ TEST_P(IndexTestCase, writer_commit_cleanup_interleaved) {
     tests::CallbackFileSystem fs{[&] {
       synced_dir->RemoveReleased();
     }};
-    synced_dir.emplace(tests::OverFileSystem(dir(), fs));
+    synced_dir.emplace(dir().Over(fs));
     auto writer = tests::IndexWriter::Make(*synced_dir, tests::kOmCreate,
                                     irs::tests::DefaultWriterOptions());
     const auto* doc1 = gen.next();
@@ -4540,9 +4535,11 @@ TEST_P(IndexTestCase, segment_compact_long_running) {
   }
 
   // The new cs writes `<segment>.col` for every committed segment. Use the
-  // third segment's expected `.col` file as the BlockingFileSystem trigger;
-  // the test gates compaction on its creation.
-  const auto blocker = std::string{"0000000000000003.col"};
+  // `.col` file of the third segment a writer makes as the BlockingFileSystem
+  // trigger; the test gates compaction on its creation.
+  const auto blocker = [this] {
+    return irs::FileName(irs::FileName(dir().TopSegmentId() + 3), "col");
+  };
 
   tests::JsonDocGenerator gen(
     resource("simple_sequential.json"),
@@ -4575,8 +4572,8 @@ TEST_P(IndexTestCase, segment_compact_long_running) {
 
   // long running transaction
   {
-    tests::BlockingFileSystem fs{blocker};
-    auto dir = tests::OverFileSystem(this->dir(), fs);
+    tests::BlockingFileSystem fs{blocker()};
+    auto dir = this->dir().Over(fs);
     auto writer =
       open_writer(dir, tests::kOmCreate, irs::tests::DefaultWriterOptions());
     ASSERT_NE(nullptr, writer);
@@ -4734,8 +4731,8 @@ TEST_P(IndexTestCase, segment_compact_long_running) {
     this->dir().RemoveReleased();
     auto query_doc1 = MakeByTerm(kNameFieldId, "A");
 
-    tests::BlockingFileSystem fs{blocker};
-    auto dir = tests::OverFileSystem(this->dir(), fs);
+    tests::BlockingFileSystem fs{blocker()};
+    auto dir = this->dir().Over(fs);
     auto writer =
       open_writer(dir, tests::kOmCreate, irs::tests::DefaultWriterOptions());
     ASSERT_NE(nullptr, writer);
@@ -4886,8 +4883,8 @@ TEST_P(IndexTestCase, segment_compact_long_running) {
     this->dir().RemoveReleased();
     auto query_doc1 = MakeByTerm(kNameFieldId, "A");
 
-    tests::BlockingFileSystem fs{blocker};
-    auto dir = tests::OverFileSystem(this->dir(), fs);
+    tests::BlockingFileSystem fs{blocker()};
+    auto dir = this->dir().Over(fs);
     auto writer =
       open_writer(dir, tests::kOmCreate, irs::tests::DefaultWriterOptions());
     ASSERT_NE(nullptr, writer);
@@ -5024,8 +5021,8 @@ TEST_P(IndexTestCase, segment_compact_long_running) {
     this->dir().RemoveReleased();
     auto query_doc1_doc4 = MakeByTerms(kNameFieldId, {"A", "D"});
 
-    tests::BlockingFileSystem fs{blocker};
-    auto dir = tests::OverFileSystem(this->dir(), fs);
+    tests::BlockingFileSystem fs{blocker()};
+    auto dir = this->dir().Over(fs);
     auto writer =
       open_writer(dir, tests::kOmCreate, irs::tests::DefaultWriterOptions());
     ASSERT_NE(nullptr, writer);

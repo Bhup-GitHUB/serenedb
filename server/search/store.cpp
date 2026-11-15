@@ -45,6 +45,7 @@
 #include <iresearch/index/segment_reader.hpp>
 #include <iresearch/index/segment_reader_impl.hpp>
 #include <iresearch/store/index_files.hpp>
+#include <iresearch/store/storage.hpp>
 #include <iresearch/utils/async.hpp>
 #include <iresearch/utils/containers/flat_hash_map.hpp>
 #include <iresearch/utils/down_cast.hpp>
@@ -371,11 +372,9 @@ void Store::OptimizeInMemory() {
 
 std::vector<OwnSegment> Store::OpenFlushed(
   std::span<const irs::IndexWriter::FlushedSegment> flushed) const {
-  std::vector<OwnSegment> segments;
-  segments.reserve(flushed.size());
-  for (const auto& entry : flushed) {
-    segments.push_back(OpenOwn(entry.meta));
-  }
+  std::vector<OwnSegment> segments(flushed.size());
+  irs::ForEach(irs::DuckDBEngine::Instance().instance(), _root, flushed.size(),
+               [&](size_t i) { segments[i] = OpenOwn(flushed[i].meta); });
   return segments;
 }
 
@@ -1049,14 +1048,18 @@ std::shared_ptr<const TableState> Store::ReplaceSegments(
   }
   std::vector<std::shared_ptr<TableUnit>> added;
   std::vector<irs::DocMap> maps;
-  for (auto& replacement : replacements) {
-    auto opened = OpenOwn(std::move(replacement.meta));
-    const auto target = opened.reader->Id();
-    for (auto& map : replacement.absorbed) {
+  std::vector<OwnSegment> opened(replacements.size());
+  irs::ForEach(irs::DuckDBEngine::Instance().instance(), _root,
+               replacements.size(), [&](size_t i) {
+                 opened[i] = OpenOwn(std::move(replacements[i].meta));
+               });
+  for (size_t i = 0; i != replacements.size(); ++i) {
+    const auto target = opened[i].reader->Id();
+    for (auto& map : replacements[i].absorbed) {
       map.target = target;
       maps.push_back(std::move(map));
     }
-    added.push_back(_table->SegmentUnit(std::move(opened)));
+    added.push_back(_table->SegmentUnit(std::move(opened[i])));
   }
   SyncSegments();
   auto published = CommitReplace(ids, folded, std::move(added), std::move(maps),

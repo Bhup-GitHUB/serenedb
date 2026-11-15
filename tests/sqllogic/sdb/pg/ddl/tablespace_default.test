@@ -38,25 +38,25 @@ set_to_x
 t
 
 statement ok
-CREATE TABLE implicit_table (id INT, body TEXT) WITH (storage = 'search');
+CREATE TABLE implicit_table (id INT, body TEXT);
 
 statement ok
 CREATE INDEX implicit_index ON plain_src USING inverted(body def_words);
 
 statement ok
-CREATE TABLE explicit_y (id INT) WITH (storage = 'search') TABLESPACE def_y_${__DATABASE__};
+CREATE TABLE explicit_y (id INT) TABLESPACE def_y_${__DATABASE__};
 
 statement ok
 CREATE INDEX explicit_y_index ON plain_src USING inverted(body def_words) TABLESPACE def_y_${__DATABASE__};
 
 statement ok
-CREATE TABLE explicit_default (id INT) WITH (storage = 'search') TABLESPACE pg_default;
+CREATE TABLE explicit_default (id INT) TABLESPACE pg_default;
 
 statement ok
-CREATE TABLE ctas_implicit WITH (storage = 'search') AS SELECT * FROM plain_src;
+CREATE TABLE ctas_implicit AS SELECT * FROM plain_src;
 
 statement ok
-CREATE TABLE ctas_explicit WITH (storage = 'search') TABLESPACE def_y_${__DATABASE__} AS SELECT * FROM plain_src;
+CREATE TABLE ctas_explicit TABLESPACE def_y_${__DATABASE__} AS SELECT * FROM plain_src;
 
 statement ok
 CREATE TABLE plain_ignores (id INT);
@@ -68,25 +68,25 @@ statement ok
 SET default_tablespace = '';
 
 statement ok
-CREATE TABLE empty_default (id INT) WITH (storage = 'search');
+CREATE TABLE empty_default (id INT);
 
 statement ok
 SET default_tablespace = 'pg_default';
 
 statement ok
-CREATE TABLE named_default (id INT) WITH (storage = 'search');
+CREATE TABLE named_default (id INT);
 
 statement ok
 SET default_tablespace = 'Def Mixed ${__DATABASE__}';
 
 statement ok
-CREATE TABLE mixed_case (id INT) WITH (storage = 'search');
+CREATE TABLE mixed_case (id INT);
 
 statement ok
 RESET default_tablespace;
 
 statement ok
-CREATE TABLE after_reset (id INT) WITH (storage = 'search');
+CREATE TABLE after_reset (id INT);
 
 query
 SELECT c.relname,
@@ -114,10 +114,10 @@ plain_ignores	(database)
 plain_src	(database)
 
 statement ok
-VACUUM (REFRESH_TABLE) ctas_implicit;
+VACUUM (FLUSH_TABLE) ctas_implicit;
 
 statement ok
-VACUUM (REFRESH_TABLE) ctas_explicit;
+VACUUM (FLUSH_TABLE) ctas_explicit;
 
 query
 SELECT i.id, e.body FROM ctas_implicit i JOIN ctas_explicit e USING (id) ORDER BY i.id;
@@ -127,7 +127,7 @@ id	body
 2	lazy dog
 
 statement ok
-VACUUM (REFRESH_TABLE) plain_src;
+VACUUM (FLUSH_TABLE) plain_src;
 
 query
 SELECT id FROM implicit_index WHERE body @@ ts_phrase('fox') ORDER BY id;
@@ -148,7 +148,7 @@ statement ok
 SET LOCAL default_tablespace = 'def_y_${__DATABASE__}';
 
 statement ok
-CREATE TABLE local_y (id INT) WITH (storage = 'search');
+CREATE TABLE local_y (id INT);
 
 statement ok
 COMMIT;
@@ -175,7 +175,7 @@ rolled_back
 t
 
 statement ok
-CREATE TABLE after_rollback (id INT) WITH (storage = 'search');
+CREATE TABLE after_rollback (id INT);
 
 query
 SELECT c.relname, coalesce(replace(t.spcname, '_${__DATABASE__}', ''), '(database)') AS tablespace
@@ -190,7 +190,7 @@ statement ok
 SET default_tablespace = 'pg_global';
 
 statement error
-CREATE TABLE in_global (id INT) WITH (storage = 'search');
+CREATE TABLE in_global (id INT);
 ----
 db error: ERROR: only shared relations can be placed in pg_global tablespace
 
@@ -210,7 +210,7 @@ DROP TABLESPACE def_gone_${__DATABASE__};
 
 connection other
 statement ok
-CREATE TABLE after_drop (id INT) WITH (storage = 'search');
+CREATE TABLE after_drop (id INT);
 
 connection other
 query
@@ -238,7 +238,7 @@ statement ok
 SET default_tablespace = 'def_x_${__DATABASE__}';
 
 statement error
-CREATE TABLE denied (id INT) WITH (storage = 'search');
+CREATE TABLE denied (id INT);
 ----
 db error: ERROR: permission denied for tablespace <slt:ignore>
 
@@ -247,7 +247,7 @@ statement ok
 RESET default_tablespace;
 
 statement ok
-CREATE TABLE in_database_tablespace (id INT) WITH (storage = 'search');
+CREATE TABLE in_database_tablespace (id INT);
 
 statement ok
 RESET ROLE;
@@ -262,7 +262,7 @@ statement ok
 SET default_tablespace = 'def_x_${__DATABASE__}';
 
 statement ok
-CREATE TABLE granted (id INT) WITH (storage = 'search');
+CREATE TABLE granted (id INT);
 
 statement ok
 RESET default_tablespace;

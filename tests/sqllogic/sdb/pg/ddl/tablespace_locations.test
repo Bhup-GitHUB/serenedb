@@ -149,10 +149,10 @@ statement ok
 CREATE TEXT SEARCH DICTIONARY loc_words AS split_text(case := 'lower');
 
 statement ok
-CREATE TABLE in_parent (id INT, body TEXT) WITH (storage = 'search') TABLESPACE loc_parent_${__DATABASE__};
+CREATE TABLE in_parent (id INT, body TEXT) TABLESPACE loc_parent_${__DATABASE__};
 
 statement ok
-CREATE TABLE in_child (id INT, body TEXT) WITH (storage = 'search') TABLESPACE loc_child_${__DATABASE__};
+CREATE TABLE in_child (id INT, body TEXT) TABLESPACE loc_child_${__DATABASE__};
 
 statement ok
 INSERT INTO in_parent VALUES (1, 'parent row');
@@ -161,10 +161,10 @@ statement ok
 INSERT INTO in_child VALUES (2, 'child row');
 
 statement ok
-VACUUM (REFRESH_TABLE) in_parent;
+VACUUM (FLUSH_TABLE) in_parent;
 
 statement ok
-VACUUM (REFRESH_TABLE) in_child;
+VACUUM (FLUSH_TABLE) in_child;
 
 query
 SELECT id, body FROM in_parent UNION ALL SELECT id, body FROM in_child ORDER BY id;
@@ -215,13 +215,13 @@ db error: ERROR: tablespace location "<slt:ignore>/lost" is already used by tabl
 
 
 statement ok
-CREATE TABLE in_lost (id INT, body TEXT) WITH (storage = 'search') TABLESPACE loc_lost_${__DATABASE__};
+CREATE TABLE in_lost (id INT, body TEXT) TABLESPACE loc_lost_${__DATABASE__};
 
 statement ok
 INSERT INTO in_lost VALUES (1, 'lost row');
 
 statement ok
-VACUUM (REFRESH_TABLE) in_lost;
+VACUUM (FLUSH_TABLE) in_lost;
 
 query
 SELECT id, body FROM in_lost;
@@ -270,14 +270,14 @@ quote"inside_<db>	<dir>/names/quote
 with space and ünïcode <db>	<dir>/names/with space/ünïcode
 
 statement ok
-CREATE TABLE in_unicode (id INT, body TEXT) WITH (storage = 'search')
+CREATE TABLE in_unicode (id INT, body TEXT)
   TABLESPACE "with space and ünïcode ${__DATABASE__}";
 
 statement ok
 INSERT INTO in_unicode VALUES (1, 'stored under a unicode path');
 
 statement ok
-VACUUM (REFRESH_TABLE) in_unicode;
+VACUUM (FLUSH_TABLE) in_unicode;
 
 query
 SELECT body FROM in_unicode;

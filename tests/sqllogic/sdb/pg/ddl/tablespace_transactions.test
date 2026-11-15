@@ -23,7 +23,7 @@ statement ok
 BEGIN;
 
 statement ok
-CREATE TABLE rolled_back (id INT, body TEXT) WITH (storage = 'search') TABLESPACE tx_ts_${__DATABASE__};
+CREATE TABLE rolled_back (id INT, body TEXT) TABLESPACE tx_ts_${__DATABASE__};
 
 statement ok
 INSERT INTO rolled_back VALUES (1, 'never committed');
@@ -57,7 +57,7 @@ statement ok
 BEGIN;
 
 statement ok
-CREATE TABLE committed (id INT, body TEXT) WITH (storage = 'search') TABLESPACE tx_ts_${__DATABASE__};
+CREATE TABLE committed (id INT, body TEXT) TABLESPACE tx_ts_${__DATABASE__};
 
 statement ok
 INSERT INTO committed VALUES (1, 'committed fox'), (2, 'committed dog');
@@ -66,7 +66,7 @@ statement ok
 COMMIT;
 
 statement ok
-VACUUM (REFRESH_TABLE) committed;
+VACUUM (FLUSH_TABLE) committed;
 
 statement ok
 BEGIN;
@@ -94,7 +94,7 @@ statement ok
 CREATE SCHEMA tx_schema;
 
 statement ok
-CREATE TABLE tx_schema.inside (id INT, body TEXT) WITH (storage = 'search') TABLESPACE tx_other_${__DATABASE__};
+CREATE TABLE tx_schema.inside (id INT, body TEXT) TABLESPACE tx_other_${__DATABASE__};
 
 statement ok
 CREATE TABLE tx_schema.plain_inside (id INT, body TEXT);
@@ -106,7 +106,7 @@ statement ok
 INSERT INTO tx_schema.inside VALUES (1, 'in the schema');
 
 statement ok
-VACUUM (REFRESH_TABLE) tx_schema.inside;
+VACUUM (FLUSH_TABLE) tx_schema.inside;
 
 query
 SELECT count(*) > 0 AS other_files FROM glob('${__TEST_DIR__}/tx/other/*/engine_v1/*/*/*');

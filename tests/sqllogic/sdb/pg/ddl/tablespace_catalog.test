@@ -43,13 +43,13 @@ db error: ERROR: Tablespace with name <slt:ignore> does not exist!
 
 
 statement ok
-CREATE TABLE cat_docs (id INT, body TEXT) WITH (storage = 'search') TABLESPACE cat_ts_${__DATABASE__};
+CREATE TABLE cat_docs (id INT, body TEXT) TABLESPACE cat_ts_${__DATABASE__};
 
 statement ok
 INSERT INTO cat_docs SELECT i, repeat('tablespace size ', 20) || i FROM range(1000) t(i);
 
 statement ok
-VACUUM (REFRESH_TABLE) cat_docs;
+VACUUM (FLUSH_TABLE) cat_docs;
 
 query
 SELECT pg_tablespace_size('cat_ts_${__DATABASE__}') > 0 AS grew;

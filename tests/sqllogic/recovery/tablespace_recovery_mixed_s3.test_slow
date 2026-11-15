@@ -29,7 +29,7 @@ CREATE TEXT SEARCH DICTIONARY trm_words AS split_text(case := 'lower') WITH (fre
 
 statement ok
 CREATE TABLE remote_docs (id INT, body TEXT)
-  WITH (storage = 'search', refresh_interval = 0, compaction_interval = 0)
+  WITH (compaction_interval = 0)
   TABLESPACE s3_one;
 
 statement ok
@@ -37,7 +37,7 @@ CREATE TABLE notes (id INT, body TEXT);
 
 statement ok
 CREATE INDEX notes_two ON notes USING inverted(body trm_words)
-  WITH (refresh_interval = 0, compaction_interval = 0) TABLESPACE s3_two;
+  WITH (compaction_interval = 0) TABLESPACE s3_two;
 
 statement ok
 CREATE INDEX notes_local ON notes USING inverted(body trm_words) TABLESPACE local_one;
@@ -49,10 +49,10 @@ statement ok
 INSERT INTO notes SELECT i, CASE WHEN i % 10 = 0 THEN 'rare fox' ELSE 'common whale' END FROM range(1, 501) t(i);
 
 statement ok
-VACUUM (REFRESH_TABLE) remote_docs;
+VACUUM (FLUSH_TABLE) remote_docs;
 
 statement ok
-VACUUM (REFRESH_TABLE) notes;
+VACUUM (FLUSH_TABLE) notes;
 
 statement ok
 ALTER TABLESPACE s3_one RENAME TO s3_renamed;
@@ -99,7 +99,7 @@ INSERT INTO remote_docs VALUES (500, 'remote fox after the crash');
 
 connection after_crash
 statement ok
-VACUUM (REFRESH_TABLE) remote_docs;
+VACUUM (FLUSH_TABLE) remote_docs;
 
 connection after_crash
 statement ok

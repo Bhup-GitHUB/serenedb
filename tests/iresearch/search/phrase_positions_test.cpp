@@ -29,6 +29,7 @@
 #include <iresearch/analysis/token_batch.hpp>
 #include <iresearch/analysis/tokenizer.hpp>
 #include <iresearch/index/directory_reader.hpp>
+#include <iresearch/index/file_names.hpp>
 #include <iresearch/index/index_writer.hpp>
 #include <iresearch/search/detail/phrase_slop_matcher.hpp>
 #include <iresearch/search/filters/phrase_filter.hpp>
@@ -587,7 +588,7 @@ TEST(PhrasePositionsTest, positions_left_in_cache_blocks) {
   const tests::IndexDir dir{irs::DuckDBEngine::Instance().instance(),
                             TestEnv::MemoryRoot()};
   {
-    auto writer = tests::MakeWriter(dir, irs::kOmCreate,
+    auto writer = tests::IndexWriter::Make(dir, tests::kOmCreate,
                                     irs::tests::DefaultWriterOptions());
     ASSERT_NE(nullptr, writer);
     Field field{.tokenizer = &whitespace, .value = text};
@@ -600,14 +601,10 @@ TEST(PhrasePositionsTest, positions_left_in_cache_blocks) {
     writer->RefreshCommit();
   }
   TestEnv::ClearFaultPoints();
-  {
-    const auto flushed =
-      tests::OpenReader(dir, irs::tests::DefaultReaderOptions());
-    for (const auto& segment : flushed.Meta().index_meta.segments) {
-      for (const auto& file : segment.meta.files) {
-        if (!file.ends_with(".pos")) {
-          dir.Compact(file);
-        }
+  for (const auto& meta : dir.Committed()) {
+    for (const auto& file : irs::SegmentFiles(meta.name, meta.kinds)) {
+      if (!file.ends_with(".pos")) {
+        dir.Compact(file);
       }
     }
   }

@@ -54,7 +54,6 @@ irs::IndexWriterOptions EnsureNormColumnId(irs::IndexWriterOptions opts);
 
 duckdb::FileSystem& DatabaseFileSystem();
 
-IndexDir OverFileSystem(const IndexDir& files, duckdb::FileSystem& fs);
 
 struct BlockingFileSystem : HookFileSystem {
   explicit BlockingFileSystem(const std::string& blocker)

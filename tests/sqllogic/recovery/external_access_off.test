@@ -20,7 +20,7 @@ CREATE INDEX docs_idx ON docs USING inverted(body en);
 
 
 statement ok
-CREATE TABLE notes (id INT, body TEXT) WITH (storage = 'search') TABLESPACE sandboxed;
+CREATE TABLE notes (id INT, body TEXT) TABLESPACE sandboxed;
 
 
 statement ok
@@ -32,7 +32,7 @@ INSERT INTO docs VALUES (1, 'pudge goes mid'), (2, 'anchin reads manga');
 
 
 statement ok
-VACUUM (REFRESH_TABLE) docs;
+VACUUM (FLUSH_TABLE) docs;
 
 
 query
@@ -47,7 +47,7 @@ INSERT INTO notes VALUES (1, 'pudge hooks the courier');
 
 
 statement ok
-VACUUM (REFRESH_TABLE) notes;
+VACUUM (FLUSH_TABLE) notes;
 
 
 query
@@ -70,7 +70,7 @@ INSERT INTO later VALUES (1, 'pudge');
 
 
 statement ok
-VACUUM (REFRESH_TABLE) later;
+VACUUM (FLUSH_TABLE) later;
 
 
 query
@@ -127,7 +127,7 @@ INSERT INTO temp_docs VALUES (3, 'pudge hooks the courier');
 
 
 statement ok
-VACUUM (REFRESH_TABLE) temp_docs;
+VACUUM (FLUSH_TABLE) temp_docs;
 
 
 statement ok

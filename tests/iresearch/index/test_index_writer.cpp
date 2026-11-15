@@ -54,13 +54,10 @@ irs::DirectoryReader Open(const IndexDir& dir,
   return {reader_options, std::move(readers), /*stats=*/true};
 }
 
-void RemoveUncommitted(const IndexDir& dir) {
-  irs::containers::FlatHashSet<std::string> kept;
-  for (const auto& meta : dir.Committed()) {
-    for (auto& file : irs::SegmentFiles(meta.name, meta.kinds)) {
-      kept.insert(std::move(file));
-    }
-  }
+void RemoveUnheld(const IndexDir& dir) {
+  const auto held = dir.HeldFiles();
+  const irs::containers::FlatHashSet<std::string_view> kept{held.begin(),
+                                                            held.end()};
   auto files = dir.Files();
   std::erase_if(files,
                 [&](const std::string& file) { return kept.contains(file); });
@@ -247,10 +244,15 @@ IndexWriter::IndexWriter(const IndexDir& dir, OpenMode mode,
   if (!(mode & kOmAppend)) {
     dir.Publish({});
   }
-  RemoveUncommitted(dir);
+  RemoveUnheld(dir);
   _writer = irs::IndexWriter::Make(dir.Db(), dir.Fs(), dir.Root(),
                                    std::move(options));
-  _writer->ReserveSegmentId(irs::MaxSegmentId(dir.Files()));
+  _writer->ReserveSegmentId(
+    std::max(irs::MaxSegmentId(dir.Files()), dir.TopSegmentId()));
+}
+
+IndexWriter::~IndexWriter() {
+  _dir.RaiseTopSegmentId(_writer->CurrentSegmentId());
 }
 
 IndexWriter::OpenSegment& IndexWriter::Acquire() {

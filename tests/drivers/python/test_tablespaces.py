@@ -166,20 +166,20 @@ def test_a_database_in_a_tablespace_keeps_its_objects_there(
             conn.execute("CREATE TEXT SEARCH DICTIONARY words AS "
                          "split_text(case := 'lower')")
             conn.execute("CREATE TABLE docs (id INT, body TEXT) "
-                         "WITH (storage = 'search')")
+                         "")
             conn.execute("CREATE TABLE notes (id INT, body TEXT)")
             conn.execute("CREATE INDEX notes_home ON notes "
                          "USING inverted(body words)")
             conn.execute("CREATE INDEX notes_other ON notes "
                          "USING inverted(body words) TABLESPACE other")
             conn.execute("CREATE TABLE in_default (id INT) "
-                         "WITH (storage = 'search') TABLESPACE pg_default")
+                         " TABLESPACE pg_default")
             conn.execute("INSERT INTO docs VALUES (1, 'quick brown fox'), "
                          "(2, 'lazy dog')")
             conn.execute("INSERT INTO notes VALUES (1, 'red fox'), "
                          "(2, 'blue whale')")
-            conn.execute("VACUUM (REFRESH_TABLE) docs")
-            conn.execute("VACUUM (REFRESH_TABLE) notes")
+            conn.execute("VACUUM (FLUSH_TABLE) docs")
+            conn.execute("VACUUM (FLUSH_TABLE) notes")
             assert _placement(conn, names) == {
                 "docs": "", "notes_home": "", "notes_other": "other",
                 "in_default": "pg_default"}
@@ -237,15 +237,15 @@ def test_the_tablespace_of_its_database_needs_no_grant(tmp_path: Path) -> None:
                              password="app_pw", dbname="appdb",
                              autocommit=True) as conn:
             conn.execute("CREATE TABLE implicit (id INT) "
-                         "WITH (storage = 'search')")
+                         "")
             conn.execute("CREATE TABLE explicit (id INT) "
-                         "WITH (storage = 'search') TABLESPACE home")
+                         " TABLESPACE home")
             for tablespace in ("other", "pg_default"):
                 with pytest.raises(psycopg.errors.InsufficientPrivilege,
                                    match=f"permission denied for tablespace "
                                          f"{tablespace}"):
                     conn.execute("CREATE TABLE elsewhere (id INT) "
-                                 "WITH (storage = 'search') "
+                                 " "
                                  f"TABLESPACE {tablespace}")
             assert _placement(conn, ["implicit", "explicit"]) == {
                 "implicit": "", "explicit": ""}
@@ -386,9 +386,9 @@ def test_index_files_on_s3(tmp_path: Path, s3_store: _Store) -> None:
         assert _matches(server) == [1]
         with server.connect() as conn:
             conn.execute("INSERT INTO docs VALUES (3, 'fox again')")
-            conn.execute("VACUUM (REFRESH_TABLE) docs")
+            conn.execute("VACUUM (FLUSH_TABLE) docs")
             conn.execute("CREATE TABLE notes(id INTEGER, body TEXT) "
-                         "WITH (storage = 'search') TABLESPACE idx")
+                         " TABLESPACE idx")
             conn.execute("INSERT INTO notes VALUES (1, 'kept on s3')")
             conn.execute("CREATE DATABASE placed TABLESPACE idx")
         assert _matches(server) == [1, 3]
@@ -658,7 +658,7 @@ def test_a_refresh_opens_the_files_it_wrote_without_a_head(tmp_path: Path) -> No
             fake.trace = []
             with server.connect() as conn:
                 conn.execute("INSERT INTO docs VALUES (3, 'fox again')")
-                conn.execute("VACUUM (REFRESH_TABLE) docs")
+                conn.execute("VACUUM (FLUSH_TABLE) docs")
             assert _matches(server) == [1, 3]
             trace, fake.trace = fake.trace, None
         finally:
@@ -738,14 +738,14 @@ def test_failed_commit_is_retried(tmp_path: Path) -> None:
             with server.connect() as conn:
                 conn.execute("INSERT INTO docs VALUES (3, 'fox again')")
                 with pytest.raises(psycopg.Error):
-                    conn.execute("VACUUM (REFRESH_TABLE) docs")
+                    conn.execute("VACUUM (FLUSH_TABLE) docs")
                 with pytest.raises(psycopg.Error,
                                    match="cannot commit its last refresh"):
                     conn.execute("CHECKPOINT")
             assert _matches(server) == [1]
             fake.copy_error = None
             with server.connect() as conn:
-                conn.execute("VACUUM (REFRESH_TABLE) docs")
+                conn.execute("VACUUM (FLUSH_TABLE) docs")
                 conn.execute("CHECKPOINT")
             assert _matches(server) == [1, 3]
         finally:
@@ -810,16 +810,16 @@ def test_clusters_sharing_a_location_keep_apart(tmp_path: Path,
             with first.connect() as conn:
                 conn.execute(f"CREATE TABLESPACE gone LOCATION '{location}'")
                 conn.execute("CREATE TABLE dropped (id INT) "
-                             "WITH (storage = 'search') TABLESPACE gone")
+                             " TABLESPACE gone")
                 conn.execute("INSERT INTO dropped VALUES (1)")
-                conn.execute("VACUUM (REFRESH_TABLE) dropped")
+                conn.execute("VACUUM (FLUSH_TABLE) dropped")
                 conn.execute("DROP TABLE dropped")
                 conn.execute("DROP TABLESPACE gone")
                 conn.execute(f"CREATE TABLESPACE kept LOCATION '{location}'")
                 conn.execute("CREATE TABLE kept_rows (id INT) "
-                             "WITH (storage = 'search') TABLESPACE kept")
+                             " TABLESPACE kept")
                 conn.execute("INSERT INTO kept_rows VALUES (1), (2)")
-                conn.execute("VACUUM (REFRESH_TABLE) kept_rows")
+                conn.execute("VACUUM (FLUSH_TABLE) kept_rows")
                 with pytest.raises(psycopg.errors.ObjectInUse,
                                    match="is already used by tablespace"):
                     conn.execute(
@@ -827,9 +827,9 @@ def test_clusters_sharing_a_location_keep_apart(tmp_path: Path,
             with other.connect() as conn:
                 conn.execute(f"CREATE TABLESPACE theirs LOCATION '{location}'")
                 conn.execute("CREATE TABLE theirs_rows (id INT) "
-                             "WITH (storage = 'search') TABLESPACE theirs")
+                             " TABLESPACE theirs")
                 conn.execute("INSERT INTO theirs_rows VALUES (3)")
-                conn.execute("VACUUM (REFRESH_TABLE) theirs_rows")
+                conn.execute("VACUUM (FLUSH_TABLE) theirs_rows")
             assert rows(other, "theirs_rows") == [(3,)]
             assert len(clusters()) == 2, keys(bucket)
             with other.connect() as conn:
@@ -901,14 +901,14 @@ def test_a_lost_marker_response_is_retried(tmp_path: Path, kind: str) -> None:
                 _create_azure_secret(server, fake, f"az://indexes/marker-{tmp_path.name}")
             with server.connect() as conn:
                 conn.execute("CREATE TABLE earlier(id INTEGER) "
-                             "WITH (storage = 'search') TABLESPACE idx")
+                             " TABLESPACE idx")
                 fake.drop["PUT" if kind == "s3" else "PUT_BLOCK_LIST"] = 1
                 conn.execute("CREATE TABLE notes(id INTEGER, body TEXT) "
-                             "WITH (storage = 'search') TABLESPACE idx")
+                             " TABLESPACE idx")
                 oid = conn.execute(
                     "SELECT oid FROM pg_class WHERE relname = 'notes'").fetchone()[0]
                 conn.execute("INSERT INTO notes VALUES (1, 'kept on s3')")
-                conn.execute("VACUUM (REFRESH_TABLE) notes")
+                conn.execute("VACUUM (FLUSH_TABLE) notes")
                 assert conn.execute("SELECT body FROM notes").fetchall() == [
                     ("kept on s3",)]
         finally:
@@ -929,7 +929,7 @@ def test_a_lost_copy_response_is_retried(tmp_path: Path) -> None:
             fake.drop["COPY"] = 1
             with server.connect() as conn:
                 conn.execute("INSERT INTO docs VALUES (3, 'fox again')")
-                conn.execute("VACUUM (REFRESH_TABLE) docs")
+                conn.execute("VACUUM (FLUSH_TABLE) docs")
             assert _matches(server) == [1, 3]
         finally:
             server.stop()
@@ -967,7 +967,7 @@ def test_a_missing_storage_refuses_the_start(tmp_path: Path, kind: str) -> None:
             else:
                 with server.connect() as conn:
                     conn.execute("CREATE TABLE notes(id INTEGER, body TEXT) "
-                                 "WITH (storage = 'search') TABLESPACE idx")
+                                 " TABLESPACE idx")
         finally:
             server.stop()
         with fake.lock:
@@ -1049,7 +1049,7 @@ def _crash_while_committing(tmp_path: Path, kind: str, key: str) -> None:
 
             def refresh(conn: psycopg.Connection) -> None:
                 conn.execute("INSERT INTO docs VALUES (3, 'fox again')")
-                conn.execute("VACUUM (REFRESH_TABLE) docs")
+                conn.execute("VACUUM (FLUSH_TABLE) docs")
 
             _kill_while_stalled(server, fake, refresh)
         finally:
@@ -1140,9 +1140,9 @@ def test_an_orphan_object_of_a_search_table_is_removed_after_a_restart(
                            location)
             with server.connect() as conn:
                 conn.execute("CREATE TABLE notes (id INT, body TEXT) "
-                             "WITH (storage = 'search') TABLESPACE idx")
+                             " TABLESPACE idx")
                 conn.execute("INSERT INTO notes VALUES (1, 'kept on s3')")
-                conn.execute("VACUUM (REFRESH_TABLE) notes")
+                conn.execute("VACUUM (FLUSH_TABLE) notes")
         finally:
             server.stop()
         commits = [key for key in fake.keys("bucket", f"orphan-table-{tmp_path.name}/")
@@ -1303,9 +1303,9 @@ def test_a_restart_opens_its_indexes_and_search_tables_at_once(
                     conn.execute(f"CREATE INDEX docs{i}_body ON docs{i} "
                                  "USING inverted(body words) TABLESPACE idx")
                     conn.execute(f"CREATE TABLE notes{i}(id INTEGER, body TEXT) "
-                                 "WITH (storage = 'search') TABLESPACE idx")
+                                 " TABLESPACE idx")
                     conn.execute(f"INSERT INTO notes{i} VALUES ({i}, 'kept on s3')")
-                    conn.execute(f"VACUUM (REFRESH_TABLE) notes{i}")
+                    conn.execute(f"VACUUM (FLUSH_TABLE) notes{i}")
         finally:
             server.stop()
         fake.latency = 0.5
@@ -1740,7 +1740,7 @@ def test_cold_top_k_reads_postings_and_columns_in_one_round(
                         "INSERT INTO docs SELECT i, CASE i % 10 WHEN 0 THEN 'alpha' "
                         "WHEN 1 THEN 'beta' ELSE 'gamma' END "
                         f"FROM range({segment * 1000}, {(segment + 1) * 1000}) t(i)")
-                    conn.execute("VACUUM (REFRESH_TABLE) docs")
+                    conn.execute("VACUUM (FLUSH_TABLE) docs")
                 conn.execute("SET GLOBAL threads = 2")
                 conn.execute("SET GLOBAL enable_external_file_cache = false")
                 conn.execute("SET GLOBAL enable_external_file_cache = true")
@@ -1771,13 +1771,13 @@ def test_cold_late_materialization_reads_columns_in_one_round(
                                           "bucket"), location)
             with server.connect() as conn:
                 conn.execute(
-                    "CREATE TABLE wide WITH (storage = 'search') TABLESPACE idx AS "
+                    "CREATE TABLE wide TABLESPACE idx AS "
                     "SELECT i AS id, md5(i::TEXT) AS a, md5((-i)::TEXT) AS b, "
                     + ", ".join(
                         f"md5((i + {k})::TEXT) || md5((i * {k})::TEXT) AS {c}"
                         for k, c in ((2, "c"), (3, "d"), (4, "e"), (5, "f")))
                     + " FROM range(200000) t(i)")
-                conn.execute("VACUUM (REFRESH_TABLE) wide")
+                conn.execute("VACUUM (FLUSH_TABLE) wide")
                 plan = "\n".join(row[-1] for row in conn.execute(
                     "EXPLAIN " + query).fetchall())
                 expected = conn.execute(query).fetchall()
@@ -1811,9 +1811,9 @@ def test_cold_column_scan_reads_its_columns_in_one_round(
                                           "bucket"), location)
             with server.connect() as conn:
                 conn.execute(
-                    "CREATE TABLE narrow WITH (storage = 'search') TABLESPACE idx AS "
+                    "CREATE TABLE narrow TABLESPACE idx AS "
                     "SELECT i AS id, hash(i) AS v FROM range(2000000) t(i)")
-                conn.execute("VACUUM (REFRESH_TABLE) narrow")
+                conn.execute("VACUUM (FLUSH_TABLE) narrow")
                 expected = conn.execute(query).fetchall()
                 conn.execute("SET GLOBAL enable_external_file_cache = false")
                 conn.execute("SET GLOBAL enable_external_file_cache = true")
@@ -1838,9 +1838,9 @@ def test_a_cold_column_scan_keeps_reading_ahead_of_its_workers(tmp_path: Path) -
                                           "bucket"), location)
             with server.connect() as conn:
                 conn.execute(
-                    "CREATE TABLE wide WITH (storage = 'search', compaction_interval = 0) "
+                    "CREATE TABLE wide WITH (compaction_interval = 0) "
                     "TABLESPACE idx AS SELECT hash(i) AS v FROM range(12000000) t(i)")
-                conn.execute("VACUUM (REFRESH_TABLE) wide")
+                conn.execute("VACUUM (FLUSH_TABLE) wide")
                 conn.execute("SET threads = 2")
                 expected = conn.execute(query).fetchall()
                 conn.execute("SET GLOBAL enable_external_file_cache = false")
@@ -1870,9 +1870,9 @@ def test_a_cold_column_scan_skips_the_row_groups_its_filter_rules_out(tmp_path: 
             with server.connect() as conn:
                 conn.execute("SET threads = 1")
                 conn.execute(
-                    "CREATE TABLE sorted WITH (storage = 'search', compaction_interval = 0) "
+                    "CREATE TABLE sorted WITH (compaction_interval = 0) "
                     "TABLESPACE idx AS SELECT hash(i) AS k FROM range(6000000) t(i) ORDER BY k")
-                conn.execute("VACUUM (REFRESH_TABLE) sorted")
+                conn.execute("VACUUM (FLUSH_TABLE) sorted")
                 conn.execute("RESET threads")
                 expected = conn.execute(query).fetchall()
                 conn.execute("SET GLOBAL enable_external_file_cache = false")
@@ -1910,10 +1910,10 @@ def test_a_cold_filtered_scan_asks_for_the_projected_columns_of_a_row_group_toge
             with server.connect() as conn:
                 conn.execute("SET threads = 1")
                 conn.execute(
-                    "CREATE TABLE cols WITH (storage = 'search', compaction_interval = 0) "
+                    "CREATE TABLE cols WITH (compaction_interval = 0) "
                     "TABLESPACE idx AS SELECT hash(i) AS k, hash(i + 1) AS a, hash(i + 2) AS b, "
                     "hash(i + 3) AS c, hash(i + 4) AS d FROM range(1500000) t(i)")
-                conn.execute("VACUUM (REFRESH_TABLE) cols")
+                conn.execute("VACUUM (FLUSH_TABLE) cols")
                 conn.execute("SET threads = 2")
                 expected = conn.execute(query).fetchall()
                 conn.execute("SET GLOBAL enable_external_file_cache = false")
@@ -1945,10 +1945,10 @@ def test_a_cold_filtered_scan_asks_ahead_only_for_the_rows_its_filter_leaves(
             with server.connect() as conn:
                 conn.execute("SET threads = 1")
                 conn.execute(
-                    "CREATE TABLE sorted WITH (storage = 'search', compaction_interval = 0) "
+                    "CREATE TABLE sorted WITH (compaction_interval = 0) "
                     "TABLESPACE idx AS SELECT hash(i) AS k, hash(i + 1) AS v "
                     "FROM range(1500000) t(i) ORDER BY k")
-                conn.execute("VACUUM (REFRESH_TABLE) sorted")
+                conn.execute("VACUUM (FLUSH_TABLE) sorted")
                 expected = conn.execute(query).fetchall()
                 conn.execute("SET GLOBAL enable_external_file_cache = false")
                 conn.execute("SET GLOBAL enable_external_file_cache = true")
@@ -1995,7 +1995,7 @@ def test_a_repeated_query_reads_nothing_from_the_store(
                     "split_by_non_alpha(case := 'lower') "
                     "WITH (frequency, position, norm)")
                 conn.execute(
-                    "CREATE TABLE logs WITH (storage = 'search', compaction_interval = 0) "
+                    "CREATE TABLE logs WITH (compaction_interval = 0) "
                     "TABLESPACE idx AS SELECT 0 AS id, '' AS body WHERE false")
                 conn.execute("CREATE INDEX logs_body ON logs USING inverted(body words)")
                 conn.execute("SET threads = 1")
@@ -2006,7 +2006,7 @@ def test_a_repeated_query_reads_nothing_from_the_store(
                         "CASE WHEN hash(i * 5) % 100 < 6 THEN 'cache' END, "
                         "'w' || (hash(i * 3) % 3000)) "
                         f"FROM range({segment * 2000000}, {(segment + 1) * 2000000}) t(i)")
-                    conn.execute("VACUUM (REFRESH_TABLE) logs")
+                    conn.execute("VACUUM (FLUSH_TABLE) logs")
                 conn.execute("RESET threads")
                 conn.execute("SET GLOBAL threads = 8")
                 conn.execute("SET GLOBAL enable_external_file_cache = false")
@@ -2049,7 +2049,7 @@ def test_cold_count_reads_its_postings_in_one_round(tmp_path: Path) -> None:
                         "INSERT INTO docs SELECT i, CASE i % 10 WHEN 0 THEN 'alpha beta' "
                         "WHEN 1 THEN 'beta alpha' ELSE 'gamma' END "
                         f"FROM range({segment * 1000}, {(segment + 1) * 1000}) t(i)")
-                    conn.execute("VACUUM (REFRESH_TABLE) docs")
+                    conn.execute("VACUUM (FLUSH_TABLE) docs")
                 conn.execute("SET GLOBAL threads = 2")
                 fake.latency = 0.1
 
@@ -2095,7 +2095,7 @@ def test_an_index_is_created_again_where_it_was_dropped(tmp_path: Path) -> None:
             assert _matches(server) == [1]
             with server.connect() as conn:
                 conn.execute("INSERT INTO docs VALUES (3, 'fox again')")
-                conn.execute("VACUUM (REFRESH_TABLE) docs")
+                conn.execute("VACUUM (FLUSH_TABLE) docs")
             assert _matches(server) == [1, 3]
             with server.connect() as conn:
                 conn.execute("DROP INDEX docs_body")

@@ -72,7 +72,9 @@ class IndexDir {
   duckdb::FileSystem& Fs() const noexcept { return _state->fs; }
   const std::string& Root() const noexcept { return _state->root; }
   StorageKind Kind() const noexcept { return _state->kind; }
-  irs::ReleasedSegments& Released() const noexcept { return *_state->released; }
+  irs::ReleasedSegments& Released() const noexcept {
+    return *_state->segments->released;
+  }
   const irs::FileObservers& Observers() const noexcept { return _observers; }
 
   irs::IndexReaderOptions ReaderOptions(
@@ -80,25 +82,46 @@ class IndexDir {
 
   std::vector<irs::SegmentMeta> Committed() const;
   void Publish(std::vector<irs::SegmentMeta> segments) const;
+  std::vector<std::string> HeldFiles() const;
   size_t RemoveReleased() const;
+  uint64_t TopSegmentId() const;
+  void RaiseTopSegmentId(uint64_t id) const;
 
   IndexDir Observed(irs::FileObserver& observer) const;
+  IndexDir Over(duckdb::FileSystem& fs) const;
+  IndexDir Reopened() const;
 
  private:
+  struct Published {
+    irs::ReleasedSegment segment;
+    std::weak_ptr<const irs::SegmentHold> hold;
+  };
+
+  struct Segments {
+    std::shared_ptr<irs::ReleasedSegments> released =
+      std::make_shared<irs::ReleasedSegments>();
+    absl::Mutex mutex;
+    std::vector<irs::SegmentMeta> committed ABSL_GUARDED_BY(mutex);
+    std::vector<Published> published ABSL_GUARDED_BY(mutex);
+    uint64_t top_segment_id ABSL_GUARDED_BY(mutex) = 0;
+  };
+
   struct State {
     State(duckdb::DatabaseInstance& db, duckdb::FileSystem& fs,
-          std::string root, StorageKind kind)
-      : db{db}, fs{fs}, root{std::move(root)}, kind{kind} {}
+          std::string root, StorageKind kind,
+          std::shared_ptr<Segments> segments)
+      : db{db},
+        fs{fs},
+        root{std::move(root)},
+        kind{kind},
+        segments{std::move(segments)} {}
     ~State();
 
     duckdb::DatabaseInstance& db;
     duckdb::FileSystem& fs;
     std::string root;
     StorageKind kind;
-    std::shared_ptr<irs::ReleasedSegments> released =
-      std::make_shared<irs::ReleasedSegments>();
-    absl::Mutex mutex;
-    std::vector<irs::SegmentMeta> committed ABSL_GUARDED_BY(mutex);
+    std::shared_ptr<Segments> segments;
   };
 
   std::shared_ptr<State> _state;

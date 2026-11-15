@@ -288,7 +288,7 @@ std::vector<Edge> DirectDependents(duckdb::CatalogTransaction transaction,
         triggers(member, Part::Whole);
       }
       const auto& dependencies =
-        member.Cast<duckdb::StandardEntry>().dependencies.Set();
+        member.Cast<duckdb::InCatalogEntry>().dependencies.Set();
       for (const auto& dependency : dependencies) {
         if (dependency.oid != subject.oid) {
           continue;

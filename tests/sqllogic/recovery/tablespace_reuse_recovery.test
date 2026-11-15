@@ -12,13 +12,13 @@ statement ok
 CREATE TABLESPACE gone LOCATION '${__TEST_DIR__}/reuse';
 
 statement ok
-CREATE TABLE dropped (id INT, body TEXT) WITH (storage = 'search') TABLESPACE gone;
+CREATE TABLE dropped (id INT, body TEXT) TABLESPACE gone;
 
 statement ok
 INSERT INTO dropped VALUES (1, 'dropped row');
 
 statement ok
-VACUUM (REFRESH_TABLE) dropped;
+VACUUM (FLUSH_TABLE) dropped;
 
 statement ok
 DROP TABLE dropped;
@@ -30,22 +30,22 @@ statement ok
 CREATE TABLESPACE kept LOCATION '${__TEST_DIR__}/reuse';
 
 statement ok
-CREATE TABLE docs (id INT, body TEXT) WITH (storage = 'search') TABLESPACE kept;
+CREATE TABLE docs (id INT, body TEXT) TABLESPACE kept;
 
 statement ok
 INSERT INTO docs VALUES (1, 'quick fox'), (2, 'lazy dog');
 
 statement ok
-VACUUM (REFRESH_TABLE) docs;
+VACUUM (FLUSH_TABLE) docs;
 
 statement ok
-CREATE TABLE pending_rows (id INT, body TEXT) WITH (storage = 'search') TABLESPACE kept;
+CREATE TABLE pending_rows (id INT, body TEXT) TABLESPACE kept;
 
 statement ok
 INSERT INTO pending_rows VALUES (1, 'read by an older transaction');
 
 statement ok
-VACUUM (REFRESH_TABLE) pending_rows;
+VACUUM (FLUSH_TABLE) pending_rows;
 
 connection reader
 statement ok

@@ -47,7 +47,7 @@ class ClusterCatalog final : public BaseCatalog {
     : BaseCatalog{db, false},
       _layout{std::move(layout)},
       _roles{true, _oids},
-      _databases{true, _oids},
+      _databases{true, _oids, 0, /*members=*/true},
       _origins{true, _oids},
       _tablespaces{true, _oids},
       _temporary_secrets{true, _oids},

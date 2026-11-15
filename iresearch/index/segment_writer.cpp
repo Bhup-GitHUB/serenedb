@@ -254,16 +254,17 @@ std::shared_ptr<const SegmentReaderImpl> SegmentWriter::SealPiece(uint64_t id) {
   const absl::Cleanup remove = [&] {
     RemoveIndexFiles(_fs, _root, flushed.files);
   };
-  meta.byte_size = flushed.bytes + column_bytes + fields->Bytes();
-  fields->Open(
-    ReaderState{.db = _db, .fs = _fs, .root = _root, .meta = meta},
-    field_writer.Features());
   duckdb::shared_ptr<duckdb::InputFile> norms_file;
   if (!norms.empty()) {
     norms_file =
       _fs.OpenInputFile(_fs.JoinPath(_root, FileName(_seg_name)),
                         duckdb::MappedFileAccess::RANDOM);
   }
+  meta.byte_size = flushed.bytes + column_bytes + fields->Bytes() +
+                   (norms_file ? norms_file->GetSize() : 0);
+  fields->Open(
+    ReaderState{.db = _db, .fs = _fs, .root = _root, .meta = meta},
+    field_writer.Features());
   return SegmentReaderImpl::OpenPiece(
     meta, id,
     std::make_unique<ColReader>(_db, std::move(columns), std::move(norms_file),

@@ -54,13 +54,13 @@ CREATE TEXT SEARCH DICTIONARY mix_words AS split_text(case := 'lower') WITH (fre
 
 statement ok
 CREATE TABLE remote_docs (id INT PRIMARY KEY, body TEXT)
-  WITH (storage = 'search', refresh_interval = 0, compaction_interval = 0)
+  WITH (compaction_interval = 0)
   TABLESPACE mix_a_${__DATABASE__};
 
 
 statement ok
 CREATE TABLE local_docs (id INT PRIMARY KEY, body TEXT)
-  WITH (storage = 'search', refresh_interval = 0, compaction_interval = 0)
+  WITH (compaction_interval = 0)
   TABLESPACE mix_local_${__DATABASE__};
 
 
@@ -91,15 +91,15 @@ FROM range(1, 201) t(i);
 
 
 statement ok
-VACUUM (REFRESH_TABLE) remote_docs;
+VACUUM (FLUSH_TABLE) remote_docs;
 
 
 statement ok
-VACUUM (REFRESH_TABLE) local_docs;
+VACUUM (FLUSH_TABLE) local_docs;
 
 
 statement ok
-VACUUM (REFRESH_TABLE) notes;
+VACUUM (FLUSH_TABLE) notes;
 
 
 statement ok
@@ -107,7 +107,7 @@ INSERT INTO remote_docs SELECT i, 'remote fox number ' || i FROM range(51, 101) 
 
 
 statement ok
-VACUUM (REFRESH_TABLE) remote_docs;
+VACUUM (FLUSH_TABLE) remote_docs;
 
 
 query
@@ -157,7 +157,7 @@ DELETE FROM remote_docs WHERE id > 90;
 
 
 statement ok
-VACUUM (REFRESH_TABLE) remote_docs;
+VACUUM (FLUSH_TABLE) remote_docs;
 
 
 query

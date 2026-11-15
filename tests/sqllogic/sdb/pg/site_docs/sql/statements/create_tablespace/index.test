@@ -28,7 +28,6 @@ CREATE TABLESPACE doc_fast LOCATION '${__TEST_DIR__}/nvme';
 
 statement ok
 CREATE TABLE doc_articles (id INTEGER, body TEXT)
-WITH (storage = 'search')
 TABLESPACE doc_fast;
 
 # DOCS_TEST: example_003
@@ -49,7 +48,7 @@ statement ok
 SET default_tablespace = 'doc_fast';
 
 statement ok
-CREATE TABLE doc_events (id INTEGER, kind TEXT) WITH (storage = 'search');
+CREATE TABLE doc_events (id INTEGER, kind TEXT);
 
 statement ok
 RESET default_tablespace;

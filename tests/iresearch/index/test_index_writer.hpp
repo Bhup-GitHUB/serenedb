@@ -138,6 +138,7 @@ class IndexWriter {
 
   IndexWriter(const IndexDir& dir, OpenMode mode,
               irs::IndexWriterOptions options);
+  ~IndexWriter();
 
   Transaction GetBatch(bool exclusive = false) {
     return Transaction{*this, exclusive};

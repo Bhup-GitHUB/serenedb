@@ -89,7 +89,7 @@ db error: ERROR: SORTED BY is not supported
 
 
 statement error
-CREATE TEMP TABLE temp_search (id INT, body TEXT) WITH (storage = 'search');
+CREATE TEMP TABLE temp_search (id INT, body TEXT);
 ----
 db error: ERROR: a temporary table cannot be a search table
 

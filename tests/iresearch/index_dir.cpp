@@ -24,6 +24,8 @@
 
 #include <duckdb/common/memory_file_system.hpp>
 #include <duckdb/main/database_file_opener.hpp>
+#include <iresearch/index/file_names.hpp>
+#include <iterator>
 
 namespace tests {
 namespace {
@@ -53,8 +55,8 @@ IndexDir::IndexDir(duckdb::DatabaseInstance& db, std::string_view root)
 
 IndexDir::IndexDir(duckdb::DatabaseInstance& db, duckdb::FileSystem& fs,
                    std::string_view root)
-  : _state{
-      std::make_shared<State>(db, fs, std::string{root}, KindOf(root))} {}
+  : _state{std::make_shared<State>(db, fs, std::string{root}, KindOf(root),
+                                   std::make_shared<Segments>())} {}
 
 std::unique_ptr<duckdb::BufferedFileWriter> IndexDir::Create(
   std::string_view name) const {
@@ -119,19 +121,42 @@ void IndexDir::Visit(absl::FunctionRef<void(std::string_view)> visitor) const {
 irs::IndexReaderOptions IndexDir::ReaderOptions(
   irs::IndexReaderOptions options) const {
   if (!options.released) {
-    options.released = _state->released;
+    options.released = _state->segments->released;
   }
   return options;
 }
 
 std::vector<irs::SegmentMeta> IndexDir::Committed() const {
-  absl::MutexLock lock{&_state->mutex};
-  return _state->committed;
+  absl::MutexLock lock{&_state->segments->mutex};
+  return _state->segments->committed;
 }
 
 void IndexDir::Publish(std::vector<irs::SegmentMeta> segments) const {
-  absl::MutexLock lock{&_state->mutex};
-  _state->committed.swap(segments);
+  absl::MutexLock lock{&_state->segments->mutex};
+  auto& published = _state->segments->published;
+  for (const auto& meta : segments) {
+    if (meta.hold && absl::c_none_of(published, [&](const Published& known) {
+          return known.segment.name == meta.name;
+        })) {
+      published.push_back(
+        {.segment = {.name = meta.name, .kinds = meta.kinds},
+         .hold = meta.hold});
+    }
+  }
+  _state->segments->committed.swap(segments);
+}
+
+std::vector<std::string> IndexDir::HeldFiles() const {
+  std::vector<std::string> files;
+  absl::MutexLock lock{&_state->segments->mutex};
+  auto& published = _state->segments->published;
+  std::erase_if(published,
+                [](const Published& known) { return known.hold.expired(); });
+  for (const auto& known : published) {
+    absl::c_move(irs::SegmentFiles(known.segment.name, known.segment.kinds),
+                 std::back_inserter(files));
+  }
+  return files;
 }
 
 size_t IndexDir::RemoveReleased() const {
@@ -144,10 +169,40 @@ size_t IndexDir::RemoveReleased() const {
     before, [&](const std::string& name) { return !kept.contains(name); }));
 }
 
+uint64_t IndexDir::TopSegmentId() const {
+  absl::MutexLock lock{&_state->segments->mutex};
+  return _state->segments->top_segment_id;
+}
+
+void IndexDir::RaiseTopSegmentId(uint64_t id) const {
+  absl::MutexLock lock{&_state->segments->mutex};
+  auto& top = _state->segments->top_segment_id;
+  top = std::max(top, id);
+}
+
 IndexDir IndexDir::Observed(irs::FileObserver& observer) const {
   auto result = *this;
   result._observers.push_back(&observer);
   return result;
+}
+
+IndexDir IndexDir::Over(duckdb::FileSystem& fs) const {
+  SDB_ASSERT(Kind() != StorageKind::Memory);
+  auto result = *this;
+  result._state =
+    std::make_shared<State>(Db(), fs, Root(), Kind(), _state->segments);
+  return result;
+}
+
+IndexDir IndexDir::Reopened() const {
+  SDB_ASSERT(Kind() != StorageKind::Memory);
+  IndexDir reopened{Db(), Fs(), Root()};
+  auto segments = Committed();
+  for (auto& meta : segments) {
+    meta.hold.reset();
+  }
+  reopened.Publish(std::move(segments));
+  return reopened;
 }
 
 }  // namespace tests

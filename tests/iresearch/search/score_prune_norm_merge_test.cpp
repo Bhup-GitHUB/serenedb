@@ -823,7 +823,7 @@ TEST_P(ScorePruneNormMergeCase, BenchShape16SegmentsRealisticTfDl) {
 
 TEST_P(ScorePruneNormMergeCase, NonEssentialSingleBlockTermInLaterSegment) {
   auto bm25 = std::make_unique<irs::BM25>();
-  auto writer = open_writer(irs::kOmCreate, MakeOpts(bm25.get()));
+  auto writer = open_writer(tests::kOmCreate, MakeOpts(bm25.get()));
   ASSERT_NE(nullptr, writer);
   for (size_t d = 0; d < 1000; ++d) {
     ASSERT_TRUE(

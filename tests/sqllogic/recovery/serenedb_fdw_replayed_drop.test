@@ -5,7 +5,7 @@ control substitution on
 # and inverted index where they are: the attach changes nothing it reads.
 
 statement ok retry $RETRY_ATTEMPTS backoff $BACKOFF_DURATION
-CREATE TABLE postgres.public.frd_docs(id INTEGER PRIMARY KEY, body VARCHAR) WITH (storage = 'search');
+CREATE TABLE postgres.public.frd_docs(id INTEGER PRIMARY KEY, body VARCHAR);
 
 statement ok
 INSERT INTO postgres.public.frd_docs VALUES (1, 'alpha');
@@ -20,10 +20,10 @@ statement ok
 CREATE INDEX frd_plain_idx ON postgres.public.frd_plain USING inverted (body);
 
 statement ok
-VACUUM (REFRESH_TABLE) postgres.public.frd_docs;
+VACUUM (FLUSH_TABLE) postgres.public.frd_docs;
 
 statement ok
-VACUUM (REFRESH_TABLE) postgres.public.frd_plain;
+VACUUM (FLUSH_TABLE) postgres.public.frd_plain;
 
 statement ok
 CHECKPOINT postgres;

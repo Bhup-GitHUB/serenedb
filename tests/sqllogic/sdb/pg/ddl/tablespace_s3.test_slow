@@ -58,7 +58,7 @@ CREATE TEXT SEARCH DICTIONARY ts_s3_english AS
 
 statement ok
 CREATE TABLE docs (id INT PRIMARY KEY, body TEXT)
-  WITH (storage = 'search', refresh_interval = 0, compaction_interval = 0)
+  WITH (compaction_interval = 0)
   TABLESPACE ts_s3_${__DATABASE__};
 
 
@@ -74,7 +74,7 @@ INSERT INTO docs VALUES
 
 
 statement ok
-VACUUM (REFRESH_TABLE) docs;
+VACUUM (FLUSH_TABLE) docs;
 
 
 statement ok
@@ -84,7 +84,7 @@ INSERT INTO docs VALUES
 
 
 statement ok
-VACUUM (REFRESH_TABLE) docs;
+VACUUM (FLUSH_TABLE) docs;
 
 
 statement ok
@@ -103,7 +103,7 @@ CREATE INDEX notes_idx ON notes USING inverted(body ts_s3_english)
 
 
 statement ok
-VACUUM (REFRESH_TABLE) notes;
+VACUUM (FLUSH_TABLE) notes;
 
 
 query
@@ -186,7 +186,7 @@ DELETE FROM docs WHERE id = 1;
 
 
 statement ok
-VACUUM (REFRESH_TABLE) docs;
+VACUUM (FLUSH_TABLE) docs;
 
 
 query

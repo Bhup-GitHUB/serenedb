@@ -111,7 +111,7 @@ void ForEachSubject(
     subject(version.Cast<duckdb::IndexCatalogEntry>().table_oid, nullptr);
   }
   for (const auto& dependency :
-       version.Cast<duckdb::StandardEntry>().dependencies.Set()) {
+       version.Cast<duckdb::InCatalogEntry>().dependencies.Set()) {
     subject(dependency.oid, &dependency);
   }
   if (version.type == duckdb::CatalogType::ROLE_ENTRY) {

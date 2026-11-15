@@ -8,7 +8,7 @@ CREATE TEMPORARY TABLE temp_docs (
   body  TEXT,
   tag   TEXT,
   views INTEGER
-);
+) WITH (optimize_top_k = 'bm25(1.2, 0.75)');
 
 
 statement count 5
@@ -27,8 +27,7 @@ CREATE TEXT SEARCH DICTIONARY temp_en AS
 
 
 statement ok
-CREATE INDEX temp_idx ON temp_docs USING inverted(body temp_en) INCLUDE (tag, views)
-  WITH (optimize_top_k = 'bm25(1.2, 0.75)');
+CREATE INDEX temp_idx ON temp_docs USING inverted(body temp_en) INCLUDE (tag, views);
 
 
 query
@@ -163,16 +162,12 @@ query
 EXPLAIN SELECT id FROM temp_docs WHERE tag = 'gameplay';
 ----
 QUERY PLAN
-╭─ IRESEARCH_SCAN ───────╮
-│ Table: temp_docs       │
-│ Index Filter:          │
-│ ╭─ Term ─────────────╮ │
-│ │ Field: tag(string) │ │
-│ │ Value: gameplay    │ │
-│ ╰────────────────────╯ │
-│ Projections: id        │
-│ ~1 row                 │
-╰────────────────────────╯
+╭─ IRESEARCH_SCAN ────────────────╮
+│ Table: temp_docs                │
+│ Projections: id                 │
+│ Column Filter: tag = 'gameplay' │
+│ ~1 row                          │
+╰─────────────────────────────────╯
 
 
 connection other
@@ -231,11 +226,8 @@ statement ok
 CREATE TEMPORARY VIEW temp_view AS SELECT id, body FROM temp_docs;
 
 
-statement error
+statement ok
 CREATE INDEX temp_view_idx ON temp_view USING inverted(body temp_en);
-----
-db error: ERROR: cannot create an index on temporary view "temp_view"
-
 
 statement ok
 DROP INDEX temp_tag_idx;

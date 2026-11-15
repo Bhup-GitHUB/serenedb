@@ -138,8 +138,6 @@ class IndexReaderMock final : public irs::IndexReader {
       _live += segment.live_docs_count;
     }
   }
-
-  uint64_t CountMappedMemory() const final { return 0; }
   uint64_t live_docs_count() const final { return _live; }
   uint64_t docs_count() const final { return _docs; }
   const irs::SubReader& operator[](size_t i) const final { return _readers[i]; }

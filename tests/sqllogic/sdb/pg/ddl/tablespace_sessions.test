@@ -9,13 +9,13 @@ statement ok
 CREATE TABLESPACE sess_old_${__DATABASE__} LOCATION '${__TEST_DIR__}/sess';
 
 statement ok
-CREATE TABLE sess_read (id INT, body TEXT) WITH (storage = 'search') TABLESPACE sess_old_${__DATABASE__};
+CREATE TABLE sess_read (id INT, body TEXT) TABLESPACE sess_old_${__DATABASE__};
 
 statement ok
 INSERT INTO sess_read VALUES (1, 'old row');
 
 statement ok
-VACUUM (REFRESH_TABLE) sess_read;
+VACUUM (FLUSH_TABLE) sess_read;
 
 connection reader
 statement ok
@@ -43,13 +43,13 @@ BEGIN;
 
 connection writer
 statement ok
-CREATE TABLE sess_a (id INT) WITH (storage = 'search') TABLESPACE sess_new_${__DATABASE__};
+CREATE TABLE sess_a (id INT) TABLESPACE sess_new_${__DATABASE__};
 
 statement ok
 BEGIN;
 
 statement ok
-CREATE TABLE sess_b (id INT) WITH (storage = 'search') TABLESPACE sess_new_${__DATABASE__};
+CREATE TABLE sess_b (id INT) TABLESPACE sess_new_${__DATABASE__};
 
 connection writer
 statement ok
@@ -66,10 +66,10 @@ statement ok
 COMMIT;
 
 statement ok
-VACUUM (REFRESH_TABLE) sess_a;
+VACUUM (FLUSH_TABLE) sess_a;
 
 statement ok
-VACUUM (REFRESH_TABLE) sess_b;
+VACUUM (FLUSH_TABLE) sess_b;
 
 connection reader
 query

@@ -43,6 +43,7 @@
 #include <iresearch/search/filters/term_filter.hpp>
 #include <iresearch/search/queries/posting_heads.hpp>
 #include <iresearch/utils/duckdb_engine.hpp>
+#include <iresearch/utils/index_utils.hpp>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -75,38 +76,12 @@ std::string Root() {
                       count.fetch_add(1, std::memory_order_relaxed));
 }
 
-void WriteSegments(const tests::IndexDir& dir, size_t segments) {
-  tests::JsonDocGenerator gen{TestBase::resource("simple_sequential.json"),
-                              &tests::GenericJsonFieldFactory};
-  auto writer =
-    tests::MakeWriter(dir, irs::kOmCreate, irs::tests::DefaultWriterOptions());
-  for (size_t i = 0; i != segments; ++i) {
-    const auto* doc = gen.next();
-    ASSERT_NE(nullptr, doc);
-    ASSERT_TRUE(tests::Insert(*writer, *doc));
-    ASSERT_TRUE(writer->RefreshCommit());
-  }
-}
-
-irs::ObjectStoreRequests Open(const std::string& root, uint64_t live_docs) {
-  auto& store = tests::ObjectStore();
-  const tests::IndexDir restarted{Db(), root};
-  DropCachedBlocks(duckdb::ExternalFileCache::Get(Db()));
-  store.ResetRequests();
-  const auto reader =
-    tests::OpenReader(restarted, irs::tests::DefaultReaderOptions());
-  const auto requests = store.Requests();
-  EXPECT_EQ(live_docs, reader.live_docs_count());
-  return requests;
-}
-
 TEST(ObjectStoreIndexTest, a_single_block_field_prefetches_nothing) {
   auto& store = tests::ObjectStore();
-  const auto root = Root();
+  const tests::IndexDir dir{Db(), Root()};
   {
-    const tests::IndexDir dir{Db(), root};
-    auto writer = tests::MakeWriter(dir, irs::kOmCreate,
-                                    irs::tests::DefaultWriterOptions());
+    auto writer = tests::IndexWriter::Make(dir, tests::kOmCreate,
+                                           irs::tests::DefaultWriterOptions());
     for (size_t segment = 0; segment != 3; ++segment) {
       tests::JsonDocGenerator gen{TestBase::resource("simple_sequential.json"),
                                   &tests::GenericJsonFieldFactory};
@@ -116,7 +91,7 @@ TEST(ObjectStoreIndexTest, a_single_block_field_prefetches_nothing) {
       ASSERT_TRUE(writer->RefreshCommit());
     }
   }
-  const tests::IndexDir restarted{Db(), root};
+  const auto restarted = dir.Reopened();
   const auto reader =
     tests::OpenReader(restarted, irs::tests::DefaultReaderOptions());
   DropCachedBlocks(duckdb::ExternalFileCache::Get(Db()));
@@ -140,11 +115,10 @@ TEST(ObjectStoreIndexTest, a_single_block_field_prefetches_nothing) {
 TEST(ObjectStoreIndexTest, prefetched_term_blocks_serve_the_lookups) {
   constexpr size_t kNames = 4096;
   auto& store = tests::ObjectStore();
-  const auto root = Root();
+  const tests::IndexDir dir{Db(), Root()};
   {
-    const tests::IndexDir dir{Db(), root};
-    auto writer = tests::MakeWriter(dir, irs::kOmCreate,
-                                    irs::tests::DefaultWriterOptions());
+    auto writer = tests::IndexWriter::Make(dir, tests::kOmCreate,
+                                           irs::tests::DefaultWriterOptions());
     for (size_t segment = 0; segment != 3; ++segment) {
       auto trx = writer->GetBatch();
       for (size_t i = 0; i != kNames; ++i) {
@@ -156,7 +130,7 @@ TEST(ObjectStoreIndexTest, prefetched_term_blocks_serve_the_lookups) {
       ASSERT_TRUE(writer->RefreshCommit());
     }
   }
-  const tests::IndexDir restarted{Db(), root};
+  const auto restarted = dir.Reopened();
   const auto reader =
     tests::OpenReader(restarted, irs::tests::DefaultReaderOptions());
   DropCachedBlocks(duckdb::ExternalFileCache::Get(Db()));
@@ -187,97 +161,29 @@ TEST(ObjectStoreIndexTest, prefetched_term_blocks_serve_the_lookups) {
   EXPECT_EQ(3, store.Requests().get);
 }
 
-TEST(ObjectStoreIndexTest, segments_open_in_parallel) {
+TEST(ObjectStoreIndexTest, released_segments_go_in_one_request) {
   auto& store = tests::ObjectStore();
-  const auto root = Root();
-  WriteSegments(tests::IndexDir{Db(), root}, 4);
-  store.SetLatency(std::chrono::milliseconds{20});
-  absl::Cleanup no_latency = [&] {
-    store.SetLatency(std::chrono::microseconds{0});
-  };
-
-  EXPECT_LT(1, Open(root, 4).max_in_flight);
-}
-
-TEST(ObjectStoreIndexTest, writer_opens_segments_in_parallel) {
-  constexpr size_t kSegments = 16;
-  constexpr std::chrono::milliseconds kLatency{50};
-  auto& store = tests::ObjectStore();
-  const auto root = Root();
-  WriteSegments(tests::IndexDir{Db(), root}, kSegments);
-  const tests::IndexDir restarted{Db(), root};
-  DropCachedBlocks(duckdb::ExternalFileCache::Get(Db()));
-  store.SetLatency(kLatency);
-  absl::Cleanup no_latency = [&] {
-    store.SetLatency(std::chrono::microseconds{0});
-  };
-
-  store.ResetRequests();
-  const auto began = std::chrono::steady_clock::now();
-  const auto writer = tests::MakeWriter(restarted, irs::kOmAppend,
-                                        irs::tests::DefaultWriterOptions());
-  const auto elapsed = std::chrono::steady_clock::now() - began;
-  ASSERT_NE(nullptr, writer);
-  EXPECT_EQ(kSegments, writer->GetSnapshot().live_docs_count());
-  const auto r = store.Requests();
-  EXPECT_LT(elapsed, kSegments * kLatency)
-    << "get " << r.get << " put " << r.put << " head " << r.head << " list "
-    << r.list << " remove " << r.remove << " copy " << r.copy;
-}
-
-TEST(ObjectStoreIndexTest, cleanup_removes_files_in_one_request) {
-  auto& store = tests::ObjectStore();
-  const auto root = Root();
-  WriteSegments(tests::IndexDir{Db(), root}, 4);
-  const tests::IndexDir restarted{Db(), root};
-  store.ResetRequests();
-
-  const auto writer = tests::MakeWriter(restarted, irs::kOmAppend,
-                                        irs::tests::DefaultWriterOptions());
-  ASSERT_NE(nullptr, writer);
-  EXPECT_EQ(1, store.Requests().remove);
-  EXPECT_FALSE(restarted.Has("segments_1"));
-}
-
-TEST(ObjectStoreIndexTest, replace_adopts_segments) {
-  tests::ObjectStore();
   const tests::IndexDir dir{Db(), Root()};
   tests::JsonDocGenerator gen{TestBase::resource("simple_sequential.json"),
                               &tests::GenericJsonFieldFactory};
-  auto writer =
-    tests::MakeWriter(dir, irs::kOmCreate, irs::tests::DefaultWriterOptions());
-  for (size_t i = 0; i != 2; ++i) {
-    ASSERT_TRUE(tests::Insert(*writer, *gen.next()));
-    ASSERT_TRUE(writer->RefreshCommit());
-  }
-  const auto sources = writer->GetSnapshot();
-  std::vector<const irs::SubReader*> replaced;
-  for (const auto& segment : sources) {
-    replaced.push_back(&segment);
-  }
-
-  std::vector<std::string> adopted;
+  auto writer = tests::IndexWriter::Make(dir, tests::kOmCreate,
+                                         irs::tests::DefaultWriterOptions());
   for (size_t i = 0; i != 4; ++i) {
     const auto* doc = gen.next();
     ASSERT_NE(nullptr, doc);
-    auto build = writer->GetBatch(/*exclusive_segment=*/true);
-    ASSERT_TRUE(tests::InsertFields(build.Insert(), doc->indexed.begin(),
-                                    doc->indexed.end()));
-    for (const auto& flushed : build.FlushAndFsync()) {
-      adopted.emplace_back(flushed.filename);
-    }
-    build.Abort();
+    ASSERT_TRUE(tests::Insert(*writer, *doc));
+    ASSERT_TRUE(writer->RefreshCommit());
   }
-
-  std::vector<irs::IndexWriter::Replacement> replacements;
-  for (const auto& name : adopted) {
-    replacements.push_back({.meta_file = name});
-  }
-  writer->ReplaceSegments(replaced, std::move(replacements));
+  const auto sources = dir.Files().size();
+  ASSERT_TRUE(writer->Compact(
+    irs::index_utils::MakePolicy(irs::index_utils::CompactionCount())));
   ASSERT_TRUE(writer->RefreshCommit());
-  const auto snapshot = writer->GetSnapshot();
-  EXPECT_EQ(4, snapshot.size());
-  EXPECT_EQ(4, snapshot.live_docs_count());
+  ASSERT_EQ(1, dir.Committed().size());
+  store.ResetRequests();
+
+  EXPECT_EQ(sources, dir.RemoveReleased());
+  EXPECT_EQ(1, store.Requests().remove);
+  EXPECT_EQ(4, writer->GetSnapshot().live_docs_count());
 }
 
 constexpr uint64_t kBlock = duckdb::ExternalFileCache::DEFAULT_BLOCK_SIZE;
@@ -654,7 +560,7 @@ TEST(ObjectStoreIndexTest, collected_variant_blocks_serve_gathers) {
     auto result = con.Query(
       absl::StrCat("SELECT CASE WHEN i % 7 = 0 THEN NULL ELSE "
                    "{'a': i, 'b': 'v' || (i % 1000)}::VARIANT END FROM range(",
-                   4 * kRgSize, ") t(i)"));
+                   4 * kRgSize, ") t(i) ORDER BY i"));
     ASSERT_FALSE(result->HasError()) << result->GetError();
     while (auto chunk = result->Fetch()) {
       if (chunk->size() != 0) {
@@ -726,7 +632,7 @@ TEST(ObjectStoreIndexTest, posting_heads_prefetch_every_clause) {
   tests::ObjectStore();
   const tests::IndexDir dir{Db(), Root()};
   {
-    auto writer = tests::MakeWriter(dir, irs::kOmCreate,
+    auto writer = tests::IndexWriter::Make(dir, tests::kOmCreate,
                                     irs::tests::DefaultWriterOptions());
     tests::Document doc;
     auto words =

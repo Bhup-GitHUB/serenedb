@@ -52,7 +52,7 @@ statement ok
 SET ROLE priv_member_${__DATABASE__};
 
 statement ok
-CREATE TABLE member_docs (id INT) WITH (storage = 'search') TABLESPACE priv_ts_${__DATABASE__};
+CREATE TABLE member_docs (id INT) TABLESPACE priv_ts_${__DATABASE__};
 
 query
 SELECT has_tablespace_privilege('priv_ts_${__DATABASE__}', 'CREATE') AS current_role_can;
@@ -67,13 +67,13 @@ statement ok
 SET ROLE priv_other_${__DATABASE__};
 
 statement error
-CREATE TABLE other_docs (id INT) WITH (storage = 'search') TABLESPACE priv_ts_${__DATABASE__};
+CREATE TABLE other_docs (id INT) TABLESPACE priv_ts_${__DATABASE__};
 ----
 db error: ERROR: permission denied for tablespace <slt:ignore>
 
 
 statement ok
-CREATE TABLE other_docs (id INT) WITH (storage = 'search');
+CREATE TABLE other_docs (id INT);
 
 statement ok
 RESET ROLE;
@@ -152,7 +152,7 @@ statement ok
 SET ROLE priv_member_${__DATABASE__};
 
 statement error
-CREATE TABLE member_docs_2 (id INT) WITH (storage = 'search') TABLESPACE priv_ts_${__DATABASE__};
+CREATE TABLE member_docs_2 (id INT) TABLESPACE priv_ts_${__DATABASE__};
 ----
 db error: ERROR: permission denied for tablespace <slt:ignore>
 
@@ -199,7 +199,7 @@ owner_grantable
 t
 
 statement ok
-CREATE TABLE owner_docs (id INT) WITH (storage = 'search') TABLESPACE priv_ts_${__DATABASE__};
+CREATE TABLE owner_docs (id INT) TABLESPACE priv_ts_${__DATABASE__};
 
 statement ok
 ALTER TABLESPACE priv_ts_${__DATABASE__} RENAME TO priv_renamed_${__DATABASE__};

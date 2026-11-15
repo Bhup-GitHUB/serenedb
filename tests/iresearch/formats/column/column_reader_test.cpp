@@ -275,19 +275,19 @@ TEST_F(ColumnReaderTest, CopiedBlocksReadBackBetweenAppendedRows) {
     return static_cast<int64_t>(2'000'000 + g);
   };
 
-  irs::MemoryDirectory dir{};
+  tests::IndexDir dir{Db(), TestEnv::MemoryRoot()};
   {
-    irs::ColWriter w{dir, "src", Db()};
+    irs::ColWriter w{Db(), dir.Fs(), dir.Root(), dir.Observers(), "src"};
     append(w.OpenColumn(kA, duckdb::LogicalType::BIGINT,
                         /*skip_validity=*/false, kRgSize),
            kRows, source_valid, source_value);
     w.Commit(0);
   }
-  irs::ColReader src{dir, "src", Db(), irs::IOAdvice::SEQUENTIAL};
+  irs::ColReader src = irs::tests::OpenColReader(dir, "src");
   const auto* source = src.Column(kA);
   ASSERT_NE(source, nullptr);
   {
-    irs::ColWriter w{dir, "dst", Db()};
+    irs::ColWriter w{Db(), dir.Fs(), dir.Root(), dir.Observers(), "dst"};
     auto& cw = w.OpenColumn(kA, duckdb::LogicalType::BIGINT,
                             /*skip_validity=*/false, kRgSize);
     append(cw, kBefore, always, before_value);
@@ -297,7 +297,7 @@ TEST_F(ColumnReaderTest, CopiedBlocksReadBackBetweenAppendedRows) {
     w.Commit(0);
   }
 
-  irs::ColReader dst{dir, "dst", Db(), irs::IOAdvice::SEQUENTIAL};
+  irs::ColReader dst = irs::tests::OpenColReader(dir, "dst");
   const auto* copied = dst.Column(kA);
   ASSERT_NE(copied, nullptr);
   ASSERT_EQ(copied->RowCount(), kBefore + kRows + kAfter);
@@ -330,8 +330,6 @@ class MergedSegment final : public irs::SubReader {
     _meta.docs_count = docs;
     _meta.live_docs_count = docs;
   }
-
-  uint64_t CountMappedMemory() const final { return 0; }
   const irs::SegmentInfo& Meta() const final { return _meta; }
   const irs::DocumentMask* docs_mask() const final { return nullptr; }
   irs::lead::Node::ptr docs_iterator() const final { return nullptr; }
@@ -348,9 +346,9 @@ class MergedSegment final : public irs::SubReader {
 TEST_F(ColumnReaderTest, MergeStopsCopyingBlocksOnceProgressFails) {
   constexpr uint64_t kRows = 2 * DEFAULT_ROW_GROUP_SIZE;
   constexpr irs::field_id kA = 1;
-  irs::MemoryDirectory dir{};
+  tests::IndexDir dir{Db(), TestEnv::MemoryRoot()};
   {
-    irs::ColWriter w{dir, "src", Db()};
+    irs::ColWriter w{Db(), dir.Fs(), dir.Root(), dir.Observers(), "src"};
     auto& cw = w.OpenColumn(kA, duckdb::LogicalType::BIGINT,
                             /*skip_validity=*/false, DEFAULT_ROW_GROUP_SIZE);
     for (uint64_t pos = 0; pos < kRows; pos += STANDARD_VECTOR_SIZE) {
@@ -364,7 +362,7 @@ TEST_F(ColumnReaderTest, MergeStopsCopyingBlocksOnceProgressFails) {
     }
     w.Commit(kRows);
   }
-  irs::ColReader src{dir, "src", Db(), irs::IOAdvice::SEQUENTIAL};
+  irs::ColReader src = irs::tests::OpenColReader(dir, "src");
   const auto* column = src.Column(kA);
   ASSERT_NE(column, nullptr);
   ASSERT_GE(column->DataBlocks().size(), 2);
@@ -375,12 +373,12 @@ TEST_F(ColumnReaderTest, MergeStopsCopyingBlocksOnceProgressFails) {
     irs::MergeSource{
       .reader = &segment, .col_reader = &src, .alive_count = kRows},
   };
-  irs::ColWriter probe{dir, "probe", Db()};
+  irs::ColWriter probe{Db(), dir.Fs(), dir.Root(), dir.Observers(), "probe"};
   ASSERT_TRUE(probe
                 .OpenColumn(kA, duckdb::LogicalType::BIGINT,
                             /*skip_validity=*/false, DEFAULT_ROW_GROUP_SIZE)
                 .CopyableFrom(*column));
-  irs::ColWriter out{dir, "dst", Db()};
+  irs::ColWriter out{Db(), dir.Fs(), dir.Root(), dir.Observers(), "dst"};
   uint64_t checks = 0;
   EXPECT_FALSE(
     irs::MergeInto(sources, out, nullptr, [&checks] { return ++checks == 1; }));
@@ -391,9 +389,9 @@ TEST_F(ColumnReaderTest, UncompressedOverflowStringsAreNotCopied) {
   constexpr uint64_t kRows = 5000;
   constexpr uint32_t kRgSize = 4096;
   constexpr irs::field_id kS = 5;
-  irs::MemoryDirectory dir{};
+  tests::IndexDir dir{Db(), TestEnv::MemoryRoot()};
   {
-    irs::ColWriter w{dir, "src", Db()};
+    irs::ColWriter w{Db(), dir.Fs(), dir.Root(), dir.Observers(), "src"};
     auto& cw = w.OpenColumn(kS, duckdb::LogicalType::VARCHAR,
                             /*skip_validity=*/false, kRgSize,
                             duckdb::CompressionType::COMPRESSION_UNCOMPRESSED);
@@ -412,10 +410,10 @@ TEST_F(ColumnReaderTest, UncompressedOverflowStringsAreNotCopied) {
     }
     w.Commit(0);
   }
-  irs::ColReader src{dir, "src", Db(), irs::IOAdvice::SEQUENTIAL};
+  irs::ColReader src = irs::tests::OpenColReader(dir, "src");
   const auto* source = src.Column(kS);
   ASSERT_NE(source, nullptr);
-  irs::ColWriter w{dir, "dst", Db()};
+  irs::ColWriter w{Db(), dir.Fs(), dir.Root(), dir.Observers(), "dst"};
   EXPECT_FALSE(w.OpenColumn(kS, duckdb::LogicalType::VARCHAR,
                             /*skip_validity=*/false, kRgSize)
                  .CopyableFrom(*source));
@@ -436,8 +434,8 @@ TEST_F(ColumnReaderTest, InMemoryColumnsAreNotCopied) {
   }
   const auto hot = irs::HotColumnReader::Make(Db(), std::move(staged), nullptr);
   ASSERT_GE(hot->RowCount(), kRgSize);
-  irs::MemoryDirectory dir{};
-  irs::ColWriter w{dir, "dst", Db()};
+  tests::IndexDir dir{Db(), TestEnv::MemoryRoot()};
+  irs::ColWriter w{Db(), dir.Fs(), dir.Root(), dir.Observers(), "dst"};
   EXPECT_FALSE(w.OpenColumn(kA, duckdb::LogicalType::BIGINT,
                             /*skip_validity=*/false, kRgSize)
                  .CopyableFrom(*hot));
@@ -479,9 +477,9 @@ TEST_F(ColumnReaderTest, CopiedRowsReadBackLikeTheirSource) {
                            : duckdb::Value{absl::StrCat("zstd_value_", g)};
        }},
   };
-  irs::MemoryDirectory dir{};
+  tests::IndexDir dir{Db(), TestEnv::MemoryRoot()};
   {
-    irs::ColWriter w{dir, "src", Db()};
+    irs::ColWriter w{Db(), dir.Fs(), dir.Root(), dir.Observers(), "src"};
     for (const auto& c : cases) {
       auto& cw = w.OpenColumn(c.id, c.type, /*skip_validity=*/false, kRgSize,
                               c.compression);
@@ -499,7 +497,7 @@ TEST_F(ColumnReaderTest, CopiedRowsReadBackLikeTheirSource) {
     }
     w.Commit(0);
   }
-  irs::ColReader src{dir, "src", Db(), irs::IOAdvice::SEQUENTIAL};
+  irs::ColReader src = irs::tests::OpenColReader(dir, "src");
 
   struct Run {
     uint64_t first;
@@ -518,7 +516,7 @@ TEST_F(ColumnReaderTest, CopiedRowsReadBackLikeTheirSource) {
     }
   }
   {
-    irs::ColWriter w{dir, "dst", Db()};
+    irs::ColWriter w{Db(), dir.Fs(), dir.Root(), dir.Observers(), "dst"};
     for (const auto& c : cases) {
       auto& cw = w.OpenColumn(c.id, c.type, /*skip_validity=*/false, kRgSize,
                               c.compression);
@@ -531,7 +529,7 @@ TEST_F(ColumnReaderTest, CopiedRowsReadBackLikeTheirSource) {
     }
     w.Commit(0);
   }
-  irs::ColReader dst{dir, "dst", Db(), irs::IOAdvice::SEQUENTIAL};
+  irs::ColReader dst = irs::tests::OpenColReader(dir, "dst");
 
   for (const auto& c : cases) {
     const auto* column = dst.Column(c.id);
@@ -571,9 +569,9 @@ TEST_F(ColumnReaderTest, CopiesOnlyBlocksInTheForcedCodec) {
     return g % 5 == 0 ? duckdb::Value{duckdb::LogicalType::VARCHAR}
                       : duckdb::Value{absl::StrCat("forced_value_", g % 37)};
   };
-  irs::MemoryDirectory dir{};
+  tests::IndexDir dir{Db(), TestEnv::MemoryRoot()};
   {
-    irs::ColWriter w{dir, "src", Db()};
+    irs::ColWriter w{Db(), dir.Fs(), dir.Root(), dir.Observers(), "src"};
     auto& cw = w.OpenColumn(kId, duckdb::LogicalType::VARCHAR,
                             /*skip_validity=*/false, kRgSize);
     for (uint64_t pos = 0; pos < kRows;) {
@@ -589,20 +587,20 @@ TEST_F(ColumnReaderTest, CopiesOnlyBlocksInTheForcedCodec) {
     }
     w.Commit(0);
   }
-  irs::ColReader src{dir, "src", Db(), irs::IOAdvice::SEQUENTIAL};
+  irs::ColReader src = irs::tests::OpenColReader(dir, "src");
   const auto& source = *src.Column(kId);
   ASSERT_TRUE(absl::c_none_of(source.DataBlocks(), [](const auto& block) {
     return block.codec->type == duckdb::CompressionType::COMPRESSION_ZSTD;
   }));
 
   {
-    irs::ColWriter w{dir, "probe", Db()};
+    irs::ColWriter w{Db(), dir.Fs(), dir.Root(), dir.Observers(), "probe"};
     EXPECT_TRUE(w.OpenColumn(kId, duckdb::LogicalType::VARCHAR,
                              /*skip_validity=*/false, kRgSize)
                   .CopyableFrom(source));
   }
   {
-    irs::ColWriter w{dir, "dst", Db()};
+    irs::ColWriter w{Db(), dir.Fs(), dir.Root(), dir.Observers(), "dst"};
     auto& cw = w.OpenColumn(kId, duckdb::LogicalType::VARCHAR,
                             /*skip_validity=*/false, kRgSize,
                             duckdb::CompressionType::COMPRESSION_ZSTD);
@@ -611,7 +609,7 @@ TEST_F(ColumnReaderTest, CopiesOnlyBlocksInTheForcedCodec) {
     cw.CopyRows(0, source, context, 0, kRows);
     w.Commit(0);
   }
-  irs::ColReader dst{dir, "dst", Db(), irs::IOAdvice::SEQUENTIAL};
+  irs::ColReader dst = irs::tests::OpenColReader(dir, "dst");
   const auto* column = dst.Column(kId);
   ASSERT_NE(nullptr, column);
   ASSERT_EQ(kRows, column->RowCount());
@@ -1373,10 +1371,10 @@ TEST_F(ColumnReaderTest, PatchedColumnsReadTheirPatchedValues) {
         auto set = con.Query("SET force_compression = '" + codec + "'");
         ASSERT_FALSE(set->HasError()) << set->GetError();
       }
-      irs::MemoryDirectory dir{};
+      tests::IndexDir dir{Db(), TestEnv::MemoryRoot()};
       WriteColumn(Db(), dir, kId, c.type, kRows, 4096, c.base);
       con.Query("SET force_compression = 'auto'");
-      irs::ColReader r{dir, "seg", Db(), irs::IOAdvice::SEQUENTIAL};
+      irs::ColReader r = irs::tests::OpenColReader(dir, "seg");
       const irs::NullColumnReader absent{Db(), kId, c.type, kRows};
       const auto* col = missing ? &absent : r.Column(kId);
       ASSERT_NE(col, nullptr);
@@ -3950,9 +3948,9 @@ TEST_F(ColumnReaderTest, SparseArrayNullPaddingNullsChildren) {
     return static_cast<float>(g * 10 + i);
   };
 
-  irs::MemoryDirectory dir{};
+  tests::IndexDir dir{Db(), TestEnv::MemoryRoot()};
   {
-    irs::ColWriter w{dir, "seg", Db()};
+    irs::ColWriter w{Db(), dir.Fs(), dir.Root(), dir.Observers(), "seg"};
     auto& cwArr = w.OpenColumn(kArr, atype, /*skip_validity=*/false, kRgSize);
     for (const auto& r : runs) {
       duckdb::Vector v{atype, STANDARD_VECTOR_SIZE};
@@ -3970,7 +3968,7 @@ TEST_F(ColumnReaderTest, SparseArrayNullPaddingNullsChildren) {
     w.Commit(kTotal);
   }
 
-  irs::ColReader r{dir, "seg", Db(), irs::IOAdvice::SEQUENTIAL};
+  irs::ColReader r = irs::tests::OpenColReader(dir, "seg");
   const auto* ca = r.Column(kArr);
   ASSERT_NE(ca, nullptr);
   ASSERT_EQ(ca->RowCount(), kTotal);

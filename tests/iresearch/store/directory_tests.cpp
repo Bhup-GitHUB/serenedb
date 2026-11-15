@@ -5050,7 +5050,7 @@ TEST_F(DirectoryHookTest, file_tracker_failures) {
 
   auto local = ::tests::LocalDirectory(this);
   ASSERT_NE(nullptr, local);
-  auto hooked = ::tests::OverFileSystem(*local, fs);
+  auto hooked = local->Over(fs);
 
   // test create failure
   {
@@ -5085,7 +5085,7 @@ TEST_F(DirectoryHookTest, remove_failures) {
   for (const uint64_t id : {1, 2, 3}) {
     local->Create(file_of(id))->Close();
   }
-  auto hooked = ::tests::OverFileSystem(*local, fs);
+  auto hooked = local->Over(fs);
 
   ASSERT_THROW(hooked.Remove(fs.failing), duckdb::IOException);
   ASSERT_TRUE(local->Has(fs.failing));
@@ -5124,7 +5124,7 @@ TEST_F(DirectoryHookTest, failed_close_aborts_the_write) {
 
   auto local = ::tests::LocalDirectory(this);
   ASSERT_NE(nullptr, local);
-  auto hooked = ::tests::OverFileSystem(*local, fs);
+  auto hooked = local->Over(fs);
   {
     auto out = hooked.Create("abc");
     out->Write<uint32_t>(42);
