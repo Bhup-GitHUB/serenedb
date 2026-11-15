@@ -27,6 +27,7 @@
 #include <atomic>
 #include <chrono>
 #include <duckdb/common/fault_points.hpp>
+#include <duckdb/common/serializer/memory_stream.hpp>
 #include <duckdb/common/vector/array_vector.hpp>
 #include <duckdb/common/vector/struct_vector.hpp>
 #include <duckdb/main/connection.hpp>
@@ -37,6 +38,8 @@
 #include <iresearch/formats/ivf/centroids.hpp>
 #include <iresearch/index/index_reader.hpp>
 #include <iresearch/index/index_writer.hpp>
+#include <iresearch/search/detail/bitset_build.hpp>
+#include <iresearch/search/detail/enc_buf.hpp>
 #include <iresearch/search/filters/boolean_filter.hpp>
 #include <iresearch/search/filters/phrase_filter.hpp>
 #include <iresearch/search/filters/prefix_filter.hpp>
@@ -764,6 +767,94 @@ TEST(ObjectStoreIndexTest, a_long_one_time_read_fetches_every_block_in_runs) {
   in.ReadOnce(read.data(), kSize);
   EXPECT_EQ(kSize, static_cast<uint64_t>(absl::c_count(read, 0x5A)));
   EXPECT_LE(tests::ObjectStore().Requests().get, 2 * kSize / kPieceSize);
+}
+
+struct LeafSink {
+  static constexpr bool kOrdered = true;
+
+  void Run(uint64_t prev, uint32_t len) {
+    for (uint32_t i = 1; i <= len; ++i) {
+      docs.push_back(static_cast<irs::doc_id_t>(prev + i));
+    }
+  }
+
+  void Bitset(uint64_t prev, const irs::UnalignedWord* bits, uint32_t words,
+              uint64_t) {
+    positions.push_back(in->Position());
+    for (uint32_t i = 0; i != words * 64; ++i) {
+      if ((bits[i / 64] >> (i % 64)) & 1) {
+        docs.push_back(static_cast<irs::doc_id_t>(prev + 1 + i));
+      }
+    }
+  }
+
+  void Doc(size_t doc) { docs.push_back(static_cast<irs::doc_id_t>(doc)); }
+
+  const duckdb::InputFileReader* in = nullptr;
+  std::vector<irs::doc_id_t> docs;
+  std::vector<uint64_t> positions;
+};
+
+TEST(ObjectStoreIndexTest,
+     a_bitset_leaf_reaches_its_sink_in_the_block_it_lies_in) {
+  tests::ObjectStore();
+  const tests::IndexDir dir{Db(), Root()};
+  constexpr uint32_t kLen = irs::doc_limits::kBlockSize;
+  std::vector<irs::doc_id_t> sparse(kLen);
+  std::vector<irs::doc_id_t> dense;
+  for (uint32_t i = 0; i != kLen; ++i) {
+    sparse[i] = 1 + 1000 * i;
+  }
+  for (uint32_t i = 0; i != kLen; ++i) {
+    dense.push_back((i == 0 ? sparse.back() : dense.back()) + 1 + i % 4);
+  }
+  std::vector<uint32_t> freqs(kLen);
+  for (uint32_t i = 0; i != kLen; ++i) {
+    freqs[i] = 0x40000000U | ((i * 2654435761U) >> 2);
+  }
+  uint32_t buf[irs::block_io::kEncWords];
+  duckdb::MemoryStream leaves;
+  irs::block_io::WriteTailDelta(kLen, leaves, sparse.data(),
+                                irs::doc_limits::invalid(), buf);
+  irs::block_io::WriteTail(kLen, leaves, freqs.data(), buf);
+  const auto bitset_at = leaves.GetPosition();
+  irs::block_io::WriteTailDelta(kLen, leaves, dense.data(), sparse.back(), buf);
+  const auto freqs_at = leaves.GetPosition();
+  irs::block_io::WriteTail(kLen, leaves, freqs.data(), buf);
+  const auto end = leaves.GetPosition();
+  irs::block_io::WriteSlack(leaves);
+  ASSERT_TRUE(irs::block_codec::IsTokenBitset(leaves.GetData()[bitset_at]));
+  ASSERT_GT(end - bitset_at, irs::block_io::kEncBytes);
+  const uint64_t start = kBlock - irs::block_io::kEncBytes - bitset_at;
+  {
+    auto out = dir.Create("bitset.doc");
+    const std::vector<irs::byte_type> filler(start, 0x5A);
+    out->WriteData(filler.data(), filler.size());
+    out->WriteData(leaves.GetData(), leaves.GetPosition());
+    out->Close();
+  }
+  DropCachedBlocks(duckdb::ExternalFileCache::Get(Db()));
+  const auto file = dir.Open("bitset.doc", duckdb::MappedFileAccess::NORMAL);
+  ASSERT_EQ(nullptr, file->Data());
+  irs::PostingMeta meta;
+  meta.docs_count = 2 * kLen;
+  meta.doc_start = start;
+  duckdb::InputFileReader in{*file};
+  in.Seek(start);
+  in.ReadAheadUntil(start + end);
+  irs::detail::EncBuf enc;
+  irs::detail::HoleBuf holes;
+  irs::DocsBuf docs;
+  LeafSink sink{.in = &in};
+  irs::detail::ReadPosting(meta, in, enc.data, holes.data, docs,
+                           /*has_score_bounds=*/false, /*has_freq=*/true, sink);
+
+  auto expected = sparse;
+  expected.insert(expected.end(), dense.begin(), dense.end());
+  EXPECT_EQ(expected, sink.docs);
+  ASSERT_EQ(1, sink.positions.size());
+  EXPECT_LT(sink.positions[0], kBlock);
+  EXPECT_LT(start + freqs_at, kBlock);
 }
 
 constexpr uint64_t kValues = 100000;

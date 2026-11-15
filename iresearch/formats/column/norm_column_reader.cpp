@@ -70,12 +70,24 @@ const byte_type* NormColumnReader::Map(const duckdb::InputFile& file,
 NormColumnReader::NormColumnReader(field_id id, const NormColumnMeta& meta,
                                    const duckdb::InputFile& file)
   : _file{&file}, _id{id}, _row_count{meta.row_count}, _paged{file.IsPaged()} {
+  const bool blocks = !file.IsMapped();
+  std::vector<duckdb::FileRange> ranges;
   for (const auto& m : meta.regions) {
-    if (m.bits != 0 && m.exceptions != 0) {
-      file.Prefetch(m.table_offset,
-                    (uint64_t{NormBuckets(m)} + m.overflow) * sizeof(uint32_t));
+    if (m.bits == 0) {
+      continue;
+    }
+    if (blocks) {
+      ranges.push_back({.offset = m.file_offset, .size = NormSlotsSize(m)});
+    }
+    if (m.exceptions != 0) {
+      ranges.push_back({.offset = m.table_offset,
+                        .size = blocks
+                                  ? NormTableSize(m)
+                                  : (uint64_t{NormBuckets(m)} + m.overflow) *
+                                      sizeof(uint32_t)});
     }
   }
+  file.Prefetch(ranges);
   _regions.reserve(meta.regions.size());
   _stats.reserve(meta.regions.size());
   auto first = doc_limits::min();

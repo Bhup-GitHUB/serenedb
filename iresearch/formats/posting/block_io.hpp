@@ -84,6 +84,24 @@ const byte_type* FetchStraddling(InputType& in, uint32_t* buf, Prefix&& prefix,
   return data;
 }
 
+template<typename InputType, typename Prefix>
+const byte_type* PeekHeader(InputType& in, Prefix& prefix) {
+  const auto* const token = in.Peek(1);
+  return token ? in.Peek(std::max<uint32_t>(prefix(token[0]), 3)) : nullptr;
+}
+
+template<typename InputType, typename Prefix, typename Size>
+IRS_NO_INLINE Encoded<InputType> BeginShort(InputType& in, uint32_t* buf,
+                                            Prefix prefix, Size size) {
+  if (const auto* const header = PeekHeader(in, prefix)) {
+    if (const auto* const block =
+          in.Peek(size(header) + block_codec::kInSlack)) {
+      return {block, &in};
+    }
+  }
+  return {FetchStraddling(in, buf, prefix, size), nullptr};
+}
+
 template<typename InputType, typename Prefix, typename Size>
 IRS_FORCE_INLINE Encoded<InputType> Begin(InputType& in, uint32_t* buf,
                                           Prefix&& prefix, Size&& size) {
@@ -92,9 +110,8 @@ IRS_FORCE_INLINE Encoded<InputType> Begin(InputType& in, uint32_t* buf,
   } else if (const auto* const window = in.Peek(kEncBytes)) {
     return {window, &in};
   } else {
-    return {FetchStraddling(in, buf, std::forward<Prefix>(prefix),
-                            std::forward<Size>(size)),
-            nullptr};
+    return BeginShort(in, buf, std::forward<Prefix>(prefix),
+                      std::forward<Size>(size));
   }
 }
 
@@ -120,15 +137,25 @@ IRS_FORCE_INLINE void End(Encoded<InputType> encoded,
 }
 
 template<typename InputType, typename Prefix, typename Size>
+IRS_NO_INLINE void PassShort(InputType& in, Prefix prefix, Size size) {
+  if (const auto* const header = PeekHeader(in, prefix)) {
+    if (const auto total = size(header); in.Peek(total)) {
+      in.Consume(total);
+      return;
+    }
+  }
+  uint32_t buf[kEncWords];
+  FetchStraddling(in, buf, prefix, size);
+}
+
+template<typename InputType, typename Prefix, typename Size>
 IRS_FORCE_INLINE void Pass(InputType& in, Prefix&& prefix, Size&& size) {
   if constexpr (InputType::CONTIGUOUS) {
     in.Consume(size(in.Current()));
   } else if (const auto* const window = in.Peek(kEncBytes)) {
     in.Consume(size(window));
   } else {
-    uint32_t buf[kEncWords];
-    FetchStraddling(in, buf, std::forward<Prefix>(prefix),
-                    std::forward<Size>(size));
+    PassShort(in, std::forward<Prefix>(prefix), std::forward<Size>(size));
   }
 }
 

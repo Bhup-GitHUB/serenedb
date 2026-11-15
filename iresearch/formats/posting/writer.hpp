@@ -209,7 +209,7 @@ class PostingsWriter final {
       SDB_ASSERT(_pay_out);
       _term_pay->Finish(*_pay_out);
     }
-    const auto count = _docs.count();
+    const auto count = _docs.count(_docs_first_word, _docs_end_word);
     SDB_ASSERT(count < doc_limits::eof());
     return {.has_score_bounds = _valid_writer != nullptr,
             .docs_count = static_cast<doc_id_t>(count)};
@@ -283,10 +283,22 @@ class PostingsWriter final {
     }
   }
 
+  void MarkDocs(doc_id_t first, doc_id_t last) noexcept {
+    _docs_first_word = std::min(_docs_first_word, bitset::word(first));
+    _docs_end_word = std::max(_docs_end_word, bitset::word(last) + 1);
+  }
+
+  void ForgetDocs() noexcept {
+    _docs_first_word = std::numeric_limits<size_t>::max();
+    _docs_end_word = 0;
+  }
+
   BlockIndexWriter _index;
   duckdb::MemoryStream _tail;
   PostingMeta _last_state;  // Last final term state
   bitset _docs;             // Set of all processed documents
+  size_t _docs_first_word = std::numeric_limits<size_t>::max();
+  size_t _docs_end_word = 0;
   FileObservers _observers;
   std::unique_ptr<duckdb::BufferedFileWriter> _doc_out;  // Postings (doc+freq)
   std::unique_ptr<duckdb::BufferedFileWriter> _pos_out;  // Positions
@@ -383,6 +395,7 @@ inline void PostingsWriter::Prepare(const FlushState& state) {
 
   // Prepare documents bitset
   _docs.reset(doc_limits::min() + state.doc_count);
+  ForgetDocs();
 }
 
 inline void PostingsWriter::Encode(duckdb::WriteStream& out,
@@ -475,6 +488,7 @@ inline void PostingsWriter::EndTerm(PostingMeta& meta) {
 
   if (1 == meta.docs_count) {
     meta.doc_delta = _doc.docs[0] - doc_limits::min();
+    MarkDocs(_doc.docs[0], _doc.docs[0]);
   } else if (!has_index) {
     UpdateBounds();
     _tail.Rewind();
@@ -546,6 +560,7 @@ inline void PostingsWriter::EndTerm(PostingMeta& meta) {
 inline void PostingsWriter::WriteDocBlock(duckdb::WriteStream& out) {
   const auto size = _doc.size;
   SDB_ASSERT(size != 0);
+  MarkDocs(_doc.docs[0], _doc.docs[size - 1]);
   block_io::WriteTailDelta(size, out, _doc.docs, _doc.block_last, _enc_buf);
   if (_features.HasFrequency()) {
     uint32_t freqs[doc_limits::kBlockSize];
@@ -606,7 +621,8 @@ inline void PostingsWriter::WritePayBlock() {
 inline void PostingsWriter::BeginField(const FieldProperties& meta) {
   _features.Reset(meta.index_features);
   PrepareWriters(meta);
-  _docs.clear();
+  _docs.clear(_docs_first_word, _docs_end_word);
+  ForgetDocs();
   _last_state.clear();
 
   // It's needed because offsets block should be aligned with positions block.

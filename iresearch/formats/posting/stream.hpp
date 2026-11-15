@@ -63,7 +63,7 @@ class PostingsStream : public TermPostings {
       _max_in_leaf = doc;
     } else {
       if (meta.inline_size != 0) {
-        _inline_in = InputType{meta.Inline()};
+        _inline_in = InputType{InlineInput(meta)};
         _doc_in = &_inline_in;
       } else {
         if (!_file_in) {

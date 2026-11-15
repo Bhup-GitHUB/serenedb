@@ -240,12 +240,7 @@ void ReadPosting(const PostingMeta& meta, Input& in, uint32_t* IRS_RESTRICT enc,
         return block_io::FillView(in, at, len, holes, docs, prev,
                                   has_freq && len == doc_limits::kBlockSize);
       } else {
-        const auto read =
-          block_io::ReadTailForFill(len, in, enc, holes, docs, prev);
-        if (has_freq && len == doc_limits::kBlockSize) {
-          block_io::SkipBlock(in);
-        }
-        return read;
+        return block_io::ReadTailForFill(len, in, enc, holes, docs, prev);
       }
     }();
     if (leaf.IsRun()) {
@@ -261,6 +256,11 @@ void ReadPosting(const PostingMeta& meta, Input& in, uint32_t* IRS_RESTRICT enc,
       } else {
         VisitDocs<N>(len,
                      [&](uint32_t i) IRS_FORCE_INLINE { sink.Doc(data[i]); });
+      }
+    }
+    if constexpr (!Input::CONTIGUOUS) {
+      if (has_freq && len == doc_limits::kBlockSize) {
+        block_io::SkipBlock(in);
       }
     }
     return leaf.max;

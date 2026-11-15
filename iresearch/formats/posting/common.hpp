@@ -112,6 +112,10 @@ void SkipScoreBounds(bool has_score_bounds, Input& in) {
   }
 }
 
+inline bytes_view InlineInput(const PostingMeta& meta) noexcept {
+  return {meta.inline_data, meta.inline_size + block_codec::kInSlack};
+}
+
 inline uint64_t DocExtent(const PostingMeta& meta) noexcept {
   if (meta.inline_size != 0 || meta.docs_count <= 1) {
     return 0;
