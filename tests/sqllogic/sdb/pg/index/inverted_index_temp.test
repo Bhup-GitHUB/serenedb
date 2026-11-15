@@ -229,6 +229,24 @@ CREATE TEMPORARY VIEW temp_view AS SELECT id, body FROM temp_docs;
 statement ok
 CREATE INDEX temp_view_idx ON temp_view USING inverted(body temp_en);
 
+
+query
+SELECT (SELECT count(*) FROM temp_view_idx WHERE body @@ ts_phrase('pudge')) =
+       (SELECT count(*) FROM temp_idx WHERE body @@ ts_phrase('pudge')) AS same,
+       (SELECT count(*) FROM temp_view_idx WHERE body @@ ts_phrase('pudge')) > 0 AS found;
+----
+same	found
+t	t
+
+
+statement ok
+DROP INDEX temp_view_idx;
+
+
+statement ok
+DROP VIEW temp_view;
+
+
 statement ok
 DROP INDEX temp_tag_idx;
 

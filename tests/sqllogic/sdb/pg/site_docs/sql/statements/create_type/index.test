@@ -65,4 +65,4 @@ FROM sdb_types()
 WHERE type_name = 'session_mood';
 ----
 database_name	schema_name
-temp	main
+temp	pg_temp

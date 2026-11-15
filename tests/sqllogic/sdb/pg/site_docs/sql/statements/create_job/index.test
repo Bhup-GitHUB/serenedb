@@ -314,7 +314,7 @@ query
 SELECT database_name, schema_name, job_name FROM sdb_jobs() WHERE database_name = 'temp';
 ----
 database_name	schema_name	job_name
-temp	main	doc_scratch_job
+temp	pg_temp	doc_scratch_job
 
 # DOCS_TEST_END
 

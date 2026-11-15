@@ -27,14 +27,14 @@ query
 SELECT database_name, schema_name, suspended, sql FROM sdb_jobs() WHERE job_name = 'jtmp_every';
 ----
 database_name	schema_name	suspended	sql
-temp	main	t	CREATE TEMPORARY JOB jtmp_every EVERY INTERVAL '00:00:01' SUSPENDED AS INSERT INTO jtmp_scratch (VALUES (1));
+temp	pg_temp	t	CREATE TEMPORARY JOB pg_temp.jtmp_every EVERY INTERVAL '00:00:01' SUSPENDED AS INSERT INTO jtmp_scratch (VALUES (1));
 
 
 query
 SELECT DISTINCT database_name, schema_name, trigger, success FROM sdb_job_runs() WHERE job_name = 'jtmp_every';
 ----
 database_name	schema_name	trigger	success
-temp	main	schedule	t
+temp	pg_temp	schedule	t
 
 
 connection other
