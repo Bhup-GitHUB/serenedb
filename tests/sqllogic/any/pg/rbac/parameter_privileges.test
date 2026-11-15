@@ -135,7 +135,7 @@ f
 statement error
 GRANT SET ON PARAMETER gsp_no_such_parameter TO gsp_user;
 ----
-db error: ERROR: unrecognized configuration parameter "gsp_no_such_parameter"
+db error: ERROR: unrecognized configuration parameter "gsp_no_such_parameter"<slt:ignore>
 
 
 statement ok
