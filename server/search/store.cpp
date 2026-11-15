@@ -677,7 +677,9 @@ std::vector<uint8_t> Store::SnapshotRecord(const TableState& state) const {
     auto& rows = delta.rows.emplace_back(LoggedRows{.first = unit->first});
     std::vector<const irs::ColumnReader*> readers;
     duckdb::vector<duckdb::LogicalType> types;
+    std::optional<irs::ReadContext> ctx;
     if (const auto* columns = unit->reader->GetColReader()) {
+      ctx.emplace(*columns);
       for (const auto* column : columns->Columns()) {
         if (stored.contains(column->Id())) {
           readers.push_back(column);
@@ -686,11 +688,10 @@ std::vector<uint8_t> Store::SnapshotRecord(const TableState& state) const {
         }
       }
     }
-    irs::ReadContext ctx{irs::DuckDBEngine::Instance().instance()};
     std::vector<irs::ColumnReader::ScanState> scans;
     scans.reserve(readers.size());
     for (const auto* reader : readers) {
-      scans.push_back(reader->InitScan(ctx));
+      scans.push_back(reader->InitScan(*ctx));
     }
     duckdb::DataChunk chunk;
     chunk.Initialize(duckdb::Allocator::DefaultAllocator(), types);
