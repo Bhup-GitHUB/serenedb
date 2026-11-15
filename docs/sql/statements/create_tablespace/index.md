@@ -49,7 +49,7 @@ A location is kept in normal form, with backslashes read as slashes, repeated an
 ERROR:  tablespace location "/mnt/nvme/serenedb" is already used by tablespace "fast"
 ```
 
-The directory is created when it does not exist, on an object store as an empty object for each missing level of the path, named after it with a trailing slash, so `CREATE TABLESPACE` fails when the store cannot be reached or the credentials do not allow reading, listing and writing it. A location with an `engine_v1` directory in its path, such as one inside the files of another tablespace or of the data directory, is refused:
+The directory is created when it does not exist, on an object store as an empty object named after the location with a trailing slash. The server reads and writes nothing above the location, so a secret whose scope is the location is enough; `CREATE TABLESPACE` fails when the store cannot be reached or the credentials do not allow reading, listing and writing the location. A location with an `engine_v1` directory in its path, such as one inside the files of another tablespace or of the data directory, is refused:
 
 ```text
 ERROR:  tablespace location "/mnt/nvme/serenedb/engine_v1/inside" is inside the files of a tablespace
