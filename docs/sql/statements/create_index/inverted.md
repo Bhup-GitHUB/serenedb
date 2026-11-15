@@ -64,7 +64,7 @@ These options apply to an index over a view. Where a setting of the same name ex
 
 ## Tablespace
 
-`TABLESPACE name`, after the `WITH (...)` options and before `WHERE`, puts the index's files in a [tablespace](../create_tablespace/index.md): another local directory or an object store. Without it, the index goes to the tablespace `default_tablespace` names, else to its database's. An index on a search table lives with the table, so it takes no `TABLESPACE` other than its database's.
+`TABLESPACE name`, after the `WITH (...)` options and before `WHERE`, puts the files of an index on a view in a [tablespace](../create_tablespace/index.md): another local directory or an object store. Without it, the index goes to the tablespace `default_tablespace` names, else to its database's. An index on a table is stored with the table, so it takes no `TABLESPACE` clause.
 
 ## Partial indexes
 

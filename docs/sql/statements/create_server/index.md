@@ -155,7 +155,7 @@ SELECT id FROM archive.public.docs WHERE body @@ 'invoice';
 
 A copy of the data directory is complete when it holds `engine_v1/wal` and, in `engine_v1/store`, the directories of the database's tables and of the inverted indexes on its views, named by their `pg_class.oid` on the other server. To copy the directory of a running server, run [`pg_backup_start`](../../../operations/backup.md) first, copy `engine_v1/wal` before `engine_v1/store`, and run `pg_backup_stop` once the copy is done.
 
-Search tables and inverted indexes are read from the database directory only. A database is refused when one of its search tables or inverted indexes is placed in a [tablespace](../create_tablespace/index.md) other than the database's own, or when it was created in a tablespace on an object store and has a search table or an inverted index, whose files stay there. A database created in a tablespace on a local disk has its directory at `engine_v1/<database oid>` under the tablespace's location, with no catalog log beside it: attach a copy of that directory with the server's `engine_v1/catalog.wal` copied beside it.
+Tables and inverted indexes are read from the data directory only. A database is refused when one of its tables or inverted indexes is placed in a [tablespace](../create_tablespace/index.md) other than the database's own. A database created in a tablespace keeps the directories of its tables and indexes in `<system identifier>/engine_v1/store` at the tablespace's location: copy them into the `engine_v1/store` of the copy to attach it.
 
 ### What a read-only database does
 

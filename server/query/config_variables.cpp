@@ -1566,8 +1566,8 @@ constexpr std::pair<std::string_view, VariableDescription>
       kDefaultTablespaceSetting,
       {
         LogicalTypeId::VARCHAR,
-        "The tablespace search tables and search indexes are created in when "
-        "CREATE names none. Default: '' (the database's own tablespace).",
+        "The tablespace tables and inverted indexes on views are created in "
+        "when CREATE names none. Default: '' (the database's own tablespace).",
         [] { return duckdb::Value{""}; },
         SetDefaultTablespace,
       },

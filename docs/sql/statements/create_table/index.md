@@ -108,7 +108,7 @@ It is not possible to create tables using CTAS statements with constraints (prim
 
 ## Tablespace
 
-`TABLESPACE name` puts the files of a table in a [tablespace](../create_tablespace/index.md): after `WITH (...)` and `ON COMMIT`, or before `AS` in a CTAS. Without it, a table goes to the tablespace `default_tablespace` names, else to its database's.
+`TABLESPACE name` puts the files of a table and of its indexes in a [tablespace](../create_tablespace/index.md): after `WITH (...)` and `ON COMMIT`, or before `AS` in a CTAS. Without it, a table goes to the tablespace `default_tablespace` names, else to its database's.
 
 ## Table Options
 

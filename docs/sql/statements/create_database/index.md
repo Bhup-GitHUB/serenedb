@@ -45,7 +45,7 @@ The options are stored with the database and become the defaults of the tables c
 
 ## Tablespace
 
-`[WITH] TABLESPACE [=] name` creates the database in a [tablespace](../create_tablespace/index.md): its file and write-ahead log live there when the tablespace is a local directory, and its search tables and indexes go there unless they name another tablespace. In a tablespace on an object store, the database file stays in the data directory and its search tables and indexes go to the tablespace. Without `TABLESPACE`, a database is created in `pg_default`, the data directory. `pg_database.dattablespace` shows the tablespace of a database, and a tablespace holding a database cannot be dropped.
+`[WITH] TABLESPACE [=] name` creates the database in a [tablespace](../create_tablespace/index.md): its tables and its inverted indexes on views go there unless they name another tablespace. Without `TABLESPACE`, a database is created in `pg_default`, the data directory. `pg_database.dattablespace` shows the tablespace of a database, and a tablespace holding a database cannot be dropped.
 
 A database created inside a transaction is visible to other sessions only once that transaction commits. Until then, creating a database of the same name from another session fails.
 

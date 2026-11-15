@@ -5,7 +5,7 @@ split: headings
 
 import SqlLogicTest from "@site/src/components/SqlLogicTest";
 
-A tablespace is a named location for files: a local directory, a prefix in an S3 bucket or an S3-compatible store, or a prefix in an Azure Blob Storage container. Search tables, inverted indexes and whole databases can be placed in a tablespace, so that their files live on a faster disk, a larger one, or an object store.
+A tablespace is a named location for files: a local directory, a prefix in an S3 bucket or an S3-compatible store, or a prefix in an Azure Blob Storage container. Tables, inverted indexes on views and whole databases can be placed in a tablespace, so that their files live on a faster disk, a larger one, or an object store.
 
 ## Examples
 
@@ -13,15 +13,15 @@ Create a tablespace on a local disk:
 
 <SqlLogicTest id="sql/statements/create_tablespace/index/example_001" />
 
-Put a search table in it:
+Put a table in it:
 
 <SqlLogicTest id="sql/statements/create_tablespace/index/example_002" />
 
-Put an inverted index in it:
+Put an inverted index on a view in it:
 
 <SqlLogicTest id="sql/statements/create_tablespace/index/example_003" />
 
-Put every search table and index a session creates in it, unless `CREATE` names another tablespace:
+Put every table and every inverted index on a view that a session creates in it, unless `CREATE` names another tablespace:
 
 <SqlLogicTest id="sql/statements/create_tablespace/index/example_004" />
 
@@ -91,7 +91,7 @@ The built-in tablespaces are always there:
 
 <SqlLogicTest id="sql/statements/create_tablespace/index/example_006" />
 
-`pg_tablespace_size(name)` or `pg_tablespace_size(oid)` returns the bytes of a tablespace's files, which psql's `\db+` shows: for `pg_default` the databases' files in the data directory, for `pg_global` the catalog the cluster shares. On an object store each call costs a listing of the tablespace's directory.
+`pg_tablespace_size(name)` or `pg_tablespace_size(oid)` returns the bytes of a tablespace's files, which psql's `\db+` shows: for `pg_default` the files of the tables and indexes in the data directory, for `pg_global` the catalog that all databases share. On an object store each call costs a listing of the tablespace's directory.
 
 ## Placing objects
 
@@ -99,20 +99,26 @@ The built-in tablespaces are always there:
 
 | Statement | Placed in the tablespace |
 | --------- | ------------------------ |
-| `CREATE TABLE ... WITH (storage = 'search') TABLESPACE name` | the files of the search table |
-| `CREATE TABLE ... TABLESPACE name AS query` | the same, for a search table created from a query |
-| `CREATE INDEX ... USING inverted (...) [WITH (...)] TABLESPACE name` | the files of the inverted index |
-| `CREATE DATABASE name [WITH] TABLESPACE [=] name` | the database's file and write-ahead log, and by default its search tables and indexes |
+| `CREATE TABLE ... TABLESPACE name` | the files of the table and of its indexes |
+| `CREATE TABLE ... TABLESPACE name AS query` | the same, for a table created from a query |
+| `CREATE INDEX ... ON view USING inverted (...) [WITH (...)] TABLESPACE name` | the files of an inverted index on a view |
+| `CREATE DATABASE name [WITH] TABLESPACE [=] name` | by default, the tables of the database and its inverted indexes on views |
 
 An object created without `TABLESPACE` goes to the tablespace that the `default_tablespace` setting names, and when that is empty, to the tablespace of its database. `default_tablespace` takes the name of an existing tablespace; a tablespace dropped while a session names it is skipped.
 
-Tables without `storage = 'search'` and indexes other than inverted indexes live in the database file, and an inverted index on a search table lives with the table, so `TABLESPACE` with any tablespace other than the database's is refused for them, and `default_tablespace` does not apply to them:
+An index on a table is stored with the table, so it takes no `TABLESPACE` clause, and `default_tablespace` does not apply to it:
 
 ```text
-ERROR:  only a table created WITH (storage = 'search') can be placed in a tablespace
+ERROR:  an index on a table is stored with the table and cannot be placed in a tablespace
 ```
 
-A table or an index in a database other than a SereneDB database, such as `memory` or an attached DuckDB file, takes no `TABLESPACE` clause:
+A temporary table and its indexes are kept in memory: they take no `TABLESPACE` clause, and `default_tablespace` does not apply to them:
+
+```text
+ERROR:  temporary objects cannot be placed in a tablespace
+```
+
+A table or an index in a database other than a SereneDB database, such as an attached DuckDB file, takes no `TABLESPACE` clause:
 
 ```text
 ERROR:  TABLESPACE is not supported for tables in a duckdb catalog
@@ -122,9 +128,7 @@ Create a database in a tablespace:
 
 <SqlLogicTest id="sql/statements/create_tablespace/index/example_007" />
 
-A database created in a tablespace on an object store keeps its database file and write-ahead log in the data directory, and its search tables and indexes in the tablespace.
-
-`pg_class.reltablespace` is the tablespace of a search table or an inverted index, `0` for the tablespace of its database, and an inverted index on a search table, stored with the table, shows the table's; `pg_database.dattablespace` is the tablespace of a database. An object stays in its tablespace for its whole life: moving it to another tablespace is not supported.
+`pg_class.reltablespace` is the tablespace of a table or an inverted index, `0` for the tablespace of its database, and an index on a table shows the table's; `pg_database.dattablespace` is the tablespace of a database. An object stays in its tablespace for its whole life: moving it to another tablespace is not supported.
 
 ## Privileges
 
@@ -151,16 +155,11 @@ Renaming a tablespace or changing its owner needs ownership of it. The objects i
 DROP TABLESPACE [ IF EXISTS ] name
 ```
 
-Only the owner of a tablespace, or a superuser, can drop it, and only when it is empty: no database was created in it and no search table or inverted index is placed in it. While a database that the server left unattached at startup with `--missing_database=skip` exists, no tablespace can be dropped:
-
-```text
-ERROR:  tablespace "fast" cannot be dropped while database "lost" is not attached
-HINT:  Restore the files of the database and restart the server, or drop the database.
-```
+Only the owner of a tablespace, or a superuser, can drop it, and only when it is empty: no database was created in it and no table or inverted index is placed in it.
 
 Dropping a tablespace removes no files: each object that was in it removed its own files when it was dropped, once the transactions that began before that drop ended. Empty directories stay at the location, on an object store as the empty objects that stand for them, and a new tablespace can use the location at once. `DROP TABLESPACE` cannot run inside a transaction block.
 
-When one transaction places an object in a tablespace while another drops the tablespace, the one that commits second fails, as with any object that another depends on. A drop fails with `tablespace "name" is not empty` when the placement committed before the drop looked, and with `Could not commit DROP of "name" because a dependency was created after the transaction started` when it commits later; a placement that commits after the drop fails with `Could not commit creation of dependency, subject "name" has been deleted`; the files of an object that fails this way are removed.
+When one transaction places an object in a tablespace while another drops the tablespace, the one that commits second fails, as with any object that another depends on. A drop fails with `tablespace "name" is not empty` when the placement committed before the drop began, and with `Could not commit DROP of "name" because a dependency was created after the transaction started` when it commits later; a placement that commits after the drop fails with `Could not commit creation of dependency, subject "name" has been deleted`; the files of an object that fails this way are removed.
 
 <SqlLogicTest id="sql/statements/create_tablespace/index/example_010" />
 

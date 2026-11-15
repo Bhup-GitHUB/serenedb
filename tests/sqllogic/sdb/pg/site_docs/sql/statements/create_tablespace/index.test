@@ -32,13 +32,26 @@ TABLESPACE doc_fast;
 
 # DOCS_TEST: example_003
 
+statement count 2
+COPY (SELECT 1 AS id, 'quick brown fox' AS body UNION ALL SELECT 2, 'lazy dog')
+TO '${__TEST_DIR__}/doc_notes.parquet' (FORMAT PARQUET);
+
+# DOCS_TEST_RAW
+#| CREATE VIEW doc_notes AS
+#| SELECT * FROM read_parquet('s3://bucket/notes/*.parquet');
+#|
+#| CREATE INDEX doc_notes_body ON doc_notes USING inverted (id, body)
+#| TABLESPACE doc_fast;
+
 # DOCS_TEST_BODY
 
 statement ok
-CREATE TABLE doc_notes (id INTEGER, body TEXT);
+CREATE VIEW doc_notes AS
+SELECT * FROM read_parquet('${__TEST_DIR__}/doc_notes.parquet');
 
 statement ok
-CREATE INDEX doc_notes_body ON doc_notes USING inverted (body) TABLESPACE doc_fast;
+CREATE INDEX doc_notes_body ON doc_notes USING inverted (id, body)
+TABLESPACE doc_fast;
 
 # DOCS_TEST: example_004
 
@@ -176,7 +189,7 @@ DROP TABLESPACE doc_nvme;
 # DOCS_TEST_BODY
 
 statement ok
-DROP TABLE doc_notes;
+DROP VIEW doc_notes;
 
 statement ok
 DROP ROLE doc_ts_writer;

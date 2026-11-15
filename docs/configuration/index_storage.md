@@ -5,7 +5,7 @@ split: headings
 
 import SqlLogicTest from "@site/src/components/SqlLogicTest";
 
-The files of inverted indexes and search tables live in the [tablespace](../sql/statements/create_tablespace/index.md) they are created in: the data directory by default, another local disk, or an object store.
+The files of tables and inverted indexes live in the [tablespace](../sql/statements/create_tablespace/index.md) they are created in: the data directory by default, another local disk, or an object store.
 
 ## Choosing the location
 
@@ -18,7 +18,7 @@ A tablespace's location is a local directory or an object store URL:
 | `s3://bucket/prefix` | an S3 bucket, or a bucket of an S3-compatible store, under that prefix |
 | `az://container/prefix` | an Azure Blob Storage container, under that prefix |
 
-A search table or an inverted index goes to the tablespace its `CREATE` names, else to the one `default_tablespace` names, else to the tablespace of its database; a database created with `CREATE DATABASE ... TABLESPACE` keeps its search tables and indexes there by default. See [CREATE TABLESPACE](../sql/statements/create_tablespace/index.md) for how to create a tablespace and place objects in it.
+A table or an inverted index on a view goes to the tablespace its `CREATE` names, else to the one `default_tablespace` names, else to the tablespace of its database; a database created with `CREATE DATABASE ... TABLESPACE` keeps its tables and indexes there by default. An index on a table is stored with the table. See [CREATE TABLESPACE](../sql/statements/create_tablespace/index.md) for how to create a tablespace and place objects in it.
 
 Local storage is the fastest: index files are read in place. On an object store, every read that misses the cache is a request to the store.
 
