@@ -2,8 +2,8 @@
 
 Path-style URLs under one storage account, containers that exist on first use, block blobs
 staged and committed by block lists with the metadata the commit sets, Data Lake files created,
-appended in order and flushed, Data Lake directories created, listed, renamed into and deleted with
-what is below them, ranged reads with conditions, blob listings, same-account copies, single and
+appended in order and flushed, Data Lake directories created, listed and deleted with
+what is below them, ranged reads with conditions, blob listings, single and
 batched deletes. Requests are not authenticated, except that while
 `sas_signatures` is set, a request whose SAS signature is not one of them is refused with 403
 AuthenticationFailed, as an expired SAS is. It counts requests by kind. `trickle` sends the bodies
@@ -288,19 +288,6 @@ class _Handler(Handler):
             paths.append(entry)
         self._reply(200, json.dumps({"paths": paths}).encode(), {"Content-Type": "application/json"})
 
-    def _rename(self, container: str, name: str, source: str) -> None:
-        self.fake.count("RENAME")
-        src_container, src_name = split_path(urllib.parse.urlsplit(source).path, ACCOUNT)
-        with self.fake.lock:
-            blob = self.fake.blobs.pop((src_container, src_name), None)
-            if blob is not None:
-                self.fake.blobs[(container, name)] = blob
-                self.fake.add_parents(container, name)
-        if blob is None:
-            self._error(404, "SourcePathNotFound")
-            return
-        self._reply(201, headers={"ETag": blob.etag, "Last-Modified": http_date(blob.modified)})
-
     def do_PUT(self) -> None:
         container, name, query = self._target()
         self._held({"block": "PUT_BLOCK", "blocklist": "PUT_BLOCK_LIST"}.get(
@@ -308,10 +295,6 @@ class _Handler(Handler):
         if self._forbidden():
             return
         body = self._body()
-        source = self.headers.get("x-ms-rename-source")
-        if source:
-            self._rename(container, name, source)
-            return
         if query.get("resource", [""])[0] == "directory":
             self.fake.count("CREATE_DIRECTORY")
             directory = name.rstrip("/")
@@ -375,20 +358,6 @@ class _Handler(Handler):
                 return
             self._reply(201, headers={"ETag": blob.etag, "Last-Modified": http_date(blob.modified),
                                       "x-ms-request-server-encrypted": "true"})
-            return
-        source = self.headers.get("x-ms-copy-source")
-        if source:
-            self.fake.count("COPY")
-            src_container, src_name = split_path(urllib.parse.urlsplit(source).path, ACCOUNT)
-            original = self._find(src_container, src_name)
-            if original is None:
-                self._error(404, "CannotVerifyCopySource")
-                return
-            blob = _Blob(original.data, original.blocks)
-            with self.fake.lock:
-                self.fake.blobs[(container, name)] = blob
-            self._reply(202, headers={"ETag": blob.etag, "Last-Modified": http_date(blob.modified),
-                                      "x-ms-copy-id": str(uuid.uuid4()), "x-ms-copy-status": "success"})
             return
         self._error(400, "InvalidQueryParameterValue")
 
