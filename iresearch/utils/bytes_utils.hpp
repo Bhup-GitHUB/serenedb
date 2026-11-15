@@ -37,7 +37,21 @@ struct bytes_io;
 
 template<typename T>
 struct bytes_io<T, sizeof(uint32_t)> {
+  static constexpr T kMaxVSize = 5;
   static constexpr T kMask = 0x80;
+
+  template<typename InputIterator>
+  static void vskip(InputIterator& in) {
+    static_assert(
+      std::is_same_v<typename std::iterator_traits<InputIterator>::value_type,
+                     byte_type>);
+    T v = *in;
+    ++in;
+    for (T i = 1; i != kMaxVSize && (v & kMask) != 0; ++i) {
+      v = *in;
+      ++in;
+    }
+  }
 
   template<typename InputIterator>
   static T vread(InputIterator& in) {
@@ -99,7 +113,21 @@ struct bytes_io<T, sizeof(uint32_t)> {
 
 template<typename T>
 struct bytes_io<T, sizeof(uint64_t)> {
+  static constexpr T kMaxVSize = 10;
   static constexpr T kMask = 0x80;
+
+  template<typename InputIterator>
+  static void vskip(InputIterator& in) {
+    static_assert(
+      std::is_same_v<typename std::iterator_traits<InputIterator>::value_type,
+                     byte_type>);
+    T v = *in;
+    ++in;
+    for (T i = 1; i != kMaxVSize && (v & kMask) != 0; ++i) {
+      v = *in;
+      ++in;
+    }
+  }
 
   template<typename InputIterator>
   static T vread(InputIterator& in) {
@@ -199,6 +227,12 @@ struct bytes_io<T, sizeof(uint64_t)> {
   }
 };
 
+/// @brief will increment 'in' to position after the end of the next value
+template<typename T, typename Iterator>
+inline void vskip(Iterator& in) {
+  bytes_io<T, sizeof(T)>::vskip(in);
+}
+
 /// @brief read a variable-size encoded value of type T from 'in'
 ///        will increment 'in' to position after the end of the read value
 ///        variable-size encoding allows using less bytes for small values
@@ -225,6 +259,24 @@ IRS_FORCE_INLINE std::optional<T> ReadVarint(const byte_type*& in,
     }
   }
   return std::nullopt;
+}
+
+template<typename N, std::invocable<byte_type> Assign>
+IRS_FORCE_INLINE void WriteVarint(N n, Assign&& assign) {
+  static_assert(std::is_unsigned_v<N>);
+  static_assert(sizeof(N) >= 4,
+                "Otherwise probably better to use fixed size format");
+  static constexpr N kMax = 0x80;
+  while (n >= kMax) [[unlikely]] {
+    assign(static_cast<byte_type>(n | kMax));
+    n >>= 7;
+  }
+  assign(static_cast<byte_type>(n));
+}
+
+template<typename N, std::output_iterator<byte_type> Out>
+IRS_FORCE_INLINE void WriteVarint(N n, Out& out) {
+  WriteVarint(n, [&](byte_type b) { *out++ = b; });
 }
 
 template<typename N, std::output_iterator<byte_type> Out>

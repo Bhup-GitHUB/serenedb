@@ -317,10 +317,11 @@ TEST_P(DirectoryTestCase, string_read_write) {
   using namespace irs;
 
   auto u32crc = [](absl::crc32c_t& crc, uint32_t v) {
-    irs::byte_type tmp[duckdb::EncodingUtil::MaxLEB128Size<uint32_t>()];
+    irs::bstring tmp;
+    auto it = std::back_inserter(tmp);
+    irs::WriteVarint<uint32_t>(v, it);
     crc = absl::ExtendCrc32c(
-      crc, {reinterpret_cast<const char*>(tmp),
-            duckdb::EncodingUtil::EncodeUnsignedLEB128(tmp, v)});
+      crc, {reinterpret_cast<const char*>(tmp.c_str()), tmp.size()});
   };
 
   auto strcrc = [u32crc](absl::crc32c_t& crc, const auto& str) {

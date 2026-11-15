@@ -22,7 +22,6 @@
 
 #include <algorithm>
 #include <array>
-#include <duckdb/common/serializer/encoding_util.hpp>
 #include <limits>
 #include <memory>
 #include <span>
@@ -42,6 +41,7 @@
 #include "iresearch/search/scorers/scorer.hpp"
 #include "iresearch/utils/attribute_provider.hpp"
 #include "iresearch/utils/bit_utils.hpp"
+#include "iresearch/utils/bytes_utils.hpp"
 #include "iresearch/utils/shared.hpp"
 #include "iresearch/utils/type_limits.hpp"
 
@@ -160,7 +160,7 @@ class PrunedLeafBase {
         in.Consume(size);
       } else {
         byte_type bound[std::numeric_limits<byte_type>::max() +
-                        duckdb::EncodingUtil::MaxLEB128Size<uint32_t>()];
+                        bytes_io<uint32_t>::kMaxVSize];
         in.ReadData(bound, size);
         _bound_source->Read({bound, size});
       }

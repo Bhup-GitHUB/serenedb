@@ -22,8 +22,6 @@
 
 #include <simdutf.h>
 
-#include <duckdb/common/serializer/encoding_util.hpp>
-
 #include "iresearch/analysis/keyword_tokenizer.hpp"
 #include "iresearch/analysis/text/classify/block_masks.hpp"
 #include "iresearch/analysis/token_sinks.hpp"
@@ -60,8 +58,7 @@ void AppendEncodedTerm(bstring& terms, duckdb::string_t term) {
   terms.resize_and_overwrite(
     idx + vlen + 1 + size + 1, [&](byte_type* p, size_t n) {
       auto* data = p + idx;
-      data += duckdb::EncodingUtil::EncodeUnsignedLEB128(
-        data, static_cast<uint32_t>(size));
+      WriteVarint<uint32_t>(static_cast<uint32_t>(size), data);
       *data++ = kBoundary;
       std::memcpy(data, term.GetData(), size);
       data[size] = kBoundary;

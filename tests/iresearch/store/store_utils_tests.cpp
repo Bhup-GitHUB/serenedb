@@ -62,18 +62,28 @@ void ReadWriteCoreNan(
 template<typename T>
 void VencodeFromArray(T expected_value, size_t expected_length) {
   ASSERT_EQ(expected_length, irs::bytes_io<T>::vsize(expected_value));
-  irs::byte_type buf[duckdb::EncodingUtil::MaxLEB128Size<T>()]{};
+  irs::byte_type buf[irs::bytes_io<T>::kMaxVSize]{};
 
   // write data
   {
-    ASSERT_EQ(expected_length,
-              duckdb::EncodingUtil::EncodeUnsignedLEB128(buf, expected_value));
+    auto* ptr = buf;
+    irs::WriteVarint<T>(expected_value, ptr);
+    ASSERT_EQ(expected_length, std::distance(buf, ptr));
   }
 
   // read data
   {
     const auto* ptr = buf;
     ASSERT_EQ(expected_value, irs::vread<T>(ptr));
+    ASSERT_EQ(expected_length,
+              std::distance((const irs::byte_type*)(buf), ptr));
+  }
+
+  // skip data
+  {
+    const auto* ptr = buf;
+    irs::vskip<T>(ptr);
+    ASSERT_GE(ptr, buf);
     ASSERT_EQ(expected_length,
               std::distance((const irs::byte_type*)(buf), ptr));
   }

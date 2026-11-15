@@ -25,7 +25,7 @@
 
 #include <algorithm>
 #include <cstring>
-#include <duckdb/common/serializer/encoding_util.hpp>
+#include <iterator>
 #include <limits>
 #include <span>
 #include <vector>
@@ -45,13 +45,6 @@ constexpr uint64_t kFsstMinMeanSuffix = 2;
 constexpr uint64_t kFsstMaxMeanSuffix = 16;
 constexpr uint64_t kFsstMinRatioPct = 115;
 constexpr byte_type kZeros[kPage]{};
-
-template<typename N>
-void AppendVarint(std::string& out, N n) {
-  byte_type bytes[duckdb::EncodingUtil::MaxLEB128Size<N>()];
-  const auto size = duckdb::EncodingUtil::EncodeUnsignedLEB128(bytes, n);
-  out.append(reinterpret_cast<const char*>(bytes), size);
-}
 
 uint64_t VSize(uint64_t value) noexcept {
   return bytes_io<uint64_t, sizeof(uint64_t)>::vsize(value);
@@ -638,13 +631,15 @@ void FieldWriter::Cut() {
       first.substr(0, CommonPrefixLength(bytes_view{_last}, first) + 1);
     const auto shared = CommonPrefixLength(bytes_view{_separator}, separator);
     const auto suffix = separator.substr(shared);
-    AppendVarint(_separators, static_cast<uint32_t>(shared));
-    AppendVarint(_separators, static_cast<uint32_t>(suffix.size()));
+    auto out = std::back_inserter(_separators);
+    WriteVarint(static_cast<uint32_t>(shared), out);
+    WriteVarint(static_cast<uint32_t>(suffix.size()), out);
     _separators.append(ViewCast<char>(suffix));
     _separator.assign(separator);
   }
   WriteBlock();
-  AppendVarint(_inline_starts, _inline_start - _inline_last);
+  auto starts = std::back_inserter(_inline_starts);
+  WriteVarint(_inline_start - _inline_last, starts);
   _inline_last = _inline_start;
   _inline_start = _inline.size();
   _last.assign(KeyAt(_block, _block.ends.size() - 1));
@@ -712,9 +707,10 @@ void FieldWriter::EndField(field_id id, const FieldProperties& props,
     head.inline_base = first_inline;
     head.inline_size = _inline.size() - first_inline;
   } else if (text && _width == 0) {
+    auto out = std::back_inserter(head.text.prefixes);
     uint32_t last = 0;
     for (const auto prefix : _prefixes) {
-      AppendVarint(head.text.prefixes, prefix - last);
+      WriteVarint(prefix - last, out);
       last = prefix;
     }
   }
