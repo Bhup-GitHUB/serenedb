@@ -69,7 +69,7 @@ saved
 connection after_restart
 query
 SELECT count(*) > 0 AS stored_on_s3
-FROM glob('s3://${MINIO_BUCKET}/recovery${__TEST_DIR__}/ts/*/engine_v1/*/*/*');
+FROM glob('s3://${MINIO_BUCKET}/recovery${__TEST_DIR__}/ts/*/engine_v1/store/*.*');
 ----
 stored_on_s3
 t

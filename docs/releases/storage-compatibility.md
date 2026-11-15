@@ -26,10 +26,10 @@ The log holds every committed transaction of the server: the changes to the cata
 
 A server keeps its log and its tables under `engine_v1` in its data directory:
 
-- `engine_v1/wal/`: the log, in files of 16 MiB named by their position in the log, the next one prepared ahead; and `snapshot`, which holds the catalog and the state of every table as of the oldest log file kept.
-- `engine_v1/store/<oid>/`: one directory for each table and each inverted index on a view, of every database, named by the object's `pg_class.oid`, with that object's index files.
+- `engine_v1/wal/`: the log, in files of 16 MiB named by their position in the log, the next one prepared ahead; the snapshot, which holds the catalog and the state of every table as of the oldest log file kept, in a file named `<number>.snapshot`; and `current_snapshot`, a record of the snapshot's number. Each snapshot is written once, as a new file under the next number, and `current_snapshot` moves to it once it is complete, so no file is ever renamed; the previous snapshot is removed after that.
+- `engine_v1/store/`: the index files of every table and every inverted index on a view, of every database, side by side. Each file is named `<segment>.<kind>`: a segment number, 16 hexadecimal digits that the server never gives twice, and the kind of data the file holds. The log records which segments each table and index uses; `sdb_metrics` counts the files of each of them in `num_files`.
 
-A [tablespace](../sql/statements/create_tablespace/index.md) keeps the directories of the tables and indexes placed in it at its location, in `<location>/<system identifier>/engine_v1/store/<oid>/`, named by the system identifier in the data directory's `global/pg_control`. On an object store, each of these directories is also an empty object named after it with a trailing slash, such as `<oid>/`, which the store's console shows as a folder.
+A [tablespace](../sql/statements/create_tablespace/index.md) keeps the index files of the tables and indexes placed in it at its location, in `<location>/<system identifier>/engine_v1/store/`, named by the system identifier in the data directory's `global/pg_control`. On an object store, each directory down to `store` is also an empty object named after it with a trailing slash, such as `store/`, which the store's console shows as a folder.
 
 Beside `engine_v1`, the root of the data directory holds:
 
@@ -40,8 +40,8 @@ Beside `engine_v1`, the root of the data directory holds:
 
 `engine_v1` holds everything a server needs when it starts again except the authentication rules and the tables and indexes placed in tablespaces, so a copy of the data directory needs `pg_hba.conf` and the directory of every tablespace as well. `tmp/` and `extensions/` hold nothing a server needs when it starts again. Another server reads a database of the data directory with [`serenedb_fdw`](../sql/statements/create_server/index.md#read-only-serenedb-databases).
 
-Dropping a table or an index, or the database that holds it, removes its files and its directory once no query uses them any more, in the tablespace that holds it. If the server stops before that or in the middle of it, or crashes while an object is being created, it removes what is left of the directory when it starts again.
+Dropping a table or an index, or the database that holds it, removes its files once no query uses them any more, in the tablespace that holds it. If the server stops before that or in the middle of it, or crashes while an object is being created, it removes the segment files that no table or index uses when it starts again; a file whose name is not a segment's is left as it is.
 
-A server started on a data directory without `PG_VERSION` creates a new instance there; `PG_VERSION` appears once the catalog log holds the instance's first commit, so a first start that stops before that starts over the next time. A data directory with `PG_VERSION` but no catalog log in `engine_v1/wal` is refused instead of starting empty. A server also refuses to start when the directory of a table or an index is missing; its log names the directory and the object.
+A server started on a data directory without `PG_VERSION` creates a new instance there; `PG_VERSION` appears once the catalog log holds the instance's first commit, so a first start that stops before that starts over the next time. A data directory with `PG_VERSION` but no catalog log in `engine_v1/wal` is refused instead of starting empty. A server also refuses to start when the `store` directory of a tablespace that holds a table or an index is missing, or when a file of a table or an index is; its log names the directory or the file and the object.
 
 For the meaning of version numbers and release lines, see [Versioning](./versioning.md).

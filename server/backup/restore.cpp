@@ -89,14 +89,11 @@ void Restore(const catalog::DataDirectory& layout,
                       ", the copy's is ", control->system_identifier));
   }
   const auto& cut = label->cut;
-  for (const auto& store : cut.stores) {
-    RequireDirectory(fs, layout.StorageDir(store.oid));
-  }
+  RequireDirectory(fs, layout.StoreDir());
 
   const auto log = layout.LogDir();
   if (const auto link = fs.JoinPath(data_dir, cut.log_link);
       fs.DirectoryExists(link)) {
-    catalog::Log::Cut(fs, link, cut.log_size);
     fs.CreateDirectoryExtended(
       log, {.mode = duckdb::CreateDirectoryMode::RECURSIVE});
     catalog::Log::Move(fs, link, log);
@@ -115,9 +112,7 @@ void Restore(const catalog::DataDirectory& layout,
                             .checkpoint = label->start_lsn});
   SDB_IF_FAILURE("crash_in_restore_after_control") { SDB_IMMEDIATE_ABORT(); }
 
-  for (const auto& store : cut.stores) {
-    fs.SyncDirectory(layout.StorageDir(store.oid));
-  }
+  fs.SyncDirectory(layout.StoreDir());
   fs.SyncDirectory(layout.engine);
   SDB_IF_FAILURE("crash_in_restore_before_retire") { SDB_IMMEDIATE_ABORT(); }
   fs.MoveFile(label_path, fs.JoinPath(data_dir, kRetiredLabelFile));

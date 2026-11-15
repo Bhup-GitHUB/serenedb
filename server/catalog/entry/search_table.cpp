@@ -353,7 +353,7 @@ SearchTableEntry::SearchTableEntry(
     _storage = std::make_shared<search::Store>(
       serene.Directory(), serene.StoragePath(transaction, *this, _tablespace),
       catalog.InMemory(), catalog.GetAttached().IsReadOnly(), catalog.GetOid(),
-      oid, base.oid == 0, _options, GetColumns());
+      oid, _options, GetColumns());
     _storage->MergeIndexConfig(oid, PrimaryKeyConfig(*this));
   }
   auto [specs, referencing] = search::ResolveTableKeys(*this, transaction);

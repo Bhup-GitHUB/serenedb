@@ -34,7 +34,6 @@
 #include <duckdb/main/database_manager.hpp>
 #include <duckdb/parallel/task_executor.hpp>
 #include <duckdb/parallel/task_scheduler.hpp>
-#include <iresearch/store/storage.hpp>
 #include <iresearch/utils/containers/flat_hash_map.hpp>
 #include <iresearch/utils/duckdb_engine.hpp>
 #include <iresearch/utils/log.hpp>
@@ -91,8 +90,7 @@ std::vector<std::shared_ptr<Store>> DurableStores() {
 
 bool RecoverSearchStorages(
   duckdb::ClientContext& context,
-  std::span<const duckdb::shared_ptr<duckdb::AttachedDatabase>> attached,
-  bool orphans) {
+  std::span<const duckdb::shared_ptr<duckdb::AttachedDatabase>> attached) {
   const auto begin = std::chrono::steady_clock::now();
   std::vector<std::shared_ptr<Store>> tables;
   for (const auto& db : attached) {
@@ -106,12 +104,6 @@ bool RecoverSearchStorages(
       });
   }
   auto& db = irs::DuckDBEngine::Instance().instance();
-  if (orphans) {
-    irs::ForEach(
-      db,
-      absl::c_any_of(tables, [](const auto& table) { return table->Remote(); }),
-      tables.size(), [&](size_t i) { tables[i]->ReserveListedIds(); });
-  }
   auto& scheduler = duckdb::TaskScheduler::GetScheduler(db);
   context.RunFunctionInTransaction([&] {
     duckdb::TaskExecutor replays{scheduler};
@@ -128,12 +120,11 @@ bool RecoverSearchStorages(
   std::atomic_bool cleaned{true};
   for (auto& table : tables) {
     executor.ScheduleTask(duckdb::make_uniq<FinishReplayTask>(
-      executor, [&replayed_tables, &cleaned, orphans, table] {
+      executor, [&replayed_tables, &cleaned, table] {
         if (table->FinishReplay()) {
           replayed_tables.fetch_add(1, std::memory_order_relaxed);
         }
-        if (const auto status = table->CleanupUnsafe(orphans).res;
-            !status.ok()) {
+        if (const auto status = table->CleanupUnsafe().res; !status.ok()) {
           cleaned.store(false, std::memory_order_relaxed);
           SDB_WARN(SEARCH, "cleanup of table '", table->GetId(),
                    "' after log replay failed: ", status.message());

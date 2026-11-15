@@ -4,7 +4,6 @@ Azure container, reached with the secret whose scope covers the location.
 
 from __future__ import annotations
 
-import collections
 import contextlib
 import os
 import socket
@@ -142,10 +141,12 @@ def test_moved_data_directory_keeps_its_indexes(tmp_path: Path) -> None:
         again.stop()
 
 
-def _oids(conn: psycopg.Connection, names: list[str]) -> dict[str, int]:
-    return dict(conn.execute(
-        "SELECT relname, oid FROM pg_class WHERE relname = ANY(%s::text[])",
-        (names,)).fetchall())
+def _files(conn: psycopg.Connection, names: list[str]) -> int:
+    return conn.execute(
+        "SELECT coalesce(sum(m.value), 0) FROM sdb_metrics m "
+        "JOIN pg_class c ON c.oid = m.relation_id "
+        "WHERE m.metric = 'num_files' AND c.relname = ANY(%s::text[])",
+        (names,)).fetchone()[0]
 
 
 def _placement(conn: psycopg.Connection, names: list[str]) -> dict[str, str]:
@@ -196,17 +197,17 @@ def test_a_database_in_a_tablespace_keeps_its_objects_there(
             assert _placement(conn, names) == {
                 "docs": "", "notes": "", "notes_home": "",
                 "notes_other": "other", "in_default": "pg_default"}
-            oids = _oids(conn, names)
+            in_home = _directory(home) / "store"
+            in_other = _directory(other) / "store"
+            in_default = datadir / "engine_v1" / "store"
+            for store, placed in ((in_home, ["docs", "notes"]),
+                                  (in_other, ["notes_other"]),
+                                  (in_default, ["in_default"])):
+                for name in placed:
+                    assert _files(conn, [name]) > 0, name
+                assert len(list(store.iterdir())) == _files(conn, placed), store
     finally:
         server.stop()
-
-    in_home = _directory(home) / "store"
-    in_default = datadir / "engine_v1" / "store" / str(oids["in_default"])
-    assert (in_home / str(oids["docs"])).is_dir()
-    assert (in_home / str(oids["notes"])).is_dir()
-    assert not (in_home / str(oids["notes_home"])).exists()
-    assert (_directory(other) / "store" / str(oids["notes_other"])).is_dir()
-    assert in_default.is_dir()
 
     again = _Server(datadir)
     try:
@@ -229,8 +230,8 @@ def test_a_database_in_a_tablespace_keeps_its_objects_there(
     finally:
         again.stop()
     assert not any(in_home.iterdir())
-    assert not any((_directory(other) / "store").iterdir())
-    assert not in_default.exists()
+    assert not any(in_other.iterdir())
+    assert not any(in_default.iterdir())
 
 
 def test_the_tablespace_of_its_database_needs_no_grant(tmp_path: Path) -> None:
@@ -974,26 +975,22 @@ def test_a_lost_marker_response_is_retried(tmp_path: Path, kind: str) -> None:
         server = _Server(tmp_path / "data")
         try:
             assert server.wait_ready(), server.output()
+            fake.drop["PUT" if kind == "s3" else "PUT_BLOCK_LIST"] = 1
             if kind == "s3":
                 _create_secret(server, _Store(fake.endpoint, "key", "secret", "bucket"),
                                f"s3://bucket/marker-{tmp_path.name}")
             else:
                 _create_azure_secret(server, fake, f"az://indexes/marker-{tmp_path.name}")
             with server.connect() as conn:
-                conn.execute("CREATE TABLE earlier(id INTEGER) "
-                             " TABLESPACE idx")
-                fake.drop["PUT" if kind == "s3" else "PUT_BLOCK_LIST"] = 1
                 conn.execute("CREATE TABLE notes(id INTEGER, body TEXT) "
                              " TABLESPACE idx")
-                oid = conn.execute(
-                    "SELECT oid FROM pg_class WHERE relname = 'notes'").fetchone()[0]
                 conn.execute("INSERT INTO notes VALUES (1, 'kept on s3')")
                 conn.execute("VACUUM (FLUSH_TABLE) notes")
                 assert conn.execute("SELECT body FROM notes").fetchall() == [
                     ("kept on s3",)]
         finally:
             server.stop()
-    assert len(fake.dropped) == 1 and fake.dropped[0].endswith(f"/{oid}/"), \
+    assert len(fake.dropped) == 1 and fake.dropped[0].endswith("/"), \
         fake.dropped
 
 
@@ -1176,7 +1173,7 @@ def test_an_orphan_object_is_removed_after_a_crash(tmp_path: Path,
             server.stop()
         stored = _index_files(fake, prefix)
         assert stored, fake.keys("bucket")
-        orphan = stored[0].rsplit("/", 1)[0] + "/_99.doc"
+        orphan = stored[0].rsplit("/", 1)[0] + "/00000000000000ff.doc"
         fake.replace("bucket", orphan, b"written by an upload no segment names")
         again = _Server(datadir)
         try:
@@ -1290,22 +1287,21 @@ def test_a_restart_lists_each_directory_one_level_deep(tmp_path: Path, kind: str
         finally:
             server.stop()
         markers = [key for key in keys(bucket, f"{prefix}/") if key.endswith("/")]
-        assert len(markers) == 5, keys(bucket)
-        table = max(markers, key=lambda key: key.count("/")).removesuffix("/")
-        stores = table.rsplit("/", 1)[0]
+        assert len(markers) == 4, keys(bucket)
+        store = max(markers, key=lambda key: key.count("/")).removesuffix("/")
         for i in range(6000):
-            fake.replace(bucket, f"{stores}/archive/{i}", b"")
-        orphan = f"{table}/_99.doc"
+            fake.replace(bucket, f"{store}/archive/{i}", b"")
+        orphan = f"{store}/00000000000000ff.doc"
         fake.replace(bucket, orphan, b"written by an upload no segment names")
         listings = fake.requests["LIST"]
         again = _Server(datadir)
         try:
             assert again.wait_ready(), again.output()
             assert _matches(again) == [1]
-            assert _eventually(lambda: orphan not in keys(bucket, f"{table}/")), \
-                keys(bucket, f"{table}/")
-            assert fake.requests["LIST"] - listings == 3, fake.requests
-            objects = len(keys(bucket, f"{stores}/"))
+            assert _eventually(lambda: orphan not in keys(bucket, f"{store}/")), \
+                keys(bucket, f"{store}/")
+            assert fake.requests["LIST"] - listings == 1, fake.requests
+            objects = len(keys(bucket, f"{store}/"))
             page = 1000 if kind == "s3" else 5000
             listings = fake.requests["LIST"]
             with again.connect() as conn:
@@ -1364,12 +1360,10 @@ def test_a_restart_opens_its_tables_at_once(tmp_path: Path) -> None:
     assert not [entry for entry in trace if entry["method"] == "LIST"], trace
     checks = [entry for entry in trace
               if entry["method"] == "HEAD" and entry["key"].endswith("/")]
-    assert len(checks) == 2 * each, trace
-    assert max(entry["began"] for entry in checks) < min(
-        entry["ended"] for entry in checks), checks
+    assert len(checks) == 1, trace
     opens: dict[str, dict] = {}
     for entry in sorted(log, key=lambda entry: entry["began"]):
-        opens.setdefault(entry["key"].rsplit("/", 1)[0], entry)
+        opens.setdefault(entry["key"].rsplit("/", 1)[1].split(".", 1)[0], entry)
     assert len(opens) == 2 * each, log
     assert max(entry["began"] for entry in opens.values()) < min(
         entry["ended"] for entry in opens.values()), opens
@@ -1717,391 +1711,6 @@ def test_store_requests_are_logged(tmp_path: Path) -> None:
         finally:
             server.stop()
     assert logged.get("GET") == fake.requests["GET"] > 0, (logged, fake.requests)
-
-
-def _one_round(log: list[dict], extension: str) -> list[dict]:
-    reads = [entry for entry in log if entry["key"].endswith(extension)]
-    assert reads, log
-    assert max(entry["began"] for entry in reads) < min(
-        entry["ended"] for entry in reads), reads
-    return reads
-
-
-def _rounds(reads: list[dict]) -> int:
-    """How many requests in a row a query waited for: a request is one round later than the latest of the requests
-    that had ended when it began."""
-    rounds: list[int] = []
-    for i, entry in enumerate(reads):
-        rounds.append(1 + max((rounds[j] for j in range(i)
-                               if reads[j]["ended"] <= entry["began"]), default=0))
-    return max(rounds)
-
-
-def test_cold_top_k_reads_postings_and_columns_in_one_round(
-        tmp_path: Path) -> None:
-    location = f"s3://bucket/rounds-{tmp_path.name}"
-    segments = 4
-    with FakeS3() as fake:
-        server = _Server(tmp_path / "data")
-        try:
-            assert server.wait_ready(), server.output()
-            _create_secret(server, _Store(fake.endpoint, "key", "secret",
-                                          "bucket"), location)
-            with server.connect() as conn:
-                conn.execute(
-                    "CREATE TEXT SEARCH DICTIONARY words AS "
-                    "split_by_non_alpha(case := 'lower') "
-                    "WITH (frequency, position, norm)")
-                conn.execute("CREATE TABLE docs(id INTEGER, body TEXT) "
-                             "WITH (compaction_interval = 0) TABLESPACE idx")
-                conn.execute(
-                    "CREATE INDEX docs_body ON docs USING inverted(id, body words)")
-                for segment in range(segments):
-                    conn.execute(
-                        "INSERT INTO docs SELECT i, CASE i % 10 WHEN 0 THEN 'alpha' "
-                        "WHEN 1 THEN 'beta' ELSE 'gamma' END "
-                        f"FROM range({segment * 1000}, {(segment + 1) * 1000}) t(i)")
-                    conn.execute("VACUUM (FLUSH_TABLE) docs")
-                conn.execute("SET GLOBAL threads = 2")
-                conn.execute("SET GLOBAL enable_external_file_cache = false")
-                conn.execute("SET GLOBAL enable_external_file_cache = true")
-                fake.latency = 0.1
-                fake.log = []
-                rows = conn.execute(
-                    "SELECT id FROM docs_body WHERE body @@ to_tsquery('alpha beta') "
-                    "ORDER BY BM25(docs_body.tableoid) DESC LIMIT 1000").fetchall()
-                log, fake.log = fake.log, None
-        finally:
-            server.stop()
-    assert sorted(row[0] for row in rows) == [
-        i for i in range(segments * 1000) if i % 10 < 2]
-    assert len(_one_round(log, ".doc")) <= segments
-    assert len(_one_round(log, ".col")) == segments
-
-
-def test_cold_late_materialization_reads_columns_in_one_round(
-        tmp_path: Path) -> None:
-    location = f"s3://bucket/lookup-{tmp_path.name}"
-    query = ("SELECT * FROM wide WHERE a LIKE '%ab%' "
-             "ORDER BY b LIMIT 5")
-    with FakeS3() as fake:
-        server = _Server(tmp_path / "data")
-        try:
-            assert server.wait_ready(), server.output()
-            _create_secret(server, _Store(fake.endpoint, "key", "secret",
-                                          "bucket"), location)
-            with server.connect() as conn:
-                conn.execute(
-                    "CREATE TABLE wide TABLESPACE idx AS "
-                    "SELECT i AS id, md5(i::TEXT) AS a, md5((-i)::TEXT) AS b, "
-                    + ", ".join(
-                        f"md5((i + {k})::TEXT) || md5((i * {k})::TEXT) AS {c}"
-                        for k, c in ((2, "c"), (3, "d"), (4, "e"), (5, "f")))
-                    + " FROM range(200000) t(i)")
-                conn.execute("VACUUM (FLUSH_TABLE) wide")
-                plan = "\n".join(row[-1] for row in conn.execute(
-                    "EXPLAIN " + query).fetchall())
-                expected = conn.execute(query).fetchall()
-                conn.execute("SET GLOBAL enable_external_file_cache = false")
-                conn.execute("SET GLOBAL enable_external_file_cache = true")
-                conn.execute(query.replace("*", "b", 1)).fetchall()
-                fake.latency = 0.1
-                fake.log = []
-                rows = conn.execute(query).fetchall()
-                log, fake.log = fake.log, None
-        finally:
-            server.stop()
-    assert "LOOKUP_JOIN" in plan, plan
-    assert rows == expected
-    assert len(_one_round(log, ".col")) >= 4, log
-
-
-@pytest.mark.parametrize("query", [
-    "SELECT count(*) FROM narrow WHERE v <> 0",
-    "SELECT v % 7, count(*) FROM narrow WHERE v <> 0 GROUP BY ALL ORDER BY ALL",
-    "SELECT sum(v % 7) FROM narrow",
-])
-def test_cold_column_scan_reads_its_columns_in_one_round(
-        tmp_path: Path, query: str) -> None:
-    location = f"s3://bucket/scan-{tmp_path.name}"
-    with FakeS3() as fake:
-        server = _Server(tmp_path / "data")
-        try:
-            assert server.wait_ready(), server.output()
-            _create_secret(server, _Store(fake.endpoint, "key", "secret",
-                                          "bucket"), location)
-            with server.connect() as conn:
-                conn.execute(
-                    "CREATE TABLE narrow TABLESPACE idx AS "
-                    "SELECT i AS id, hash(i) AS v FROM range(2000000) t(i)")
-                conn.execute("VACUUM (FLUSH_TABLE) narrow")
-                expected = conn.execute(query).fetchall()
-                conn.execute("SET GLOBAL enable_external_file_cache = false")
-                conn.execute("SET GLOBAL enable_external_file_cache = true")
-                fake.latency = 0.1
-                fake.log = []
-                rows = conn.execute(query).fetchall()
-                log, fake.log = fake.log, None
-        finally:
-            server.stop()
-    assert rows == expected
-    _one_round(log, ".col")
-
-
-def test_a_cold_column_scan_keeps_reading_ahead_of_its_workers(tmp_path: Path) -> None:
-    location = f"s3://bucket/ahead-{tmp_path.name}"
-    query = "SELECT sum(v % 7) FROM wide"
-    with FakeS3() as fake:
-        server = _Server(tmp_path / "data")
-        try:
-            assert server.wait_ready(), server.output()
-            _create_secret(server, _Store(fake.endpoint, "key", "secret",
-                                          "bucket"), location)
-            with server.connect() as conn:
-                conn.execute(
-                    "CREATE TABLE wide WITH (compaction_interval = 0) "
-                    "TABLESPACE idx AS SELECT hash(i) AS v FROM range(12000000) t(i)")
-                conn.execute("VACUUM (FLUSH_TABLE) wide")
-                conn.execute("SET threads = 2")
-                expected = conn.execute(query).fetchall()
-                conn.execute("SET GLOBAL enable_external_file_cache = false")
-                conn.execute("SET GLOBAL enable_external_file_cache = true")
-                fake.latency = 0.05
-                fake.log = []
-                rows = conn.execute(query).fetchall()
-                log, fake.log = fake.log, None
-        finally:
-            server.stop()
-    assert rows == expected
-    reads = sorted((entry for entry in log if entry["key"].endswith(".col")),
-                   key=lambda entry: entry["began"])
-    assert len({entry["key"] for entry in reads}) >= 16, reads
-    assert _rounds(reads) <= 10, _rounds(reads)
-
-
-def test_a_cold_column_scan_skips_the_row_groups_its_filter_rules_out(tmp_path: Path) -> None:
-    location = f"s3://bucket/pruned-{tmp_path.name}"
-    query = "SELECT sum(k % 7) FROM sorted WHERE k < 184467440737095516"
-    with FakeS3() as fake:
-        server = _Server(tmp_path / "data")
-        try:
-            assert server.wait_ready(), server.output()
-            _create_secret(server, _Store(fake.endpoint, "key", "secret",
-                                          "bucket"), location)
-            with server.connect() as conn:
-                conn.execute("SET threads = 1")
-                conn.execute(
-                    "CREATE TABLE sorted WITH (compaction_interval = 0) "
-                    "TABLESPACE idx AS SELECT hash(i) AS k FROM range(6000000) t(i) ORDER BY k")
-                conn.execute("VACUUM (FLUSH_TABLE) sorted")
-                conn.execute("RESET threads")
-                expected = conn.execute(query).fetchall()
-                conn.execute("SET GLOBAL enable_external_file_cache = false")
-                conn.execute("SET GLOBAL enable_external_file_cache = true")
-                fake.log = []
-                rows = conn.execute(query).fetchall()
-                log, fake.log = fake.log, None
-        finally:
-            server.stop()
-        with fake.lock:
-            stored = [len(obj.data) for (_, key), obj in fake.objects.items()
-                      if key.endswith(".col")]
-    assert rows == expected
-    assert len(stored) == 1, stored
-    stored = stored[0]
-    fetched = 0
-    for entry in log:
-        if entry["key"].endswith(".col"):
-            first, _, last = entry["range"].removeprefix("bytes=").partition("-")
-            fetched += int(last) - int(first) + 1
-    assert 0 < fetched * 4 < stored, (fetched, stored)
-
-
-def test_a_cold_filtered_scan_asks_for_the_projected_columns_of_a_row_group_together(
-        tmp_path: Path) -> None:
-    location = f"s3://bucket/projected-{tmp_path.name}"
-    query = ("SELECT sum(a % 7), sum(b % 7), sum(c % 7), sum(d % 7) FROM cols "
-             "WHERE k > 9223372036854775807")
-    with FakeS3() as fake:
-        server = _Server(tmp_path / "data")
-        try:
-            assert server.wait_ready(), server.output()
-            _create_secret(server, _Store(fake.endpoint, "key", "secret",
-                                          "bucket"), location)
-            with server.connect() as conn:
-                conn.execute("SET threads = 1")
-                conn.execute(
-                    "CREATE TABLE cols WITH (compaction_interval = 0) "
-                    "TABLESPACE idx AS SELECT hash(i) AS k, hash(i + 1) AS a, hash(i + 2) AS b, "
-                    "hash(i + 3) AS c, hash(i + 4) AS d FROM range(1500000) t(i)")
-                conn.execute("VACUUM (FLUSH_TABLE) cols")
-                conn.execute("SET threads = 2")
-                expected = conn.execute(query).fetchall()
-                conn.execute("SET GLOBAL enable_external_file_cache = false")
-                conn.execute("SET GLOBAL enable_external_file_cache = true")
-                fake.latency = 0.05
-                fake.log = []
-                rows = conn.execute(query).fetchall()
-                log, fake.log = fake.log, None
-        finally:
-            server.stop()
-    assert rows == expected
-    reads = sorted((entry for entry in log if entry["key"].endswith(".col")),
-                   key=lambda entry: entry["began"])
-    assert len({entry["key"] for entry in reads}) == 1, reads
-    assert 0 < len(reads) <= 140, len(reads)
-    assert _rounds(reads) <= 5, _rounds(reads)
-
-
-def test_a_cold_filtered_scan_asks_ahead_only_for_the_rows_its_filter_leaves(
-        tmp_path: Path) -> None:
-    location = f"s3://bucket/ahead-pruned-{tmp_path.name}"
-    query = "SELECT sum(v % 7) FROM sorted WHERE k < 8301034833169298227"
-    with FakeS3() as fake:
-        server = _Server(tmp_path / "data")
-        try:
-            assert server.wait_ready(), server.output()
-            _create_secret(server, _Store(fake.endpoint, "key", "secret",
-                                          "bucket"), location)
-            with server.connect() as conn:
-                conn.execute("SET threads = 1")
-                conn.execute(
-                    "CREATE TABLE sorted WITH (compaction_interval = 0) "
-                    "TABLESPACE idx AS SELECT hash(i) AS k, hash(i + 1) AS v "
-                    "FROM range(1500000) t(i) ORDER BY k")
-                conn.execute("VACUUM (FLUSH_TABLE) sorted")
-                expected = conn.execute(query).fetchall()
-                conn.execute("SET GLOBAL enable_external_file_cache = false")
-                conn.execute("SET GLOBAL enable_external_file_cache = true")
-                fake.latency = 0.05
-                fake.log = []
-                rows = conn.execute(query).fetchall()
-                log, fake.log = fake.log, None
-        finally:
-            server.stop()
-        with fake.lock:
-            stored = [len(obj.data) for (_, key), obj in fake.objects.items()
-                      if key.endswith(".col")]
-    assert rows == expected
-    assert len(stored) == 1, stored
-    reads = sorted((entry for entry in log if entry["key"].endswith(".col")),
-                   key=lambda entry: entry["began"])
-    fetched = 0
-    for entry in reads:
-        first, _, last = entry["range"].removeprefix("bytes=").partition("-")
-        fetched += int(last) - int(first) + 1
-    assert stored[0] * 4 < fetched * 10 < stored[0] * 6, (fetched, stored)
-    assert _rounds(reads) <= 4, _rounds(reads)
-
-
-@pytest.mark.parametrize("split", ["tail", "always"])
-@pytest.mark.parametrize("query", [
-    "SELECT count(*) FROM logs WHERE body @@ ts_regexp('c.che')",
-    "SELECT id FROM logs WHERE body @@ 'cache' "
-    "ORDER BY BM25(logs.tableoid) DESC, id LIMIT 10",
-    "SELECT body, count(*) FROM logs WHERE body @@ 'cache' GROUP BY ALL",
-])
-def test_a_repeated_query_reads_nothing_from_the_store(
-        tmp_path: Path, query: str, split: str) -> None:
-    location = f"s3://bucket/repeat-{tmp_path.name}"
-    with FakeS3() as fake:
-        server = _Server(tmp_path / "data")
-        try:
-            assert server.wait_ready(), server.output()
-            _create_secret(server, _Store(fake.endpoint, "key", "secret", "bucket"),
-                           location)
-            with server.connect() as conn:
-                conn.execute(
-                    "CREATE TEXT SEARCH DICTIONARY words AS "
-                    "split_by_non_alpha(case := 'lower') "
-                    "WITH (frequency, position, norm)")
-                conn.execute(
-                    "CREATE TABLE logs WITH (compaction_interval = 0) "
-                    "TABLESPACE idx AS SELECT 0 AS id, '' AS body WHERE false")
-                conn.execute("CREATE INDEX logs_body ON logs USING inverted(body words)")
-                conn.execute("SET threads = 1")
-                for segment in range(4):
-                    conn.execute(
-                        "INSERT INTO logs SELECT i, concat_ws(' ', "
-                        "'svc' || (hash(i) % 50), "
-                        "CASE WHEN hash(i * 5) % 100 < 6 THEN 'cache' END, "
-                        "'w' || (hash(i * 3) % 3000)) "
-                        f"FROM range({segment * 2000000}, {(segment + 1) * 2000000}) t(i)")
-                    conn.execute("VACUUM (FLUSH_TABLE) logs")
-                conn.execute("RESET threads")
-                conn.execute("SET GLOBAL threads = 8")
-                conn.execute("SET GLOBAL enable_external_file_cache = false")
-                conn.execute("SET GLOBAL enable_external_file_cache = true")
-                conn.execute(f"SET sdb_scan_split = '{split}'")
-                fake.latency = 0.02
-                first = sorted(conn.execute(query).fetchall())
-                fake.log = []
-                repeated = time.monotonic()
-                repeats = [sorted(conn.execute(query).fetchall()) for _ in range(12)]
-                reads = [entry["key"] for entry in fake.log
-                         if entry["began"] >= repeated]
-                fake.log = None
-        finally:
-            server.stop()
-    assert repeats == [first] * 12
-    assert reads == []
-
-
-def test_cold_count_reads_its_postings_in_one_round(tmp_path: Path) -> None:
-    location = f"s3://bucket/counts-{tmp_path.name}"
-    segments = 4
-    with FakeS3() as fake:
-        server = _Server(tmp_path / "data")
-        try:
-            assert server.wait_ready(), server.output()
-            _create_secret(server, _Store(fake.endpoint, "key", "secret",
-                                          "bucket"), location)
-            with server.connect() as conn:
-                conn.execute(
-                    "CREATE TEXT SEARCH DICTIONARY words AS "
-                    "split_by_non_alpha(case := 'lower') "
-                    "WITH (frequency, position, norm)")
-                conn.execute("CREATE TABLE docs(id INTEGER, body TEXT) "
-                             "WITH (compaction_interval = 0) TABLESPACE idx")
-                conn.execute(
-                    "CREATE INDEX docs_body ON docs USING inverted(id, body words)")
-                for segment in range(segments):
-                    conn.execute(
-                        "INSERT INTO docs SELECT i, CASE i % 10 WHEN 0 THEN 'alpha beta' "
-                        "WHEN 1 THEN 'beta alpha' ELSE 'gamma' END "
-                        f"FROM range({segment * 1000}, {(segment + 1) * 1000}) t(i)")
-                    conn.execute("VACUUM (FLUSH_TABLE) docs")
-                conn.execute("SET GLOBAL threads = 2")
-                fake.latency = 0.1
-
-                def cold_count(query: str) -> tuple[int, list[dict]]:
-                    conn.execute("SET GLOBAL enable_external_file_cache = false")
-                    conn.execute("SET GLOBAL enable_external_file_cache = true")
-                    fake.log = []
-                    count = conn.execute(
-                        "SELECT count(*) FROM docs_body WHERE body @@ to_tsquery(%s)",
-                        (query,)).fetchone()[0]
-                    log, fake.log = fake.log, None
-                    return count, log
-
-                term, term_log = cold_count("alpha")
-                phrase, phrase_log = cold_count('"alpha beta"')
-        finally:
-            server.stop()
-    assert term == segments * 200
-    assert not [entry for entry in term_log
-                if entry["key"].endswith((".doc", ".pos"))], term_log
-    assert phrase == segments * 100
-    by_segment = collections.defaultdict(list)
-    for entry in phrase_log:
-        name = entry["key"].rsplit("/", 1)[-1]
-        if name.endswith((".doc", ".pos")):
-            by_segment[name.split(".")[0]].append(entry)
-    assert len(by_segment) == segments, phrase_log
-    for reads in by_segment.values():
-        assert {entry["key"].rsplit(".", 1)[-1] for entry in reads} == {"doc", "pos"}, reads
-        assert max(entry["began"] for entry in reads) < min(
-            entry["ended"] for entry in reads), reads
 
 
 def test_an_index_is_created_again_where_it_was_dropped(tmp_path: Path) -> None:

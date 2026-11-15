@@ -73,8 +73,8 @@ What costs requests to the object store:
 | A query | reads of the blocks that are not cached |
 | A flush or a merge | the upload of each new index file: one request for a file up to 5 MiB, parts for a larger one; with the external file cache on, the table or index opens the files it wrote without a request |
 | A checkpoint | none |
-| Opening a table or an index at startup | one check that its directory exists, then for each index file a check of its size and a read of its footer. Tables, indexes and their segments open in parallel, so startup waits for the slowest of them rather than for all of them in turn |
-| Startup after a crash | also a listing of the directory of each tablespace and two listings of the directory of each table and index, to remove the files an interrupted write left behind; a listing returns only the entries one level down |
+| Opening a table or an index at startup | one check that the `store` directory of its tablespace exists, once for each tablespace, then for each index file a check of its size and a read of its footer. Tables, indexes and their segments open in parallel, so startup waits for the slowest of them rather than for all of them in turn |
+| Startup after a crash | also a listing of the `store` directory of each tablespace, to remove the files an interrupted write left behind; a listing returns only the entries one level down |
 | Cleanup | one request for up to 1000 files (256 on Azure) that no query uses anymore |
 
 The parts of a large file upload at the same time, up to `s3_uploader_parts_in_flight` of them on S3 and `azure_write_blocks_in_flight` on Azure, 20 by default; setting it to `1` uploads one part at a time.
@@ -83,7 +83,7 @@ The requests themselves, those of queries and those of background flushes, merge
 
 <SqlLogicTest id="configuration/index_storage_requests/example_001" hideResult />
 
-Reads and listings are `GET`; the check that the directory of a table or an index exists and the size check of each index file it opens, other than one it wrote with the external file cache on, `HEAD`; uploads and their parts `PUT`; batched deletes, and on S3 the start and completion of a large upload, `POST`.
+Reads and listings are `GET`; the check that the `store` directory of a tablespace exists and the size check of each index file a table or an index opens, other than one it wrote with the external file cache on, `HEAD`; uploads and their parts `PUT`; batched deletes, and on S3 the start and completion of a large upload, `POST`.
 
 ## Integrity
 

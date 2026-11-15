@@ -39,14 +39,9 @@ namespace sdb::backup {
 
 inline constexpr std::string_view kBackupDir = "backup";
 
-struct StoreCut {
-  duckdb::idx_t oid = 0;
-};
-
 struct Cut {
   std::string log_link;
   uint64_t log_size = 0;
-  std::vector<StoreCut> stores;
 };
 
 struct BackupOwner {

@@ -174,8 +174,8 @@ id	body
 2	child row
 
 query
-SELECT (SELECT count(*) > 0 FROM glob('${__TEST_DIR__}/loc/*/engine_v1/*/*/*')) AS parent_files,
-       (SELECT count(*) > 0 FROM glob('${__TEST_DIR__}/loc/base/child/*/engine_v1/*/*/*')) AS child_files,
+SELECT (SELECT count(*) > 0 FROM glob('${__TEST_DIR__}/loc/*/engine_v1/store/*')) AS parent_files,
+       (SELECT count(*) > 0 FROM glob('${__TEST_DIR__}/loc/base/child/*/engine_v1/store/*')) AS child_files,
        (SELECT count(*) FROM glob('${__TEST_DIR__}/loc/base/*/engine_v1/**')) AS base_files;
 ----
 parent_files	child_files	base_files
@@ -220,8 +220,11 @@ CREATE TABLE in_lost (id INT, body TEXT) TABLESPACE loc_lost_${__DATABASE__};
 statement ok
 INSERT INTO in_lost VALUES (1, 'lost row');
 
-statement ok
+statement error
 VACUUM (FLUSH_TABLE) in_lost;
+----
+db error: ERROR: Cannot open file "<slt:ignore>/lost/<slt:ignore>/engine_v1/store/<slt:ignore>": No such file or directory
+
 
 query
 SELECT id, body FROM in_lost;
@@ -286,7 +289,7 @@ body
 stored under a unicode path
 
 query
-SELECT count(*) > 0 AS stored FROM glob('${__TEST_DIR__}/names/with space/ünïcode/*/engine_v1/*/*/*');
+SELECT count(*) > 0 AS stored FROM glob('${__TEST_DIR__}/names/with space/ünïcode/*/engine_v1/store/*');
 ----
 stored
 t

@@ -21,6 +21,7 @@
 #include "catalog/boot.h"
 
 #include <absl/algorithm/container.h>
+#include <absl/container/flat_hash_map.h>
 #include <absl/container/flat_hash_set.h>
 #include <absl/strings/ascii.h>
 #include <absl/strings/numbers.h>
@@ -28,6 +29,7 @@
 
 #include <duckdb/common/error_data.hpp>
 #include <duckdb/common/file_system.hpp>
+#include <duckdb/common/path.hpp>
 #include <duckdb/main/attached_database.hpp>
 #include <duckdb/main/client_context.hpp>
 #include <duckdb/main/config.hpp>
@@ -35,6 +37,9 @@
 #include <duckdb/main/database.hpp>
 #include <duckdb/main/database_manager.hpp>
 #include <duckdb/parser/parsed_data/attach_info.hpp>
+#include <iresearch/index/file_names.hpp>
+#include <iresearch/index/index_writer.hpp>
+#include <iresearch/store/index_files.hpp>
 #include <iresearch/store/storage.hpp>
 #include <iresearch/utils/duckdb_engine.hpp>
 #include <iresearch/utils/log.hpp>
@@ -65,30 +70,66 @@ namespace {
 
 constexpr std::string_view kLogDir = "wal";
 
-std::vector<StorageEntry> ListStoragesOrDie(const std::string& directory) {
-  try {
-    return ListStorages(directory);
-  } catch (const std::exception& e) {
-    SDB_FATAL(STARTUP, "cannot list directory '", directory,
-              "': ", duckdb::ErrorData{e}.RawMessage());
-  }
-}
-
-bool RemoveUnowned(const std::string& directory,
-                   const absl::flat_hash_set<duckdb::idx_t>& owned) {
-  bool removed = true;
-  for (const auto& [oid, path] : ListStoragesOrDie(directory)) {
-    if (!owned.contains(oid)) {
-      removed = RemoveTree(path) && removed;
-    }
-  }
-  return removed;
-}
-
 struct LiveStorage {
   search::Store* storage;
   const duckdb::CatalogEntry* entry;
 };
+
+struct StoreListing {
+  std::string directory;
+  std::vector<std::string> files;
+};
+
+std::vector<StoreListing> ListStores(std::vector<std::string> directories) {
+  std::vector<StoreListing> listings(directories.size());
+  irs::ForEach(
+    irs::DuckDBEngine::Instance().instance(),
+    absl::c_any_of(directories,
+                   [](std::string_view directory) {
+                     return duckdb::Path::IsRemote(directory);
+                   }),
+    directories.size(), [&](size_t i) {
+      auto& listing = listings[i];
+      listing.directory = std::move(directories[i]);
+      try {
+        listing.files =
+          irs::ListIndexFiles(StorageFileSystem(), listing.directory);
+      } catch (const std::exception& e) {
+        SDB_FATAL(STARTUP, "cannot list directory '", listing.directory,
+                  "': ", duckdb::ErrorData{e}.RawMessage());
+      }
+      std::erase_if(listing.files, [](const std::string& file) {
+        uint64_t id = 0;
+        return !irs::ParseSegmentId(file, id);
+      });
+    });
+  for (const auto& listing : listings) {
+    irs::ReserveSegmentId(*SegmentIds(), irs::MaxSegmentId(listing.files));
+  }
+  return listings;
+}
+
+bool RemoveOrphans(std::span<const StoreListing> listings,
+                   std::span<const LiveStorage> live) {
+  absl::flat_hash_map<std::string_view, absl::flat_hash_set<std::string>> owned;
+  for (const auto& one : live) {
+    one.storage->CollectFiles(owned[one.storage->Path()]);
+  }
+  bool removed = true;
+  for (const auto& listing : listings) {
+    const auto& keep = owned[listing.directory];
+    std::vector<std::string> orphans;
+    for (const auto& file : listing.files) {
+      if (!keep.contains(file)) {
+        orphans.push_back(file);
+      }
+    }
+    removed =
+      irs::RemoveIndexFiles(StorageFileSystem(), listing.directory, orphans) &&
+      removed;
+  }
+  return removed;
+}
 
 void OpenStorages(SereneDBCatalog& catalog, std::vector<LiveStorage>& live) {
   const auto open = [&](search::Store& storage,
@@ -104,17 +145,24 @@ void OpenStorages(SereneDBCatalog& catalog, std::vector<LiveStorage>& live) {
 }
 
 void RequirePresent(std::span<const LiveStorage> live) {
-  std::vector<uint8_t> absent(live.size());
+  absl::flat_hash_set<std::string_view> seen;
+  std::vector<const LiveStorage*> first;
+  for (const auto& one : live) {
+    if (seen.insert(one.storage->Path()).second) {
+      first.push_back(&one);
+    }
+  }
+  std::vector<uint8_t> absent(first.size());
   irs::ForEach(
     irs::DuckDBEngine::Instance().instance(),
     absl::c_any_of(
-      live, [](const LiveStorage& one) { return one.storage->Remote(); }),
-    live.size(), [&](size_t i) { absent[i] = live[i].storage->Absent(); });
-  for (size_t i = 0; i != live.size(); ++i) {
+      first, [](const LiveStorage* one) { return one->storage->Remote(); }),
+    first.size(), [&](size_t i) { absent[i] = first[i]->storage->Absent(); });
+  for (size_t i = 0; i != first.size(); ++i) {
     if (absent[i]) {
-      SDB_FATAL(STARTUP, "the directory '", live[i].storage->Path(), "' of ",
-                live[i].entry->name.GetIdentifierName(), " (oid ",
-                live[i].entry->oid, ") is missing");
+      SDB_FATAL(STARTUP, "the directory '", first[i]->storage->Path(), "' of ",
+                first[i]->entry->name.GetIdentifierName(), " (oid ",
+                first[i]->entry->oid, ") is missing");
     }
   }
 }
@@ -132,10 +180,6 @@ std::string DataDirectory::LogDir() const {
 }
 
 std::string DataDirectory::StoreDir() const { return StoreDirOf(engine); }
-
-std::string DataDirectory::StorageDir(duckdb::idx_t oid) const {
-  return StoragePathIn(StoreDir(), oid);
-}
 
 void Attach(duckdb::ClientContext& context, duckdb::AttachInfo& info,
             std::string_view type, duckdb::AccessMode access_mode,
@@ -170,6 +214,11 @@ void InitCatalog(bool default_database, bool initialized) {
   auto& cluster = ClusterOf(instance);
   const auto& layout = cluster.Layout();
   if (!layout.InMemory()) {
+    if (Log::IsEarlierFormat(StorageFileSystem(), layout.LogDir())) {
+      SDB_FATAL(STARTUP, "'", layout.directory,
+                "' was written with an earlier layout of the data directory, "
+                "which this build cannot read");
+    }
     BeginStorageWork();
     StorageFileSystem().CreateDirectoryExtended(
       layout.StoreDir(),
@@ -220,23 +269,19 @@ void InitCatalog(bool default_database, bool initialized) {
     OpenStorages(db->GetCatalog().Cast<SereneDBCatalog>(), stores);
   }
   RequirePresent(stores);
-  bool removed = true;
+  std::vector<StoreListing> listings;
   if (!clean) {
-    absl::flat_hash_set<duckdb::idx_t> live;
-    for (const auto& store : stores) {
-      live.insert(store.entry->oid);
-    }
-    std::vector<std::string> tablespaces;
+    std::vector<std::string> directories;
     context.RunFunctionInTransaction([&] {
-      tablespaces =
-        cluster.TablespaceDirs(cluster.GetCatalogTransaction(context));
+      for (const auto& tablespace :
+           cluster.TablespaceDirs(cluster.GetCatalogTransaction(context))) {
+        directories.push_back(StoreDirOf(tablespace));
+      }
     });
-    for (const auto& tablespace : tablespaces) {
-      removed = RemoveUnowned(StoreDirOf(tablespace), live) && removed;
-    }
+    listings = ListStores(std::move(directories));
   }
-  const bool recovered =
-    search::RecoverSearchStorages(context, attached, /*orphans=*/!clean);
+  const bool recovered = search::RecoverSearchStorages(context, attached);
+  const bool removed = clean || RemoveOrphans(listings, stores);
   EndStorageWork(removed && recovered);
   std::vector<duckdb::reference<ForeignServerCatalogEntry>> servers;
   for (const auto& db : attached) {

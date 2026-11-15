@@ -43,7 +43,6 @@ constexpr std::string_view kStartLocation = "START WAL LOCATION: ";
 constexpr std::string_view kFormatKey = "SERENEDB BACKUP FORMAT: ";
 constexpr std::string_view kSystemKey = "SERENEDB SYSTEM IDENTIFIER: ";
 constexpr std::string_view kLogKey = "SERENEDB LOG: ";
-constexpr std::string_view kStoreKey = "SERENEDB STORE: ";
 constexpr std::string_view kChecksumKey = "SERENEDB CHECKSUM: ";
 constexpr std::string_view kSereneDBPrefix = "SERENEDB ";
 
@@ -90,9 +89,6 @@ std::string BuildBackupLabel(std::string_view label, uint64_t start_lsn,
     "\n", "LABEL: ", one_line, "\n", "START TIMELINE: ", kTimeline, "\n",
     kFormatKey, kBackupLabelFormat, "\n", kSystemKey, system_identifier, "\n",
     kLogKey, cut.log_link, " ", cut.log_size, "\n");
-  for (const auto& store : cut.stores) {
-    absl::StrAppend(&out, kStoreKey, store.oid, "\n");
-  }
   absl::StrAppend(&out, kChecksumKey, Checksum(out), "\n");
   return out;
 }
@@ -150,12 +146,6 @@ absl::StatusOr<BackupLabel> ParseBackupLabel(std::string_view text) {
       }
       label.cut.log_link = std::string{value.substr(0, space)};
       has_log = true;
-    } else if (absl::ConsumePrefix(&value, kStoreKey)) {
-      StoreCut store;
-      if (!ParseFields(value, store.oid)) {
-        return Malformed(line);
-      }
-      label.cut.stores.push_back(store);
     } else {
       return absl::InvalidArgumentError(
         absl::StrCat("unknown backup_label line: \"", line, "\""));

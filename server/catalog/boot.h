@@ -47,7 +47,6 @@ struct DataDirectory {
   bool InMemory() const noexcept { return directory.empty(); }
   std::string LogDir() const;
   std::string StoreDir() const;
-  std::string StorageDir(duckdb::idx_t oid) const;
 
   std::string directory;
   std::string engine;

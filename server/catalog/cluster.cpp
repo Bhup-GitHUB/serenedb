@@ -298,14 +298,14 @@ std::string TablespaceDirectory(std::string_view location) {
 
 void CreateTablespaceDirectory(const std::string& location) {
   auto& fs = StorageFileSystem();
+  const auto store = StoreDirOf(TablespaceDirectory(location));
   if (!duckdb::Path::FromString(location).IsRemote()) {
     fs.CreateDirectoryExtended(
-      TablespaceDirectory(location),
-      {.mode = duckdb::CreateDirectoryMode::RECURSIVE, .sync = true});
+      store, {.mode = duckdb::CreateDirectoryMode::RECURSIVE, .sync = true});
     return;
   }
-  for (const auto& level :
-       {location, SystemDirectory(location), TablespaceDirectory(location)}) {
+  for (const auto& level : {location, SystemDirectory(location),
+                            TablespaceDirectory(location), store}) {
     fs.CreateDirectoryExtended(
       level, {.mode = duckdb::CreateDirectoryMode::SINGLE, .sync = true});
   }

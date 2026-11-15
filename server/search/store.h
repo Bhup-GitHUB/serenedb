@@ -23,6 +23,7 @@
 #include <absl/algorithm/container.h>
 #include <absl/base/thread_annotations.h>
 #include <absl/container/btree_map.h>
+#include <absl/container/flat_hash_set.h>
 #include <absl/functional/function_ref.h>
 #include <absl/status/status.h>
 #include <absl/synchronization/mutex.h>
@@ -118,7 +119,7 @@ class Store final : public std::enable_shared_from_this<Store>,
         const std::optional<irs::ScorerOptions>& top_k_scorer, bool is_new);
   Store(std::shared_ptr<catalog::DatabaseDirectory> directory, std::string path,
         bool in_memory, bool read_only, duckdb::idx_t db_id, duckdb::idx_t id,
-        bool is_new, const catalog::SearchTableOptions& options,
+        const catalog::SearchTableOptions& options,
         const duckdb::ColumnList& columns);
   ~Store();
 
@@ -206,7 +207,7 @@ class Store final : public std::enable_shared_from_this<Store>,
                           const irs::IndexFieldOptions* field_options,
                           const irs::AnnBuildEnv* env)
     -> yaclib::Future<ResultWithTime>;
-  ResultWithTime CleanupUnsafe(bool orphans);
+  ResultWithTime CleanupUnsafe();
   void RequestCleanup() noexcept;
 
   // The field options a background merge encodes against, pinned for it; null
@@ -310,7 +311,7 @@ class Store final : public std::enable_shared_from_this<Store>,
     std::vector<irs::IndexWriter::Replacement> replacements);
 
   TableReplay* Replay();
-  void ReserveListedIds();
+  void CollectFiles(absl::flat_hash_set<std::string>& files) const;
   void ScheduleRecovery(duckdb::ClientContext& context,
                         duckdb::TaskExecutor& replays,
                         duckdb::TaskExecutor& opens);
@@ -364,7 +365,7 @@ class Store final : public std::enable_shared_from_this<Store>,
   void EnsureOpen();
   bool OwnsFiles() const noexcept { return _on_disk && !_read_only; }
   bool CloseFiles();
-  absl::Status RemoveReleased(bool orphans);
+  absl::Status RemoveReleased();
   void ClaimColumnOids(const irs::DirectoryReader& reader) const;
   void SyncSegments() const;
   bool OwnerDropped() const noexcept {
@@ -414,7 +415,6 @@ class Store final : public std::enable_shared_from_this<Store>,
     std::make_shared<irs::ReleasedSegments>();
   bool _in_memory;
   bool _read_only;
-  bool _is_new;
   std::atomic<bool> _dropped{false};
   uint64_t _segment_memory_max;
   uint32_t _segment_docs_max = 0;

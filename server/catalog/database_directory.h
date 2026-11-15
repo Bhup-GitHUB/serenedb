@@ -25,6 +25,7 @@
 #include <atomic>
 #include <duckdb/common/file_system.hpp>
 #include <duckdb/common/typedefs.hpp>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -48,18 +49,11 @@ bool StorageTidy() noexcept;
 
 std::optional<duckdb::idx_t> OidFromName(std::string_view name);
 
-struct StorageEntry {
-  duckdb::idx_t oid = 0;
-  std::string path;
-};
-
-std::vector<StorageEntry> ListStorages(const std::string& root);
-
 uint64_t StorageBytes(const std::string& directory);
 
 std::string StoreDirOf(std::string_view tablespace_directory);
-std::string StoragePathIn(std::string_view store_directory, duckdb::idx_t oid);
-void RemoveStorage(std::string path, absl::AnyInvocable<bool()> remove_files);
+const std::shared_ptr<std::atomic_uint64_t>& SegmentIds();
+void RemoveStorage(absl::AnyInvocable<bool()> remove_files);
 
 class DatabaseDirectory final {
  public:

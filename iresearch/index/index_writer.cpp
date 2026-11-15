@@ -270,6 +270,9 @@ IndexWriter::ptr IndexWriter::Make(duckdb::DatabaseInstance& db,
     SegmentOptions{options}, options.reader_options);
   writer->_ann_env = options.ann_env;
   writer->_hnsw_bases = std::move(hnsw_bases);
+  writer->_seg_counter = options.segment_ids
+                           ? std::move(options.segment_ids)
+                           : std::make_shared<std::atomic_uint64_t>(0);
   if (options.column_options || options.norm_column_id) {
     writer->_field_options = std::make_shared<const FunctionFieldOptions>(
       std::move(options.column_options), std::move(options.norm_column_id),
@@ -279,18 +282,22 @@ IndexWriter::ptr IndexWriter::Make(duckdb::DatabaseInstance& db,
 }
 
 uint64_t IndexWriter::NextSegmentId() noexcept {
-  return _seg_counter.fetch_add(1, std::memory_order_relaxed) + 1;
+  return _seg_counter->fetch_add(1, std::memory_order_relaxed) + 1;
 }
 
 uint64_t IndexWriter::CurrentSegmentId() const noexcept {
-  return _seg_counter.load(std::memory_order_relaxed);
+  return _seg_counter->load(std::memory_order_relaxed);
+}
+
+void ReserveSegmentId(std::atomic_uint64_t& ids, uint64_t id) noexcept {
+  for (auto current = ids.load(std::memory_order_relaxed);
+       current < id &&
+       !ids.compare_exchange_weak(current, id, std::memory_order_relaxed);) {
+  }
 }
 
 void IndexWriter::ReserveSegmentId(uint64_t id) noexcept {
-  for (auto current = _seg_counter.load(std::memory_order_relaxed);
-       current < id && !_seg_counter.compare_exchange_weak(
-                         current, id, std::memory_order_relaxed);) {
-  }
+  irs::ReserveSegmentId(*_seg_counter, id);
 }
 
 void IndexWriter::MergeClaim::Release() noexcept {

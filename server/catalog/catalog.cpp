@@ -167,7 +167,7 @@ std::string SereneDBCatalog::StoragePath(duckdb::CatalogTransaction transaction,
                                          const duckdb::CatalogEntry& entry,
                                          duckdb::idx_t tablespace) {
   if (tablespace == 0 || InMemory()) {
-    return StoragePathIn(_directory->Path(), entry.oid);
+    return _directory->Path();
   }
   if (_foreign) {
     THROW_SQL_ERROR(
@@ -180,9 +180,8 @@ std::string SereneDBCatalog::StoragePath(duckdb::CatalogTransaction transaction,
   }
   auto& context = transaction.GetContext();
   auto& cluster = ClusterOf(context);
-  return StoragePathIn(StoreDirOf(cluster.TablespaceDirectoryOf(
-                         cluster.GetCatalogTransaction(context), tablespace)),
-                       entry.oid);
+  return StoreDirOf(cluster.TablespaceDirectoryOf(
+    cluster.GetCatalogTransaction(context), tablespace));
 }
 
 void SereneDBCatalog::Place(duckdb::CatalogTransaction transaction,

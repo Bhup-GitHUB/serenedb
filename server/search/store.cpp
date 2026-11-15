@@ -122,16 +122,32 @@ std::string MemoryRoot(duckdb::idx_t db_id, duckdb::idx_t id) {
     absl::StrCat(duckdb::MemoryFileSystem::PREFIX, db_id), absl::StrCat(id));
 }
 
-bool Released(const std::string& root, const irs::ReleasedSegments& released) {
+template<typename Visit>
+void VisitSegmentFiles(const TableState& state, Visit&& visit) {
+  for (const auto& unit : state.units) {
+    if (!unit->piece) {
+      for (auto& file : irs::SegmentFiles(unit->meta.name, unit->meta.kinds)) {
+        visit(std::move(file));
+      }
+    }
+  }
+}
+
+bool RemoveFiles(const std::string& root, std::span<const std::string> files,
+                 irs::ReleasedSegments& released) {
+  auto& fs = catalog::StorageFileSystem();
   SDB_IF_FAILURE("pause_removal_midway") {
-    auto& fs = catalog::StorageFileSystem();
-    if (const auto files = irs::ListIndexFiles(fs, root); !files.empty()) {
+    if (!files.empty()) {
       fs.RemoveFile(fs.JoinPath(root, *absl::c_min_element(files)));
     }
     SDB_PARK_ONCE_ON_FAILURE("pause_removal_midway");
   }
   SDB_IF_FAILURE("storage_removal_fails") { return false; }
-  return released.Held() == 0;
+  if (released.Held() != 0) {
+    return false;
+  }
+  irs::RemoveReleased(fs, root, released);
+  return irs::RemoveIndexFiles(fs, root, files);
 }
 
 struct RecoveryTask final : duckdb::BaseExecutorTask {
@@ -158,7 +174,6 @@ Store::Store(std::shared_ptr<catalog::DatabaseDirectory> directory,
     _path{std::move(path)},
     _in_memory{in_memory},
     _read_only{read_only},
-    _is_new{is_new},
     _segment_memory_max{options.segment_memory_max},
     _segment_docs_max{options.segment_docs_max},
     _topk_options{top_k_scorer} {
@@ -174,7 +189,7 @@ Store::Store(std::shared_ptr<catalog::DatabaseDirectory> directory,
 
 Store::Store(std::shared_ptr<catalog::DatabaseDirectory> directory,
              std::string path, bool in_memory, bool read_only,
-             duckdb::idx_t db_id, duckdb::idx_t id, bool is_new,
+             duckdb::idx_t db_id, duckdb::idx_t id,
              const catalog::SearchTableOptions& options,
              const duckdb::ColumnList& columns)
   : _id{id},
@@ -183,7 +198,6 @@ Store::Store(std::shared_ptr<catalog::DatabaseDirectory> directory,
     _path{std::move(path)},
     _in_memory{in_memory},
     _read_only{read_only},
-    _is_new{is_new},
     _segment_memory_max{options.segment_memory_max},
     _table_columns{TableColumns(columns)},
     _row_group_size{options.row_group_size},
@@ -198,15 +212,22 @@ Store::Store(std::shared_ptr<catalog::DatabaseDirectory> directory,
 }
 
 Store::~Store() {
+  std::vector<std::string> files;
+  if (OwnerDropped() && OwnsFiles() && _table) {
+    VisitSegmentFiles(*_table->HeadState(), [&](std::string file) {
+      files.push_back(std::move(file));
+    });
+  }
   const bool tidy = !OwnsFiles() || OwnerDropped() || CloseFiles();
   _table.reset();
   _writer.reset();
   _piece_writer.reset();
   _released->Close();
   if (OwnerDropped() && OwnsFiles()) {
-    catalog::RemoveStorage(_root, [root = _root, released = _released] {
-      return Released(root, *released);
-    });
+    catalog::RemoveStorage(
+      [root = _root, files = std::move(files), released = _released] {
+        return RemoveFiles(root, files, *released);
+      });
   }
   if (!_root.empty()) {
     catalog::RemoveTree(MemoryRoot(_db_id, _id));
@@ -241,12 +262,7 @@ irs::IndexReaderOptions Store::ReaderOptions() const {
 void Store::Open() {
   auto& db = irs::DuckDBEngine::Instance().instance();
   auto& fs = catalog::StorageFileSystem();
-  if (!_in_memory) {
-    if (_is_new) {
-      catalog::CreateDirectory(_path);
-    }
-    _on_disk = true;
-  }
+  _on_disk = !_in_memory;
   const auto memory = MemoryRoot(_db_id, _id);
   _root = _on_disk ? _path : fs.JoinPath(memory, "segments");
   _remote = duckdb::DatabaseFileSystem::IsRemote(_root);
@@ -256,6 +272,7 @@ void Store::Open() {
 
   irs::IndexWriterOptions writer_options;
   writer_options.ann_env = &AnnBuildEnv();
+  writer_options.segment_ids = catalog::SegmentIds();
   writer_options.segment_memory_max = _segment_memory_max;
   writer_options.segment_docs_max = _segment_docs_max;
   writer_options.reader_options = ReaderOptions();
@@ -766,10 +783,10 @@ void Store::ReindexReleaser::operator()(Store* store) const noexcept {
   }
 }
 
-ResultWithTime Store::CleanupUnsafe(bool orphans) {
+ResultWithTime Store::CleanupUnsafe() {
   const auto maintenance = ClaimMaintenance();
   if (!maintenance) {
-    return {orphans ? BackupInProgressError() : absl::OkStatus(), 0};
+    return {absl::OkStatus(), 0};
   }
   const auto begin = std::chrono::steady_clock::now();
   if (_table) {
@@ -787,41 +804,21 @@ ResultWithTime Store::CleanupUnsafe(bool orphans) {
       transactions.GarbageQueued();
     }
   }
-  auto result = RemoveReleased(orphans);
+  auto result = RemoveReleased();
   SDB_PARK_ONCE_ON_FAILURE("search_cleanup_after_remove");
   const auto time_ms = MillisSince(begin);
   _maintenance.RecordCleanup(result, time_ms);
   return {std::move(result), time_ms};
 }
 
-absl::Status Store::RemoveReleased(bool orphans) {
+absl::Status Store::RemoveReleased() {
   try {
     if (_on_disk && _read_only) {
       _released->Take();
       return absl::OkStatus();
     }
-    auto& fs = catalog::StorageFileSystem();
-    if (!orphans) {
-      duckdb::TaskScheduler::BlockingScope blocking;
-      irs::RemoveReleased(fs, _root, *_released);
-      return absl::OkStatus();
-    }
-    irs::RemoveReleased(fs, _root, *_released);
-    irs::containers::FlatHashSet<std::string> live;
-    if (_table) {
-      for (const auto& unit : _table->HeadState()->units) {
-        if (!unit->piece) {
-          for (auto& file :
-               irs::SegmentFiles(unit->meta.name, unit->meta.kinds)) {
-            live.insert(std::move(file));
-          }
-        }
-      }
-    }
-    auto files = irs::ListIndexFiles(fs, _root);
-    std::erase_if(files,
-                  [&](const std::string& file) { return live.contains(file); });
-    irs::RemoveIndexFiles(fs, _root, files);
+    duckdb::TaskScheduler::BlockingScope blocking;
+    irs::RemoveReleased(catalog::StorageFileSystem(), _root, *_released);
   } catch (const std::exception& e) {
     return absl::InternalError(
       absl::StrCat("caught exception while cleaning up ", _id, ": ",
@@ -1002,7 +999,7 @@ absl::Status Store::VacuumCompact(duckdb::ClientContext& context,
       break;
     }
   }
-  auto cleanup = CleanupUnsafe(false).res;
+  auto cleanup = CleanupUnsafe().res;
   catalog::Transactions::Get().AwaitPublished(
     _storage_tick.load(std::memory_order_acquire));
   return cleanup;
@@ -1430,11 +1427,10 @@ TableReplay* Store::Replay() {
   return _table ? &_replay : nullptr;
 }
 
-void Store::ReserveListedIds() {
-  EnsureOpen();
-  if (_table) {
-    _writer->ReserveSegmentId(irs::MaxSegmentId(
-      irs::ListIndexFiles(catalog::StorageFileSystem(), _root)));
+void Store::CollectFiles(absl::flat_hash_set<std::string>& files) const {
+  if (OwnsFiles() && _table) {
+    VisitSegmentFiles(*_table->HeadState(),
+                      [&](std::string file) { files.insert(std::move(file)); });
   }
 }
 
@@ -1449,7 +1445,12 @@ void Store::ScheduleRecovery(duckdb::ClientContext& context,
   for (auto& [id, segment] : _replay.Segments()) {
     opens.ScheduleTask(
       duckdb::make_uniq<RecoveryTask>(opens, [this, id, &segment] {
-        segment.opened = _table->OpenSegment(id, segment.kinds, segment.rows);
+        try {
+          segment.opened = _table->OpenSegment(id, segment.kinds, segment.rows);
+        } catch (const duckdb::Exception& e) {
+          duckdb::ErrorData{e}.Throw(
+            absl::StrCat("cannot open the files of relation ", _id, ": "));
+        }
       }));
   }
   for (auto& piece : _replay.Cut()) {

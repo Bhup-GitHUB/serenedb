@@ -83,8 +83,12 @@ struct IndexWriterOptions : public SegmentOptions {
 
   const AnnBuildEnv* ann_env = nullptr;
 
+  std::shared_ptr<std::atomic_uint64_t> segment_ids;
+
   IndexWriterOptions() {}
 };
+
+void ReserveSegmentId(std::atomic_uint64_t& ids, uint64_t id) noexcept;
 
 class IndexWriter : private util::Noncopyable {
   struct ConstructToken {
@@ -415,7 +419,7 @@ class IndexWriter : private util::Noncopyable {
   IndexReaderOptions _reader_options;
   SegmentLimits _segment_limits;
   SegmentPool _segment_writer_pool;
-  std::atomic_uint64_t _seg_counter{0};
+  std::shared_ptr<std::atomic_uint64_t> _seg_counter;
 };
 
 }  // namespace irs

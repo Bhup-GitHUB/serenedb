@@ -57,6 +57,7 @@ class Log {
 
   static std::string ChunkName(uint64_t number);
   static bool Exists(duckdb::FileSystem& fs, const std::string& dir);
+  static bool IsEarlierFormat(duckdb::FileSystem& fs, const std::string& dir);
   static void Read(duckdb::FileSystem& fs, const std::string& dir, Apply apply);
   static void Move(duckdb::FileSystem& fs, const std::string& from,
                    const std::string& to);
@@ -168,6 +169,7 @@ class Log {
   std::atomic<uint64_t> _snapshot_bytes{0};
   std::atomic<uint64_t> _history_bytes{0};
   absl::Mutex _files_mutex;
+  uint64_t _snapshot ABSL_GUARDED_BY(_files_mutex) = 0;
   std::vector<std::vector<uint8_t>> _history ABSL_GUARDED_BY(_files_mutex);
 };
 

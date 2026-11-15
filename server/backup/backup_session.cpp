@@ -51,18 +51,8 @@
 namespace sdb::backup {
 namespace {
 
-void CollectStores(catalog::SereneDBCatalog& catalog,
-                   std::vector<StoreCut>& stores) {
-  catalog::ForEachSearchStorage(
-    catalog,
-    [&](catalog::SearchTableEntry& table) { stores.push_back({table.oid}); },
-    [&](catalog::InvertedIndexEntry& index) { stores.push_back({index.oid}); });
-}
-
-Cut RecordCut(
-  duckdb::ClientContext& context, const std::string& backup_dir,
-  std::span<const duckdb::shared_ptr<duckdb::AttachedDatabase>> pins,
-  pg::ProgressMetrics& progress) {
+Cut RecordCut(duckdb::ClientContext& context, const std::string& backup_dir,
+              pg::ProgressMetrics& progress) {
   Cut cut;
   progress.SetPhase(pg::progress_phase::BaseBackup::WaitingForCommits);
   const auto commits = CommitGate().Close(context);
@@ -70,10 +60,6 @@ Cut RecordCut(
   SDB_ENSURE(log, "cannot start a backup of a server without a log");
   cut.log_link = duckdb::FileSystem::JoinPath(catalog::kEngineDir, kBackupDir);
   cut.log_size = log->Link(backup_dir);
-  for (const auto& db : pins) {
-    CollectStores(db->GetCatalog().Cast<catalog::SereneDBCatalog>(),
-                  cut.stores);
-  }
   return cut;
 }
 
@@ -137,7 +123,7 @@ uint64_t BackupSession::Begin(duckdb::ClientContext& context, BackupOwner owner,
   progress.SetPhase(pg::progress_phase::BaseBackup::WaitingForMaintenance);
   absl::Cleanup resume_cleanups = [] { search::RequestCleanups(); };
   auto maintenance = search::GetSearchEngine().Maintenance().Close(context);
-  auto cut = RecordCut(context, backup_dir, pins, progress);
+  auto cut = RecordCut(context, backup_dir, progress);
   if (const auto tablespace = UserTablespace()) {
     THROW_SQL_ERROR(ERR_CODE(ERRCODE_FEATURE_NOT_SUPPORTED),
                     ERR_MSG("cannot start a backup: tablespace \"",

@@ -9,6 +9,11 @@ statement ok
 RESET sdb_faults;
 
 statement ok
+CREATE MACRO reuse_unowned() AS (
+  (SELECT count(*) FROM glob('${__TEST_DIR__}/reuse/*/engine_v1/store/*'))
+  - (SELECT coalesce(sum(value), 0) FROM sdb_metrics WHERE metric = 'num_files'));
+
+statement ok
 CREATE TABLESPACE gone LOCATION '${__TEST_DIR__}/reuse';
 
 statement ok
@@ -70,12 +75,11 @@ body
 read by an older transaction
 
 connection default
-query ok retry 240 backoff 250ms
-SELECT count(DISTINCT regexp_extract(file, 'engine_v1/[^/]+/([^/]+)/', 1)) AS storages
-FROM glob('${__TEST_DIR__}/reuse/*/engine_v1/*/*/*');
+query
+SELECT reuse_unowned() > 0 AS held;
 ----
-storages
-2
+held
+t
 
 connection default
 statement ok
@@ -96,11 +100,10 @@ id	body
 
 connection after_restart
 query ok retry 240 backoff 250ms
-SELECT count(DISTINCT regexp_extract(file, 'engine_v1/[^/]+/([^/]+)/', 1)) AS storages
-FROM glob('${__TEST_DIR__}/reuse/*/engine_v1/*/*/*');
+SELECT reuse_unowned() AS unowned;
 ----
-storages
-1
+unowned
+0
 
 connection after_restart
 statement ok

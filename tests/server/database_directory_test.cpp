@@ -59,15 +59,6 @@ bool Eventually(const auto& done) {
   return true;
 }
 
-std::vector<duckdb::idx_t> Oids(const std::vector<StorageEntry>& storages) {
-  std::vector<duckdb::idx_t> oids;
-  for (const auto& storage : storages) {
-    oids.push_back(storage.oid);
-  }
-  absl::c_sort(oids);
-  return oids;
-}
-
 class DatabaseDirectoryTest : public ::testing::Test {
  protected:
   void SetUp() final {
@@ -99,76 +90,68 @@ class DatabaseDirectoryTest : public ::testing::Test {
   BackgroundScheduler _scheduler;
 };
 
-TEST_F(DatabaseDirectoryTest, StoragesSitInTheStoreDirectoryOfATablespace) {
-  const auto store = StoreDirOf(Path("ts/engine_v1"));
-  EXPECT_EQ(store, Path("ts/engine_v1/store"));
-  EXPECT_EQ(StoragePathIn(store, 7), Path("ts/engine_v1/store/7"));
+TEST_F(DatabaseDirectoryTest, StoresSitInTheStoreDirectoryOfATablespace) {
+  EXPECT_EQ(StoreDirOf(Path("ts/engine_v1")), Path("ts/engine_v1/store"));
 }
 
 TEST_F(DatabaseDirectoryTest, CreatesOnceWithEveryMissingParent) {
-  const auto storage = Path("ts/engine_v1/store/7");
-  EXPECT_FALSE(StorageFileSystem().DirectoryExists(storage));
-  CreateDirectory(storage);
-  EXPECT_TRUE(std::filesystem::is_directory(storage));
-  EXPECT_ANY_THROW(CreateDirectory(storage));
+  const auto store = Path("ts/engine_v1/store");
+  EXPECT_FALSE(StorageFileSystem().DirectoryExists(store));
+  CreateDirectory(store);
+  EXPECT_TRUE(std::filesystem::is_directory(store));
+  EXPECT_ANY_THROW(CreateDirectory(store));
   std::ofstream{_root / "file"} << "data";
   EXPECT_ANY_THROW(CreateDirectory(Path("file/sub")));
 }
 
-TEST_F(DatabaseDirectoryTest, ARemovedStorageLeavesItsSiblings) {
-  const auto store = StoreDirOf(_root.string());
-  CreateDirectory(StoragePathIn(store, 7));
-  CreateDirectory(StoragePathIn(store, 8));
-  std::ofstream{_root / "store" / "7" / "segment"} << "rows";
-  RemoveStorage(StoragePathIn(store, 7), [this] {
-    return std::filesystem::remove(_root / "store" / "7" / "segment");
+TEST_F(DatabaseDirectoryTest, ARemovedStorageLeavesTheFilesOfOthers) {
+  CreateDirectory(StoreDirOf(_root.string()));
+  std::ofstream{_root / "store" / "0000000000000007.col"} << "rows";
+  std::ofstream{_root / "store" / "0000000000000008.col"} << "rows";
+  RemoveStorage([this] {
+    return std::filesystem::remove(_root / "store" / "0000000000000007.col");
   });
-  EXPECT_TRUE(Gone(_root / "store" / "7"));
-  EXPECT_TRUE(std::filesystem::is_directory(_root / "store" / "8"));
+  EXPECT_TRUE(Gone(_root / "store" / "0000000000000007.col"));
+  EXPECT_TRUE(
+    std::filesystem::exists(_root / "store" / "0000000000000008.col"));
 }
 
 TEST_F(DatabaseDirectoryTest, AStorageWhoseFilesStayIsKept) {
-  const auto storage = StoragePathIn(StoreDirOf(_root.string()), 7);
-  CreateDirectory(storage);
-  std::ofstream{_root / "store" / "7" / "segment"} << "rows";
+  CreateDirectory(StoreDirOf(_root.string()));
+  std::ofstream{_root / "store" / "0000000000000007.col"} << "rows";
   std::atomic_bool tried{false};
-  RemoveStorage(storage, [&] {
+  RemoveStorage([&] {
     tried.store(true);
     return false;
   });
   EXPECT_TRUE(Eventually([&] { return tried.load(); }));
-  EXPECT_TRUE(std::filesystem::exists(_root / "store" / "7" / "segment"));
+  EXPECT_TRUE(
+    std::filesystem::exists(_root / "store" / "0000000000000007.col"));
 }
 
 TEST_F(DatabaseDirectoryTest, RemovalsWaitWhileTheyAreDeferred) {
-  const auto storage = StoragePathIn(StoreDirOf(_root.string()), 7);
-  CreateDirectory(storage);
+  const auto file = _root / "0000000000000007.col";
+  std::ofstream{file} << "rows";
   DeferRemovals();
-  RemoveStorage(storage, [] { return true; });
+  RemoveStorage([&] { return std::filesystem::remove(file); });
   std::this_thread::sleep_for(std::chrono::milliseconds{50});
-  EXPECT_TRUE(std::filesystem::is_directory(storage));
+  EXPECT_TRUE(std::filesystem::exists(file));
   ResumeRemovals();
-  EXPECT_TRUE(Gone(storage));
+  EXPECT_TRUE(Gone(file));
 }
 
-TEST_F(DatabaseDirectoryTest, StoragesOnAnObjectStore) {
+TEST_F(DatabaseDirectoryTest, AStoreDirectoryOnAnObjectStore) {
   ObjectStore();
   const auto store =
     StoreDirOf(absl::StrCat(irs::SimulatedObjectStore::kPrefix,
                             "bucket/database_directory_", ::getpid()));
-  const auto path = StoragePathIn(store, 7);
-  EXPECT_FALSE(StorageFileSystem().DirectoryExists(path));
-  CreateDirectory(path);
-  EXPECT_TRUE(ObjectStore().Find(absl::StrCat(path, "/")));
-  EXPECT_TRUE(StorageFileSystem().DirectoryExists(path));
-  EXPECT_FALSE(StorageFileSystem().DirectoryExists(StoragePathIn(store, 8)));
-
-  ObjectStore().Publish(absl::StrCat(path, "/segment"), "rows");
-  EXPECT_EQ(4, StorageBytes(path));
-  RemoveStorage(path, [] { return true; });
-  EXPECT_TRUE(ObjectGone(absl::StrCat(path, "/")));
-  EXPECT_TRUE(ObjectGone(absl::StrCat(path, "/segment")));
-  EXPECT_FALSE(StorageFileSystem().DirectoryExists(path));
+  EXPECT_FALSE(StorageFileSystem().DirectoryExists(store));
+  CreateDirectory(store);
+  EXPECT_TRUE(ObjectStore().Find(absl::StrCat(store, "/")));
+  EXPECT_TRUE(StorageFileSystem().DirectoryExists(store));
+  ObjectStore().Publish(absl::StrCat(store, "/0000000000000007.col"), "rows");
+  ObjectStore().Publish(absl::StrCat(store, "/0000000000000008.doc"), "rows");
+  EXPECT_EQ(8, StorageBytes(store));
 }
 
 TEST_F(DatabaseDirectoryTest, RemoveTreeSaysWhetherTheTreeIsGone) {
@@ -203,37 +186,15 @@ TEST_F(DatabaseDirectoryTest, RemoveTreeOrThrowSaysWhyTheTreeStays) {
   EXPECT_TRUE(std::filesystem::exists(sub / "file"));
 }
 
-TEST_F(DatabaseDirectoryTest, ListsTheStoragesOfADirectory) {
-  const auto store = StoreDirOf(_root.string());
-  CreateDirectory(StoragePathIn(store, 7));
-  CreateDirectory(StoragePathIn(store, 8));
-  std::ofstream{_root / "store" / "8" / "segment"} << "rows";
-  std::ofstream{_root / "store" / "notes"} << "kept";
-  std::filesystem::create_directory(_root / "store" / "named");
-
-  const auto storages = ListStorages(store);
-  EXPECT_EQ(Oids(storages), (std::vector<duckdb::idx_t>{7, 8}));
-  for (const auto& storage : storages) {
-    EXPECT_EQ(storage.path, StoragePathIn(store, storage.oid));
-  }
-  EXPECT_EQ(4, StorageBytes(StoragePathIn(store, 8)));
-  EXPECT_EQ(8, StorageBytes(store));
-  EXPECT_TRUE(ListStorages(Path("missing")).empty());
+TEST_F(DatabaseDirectoryTest, CountsTheBytesOfAStoreDirectory) {
+  CreateDirectory(StoreDirOf(_root.string()));
+  std::ofstream{_root / "store" / "0000000000000007.col"} << "rows";
+  std::ofstream{_root / "store" / "0000000000000008.col"} << "more";
+  EXPECT_EQ(8, StorageBytes(StoreDirOf(_root.string())));
 }
 
-TEST_F(DatabaseDirectoryTest, ListsTheStoragesOfAnObjectStore) {
-  ObjectStore();
-  const auto store = StoreDirOf(absl::StrCat(irs::SimulatedObjectStore::kPrefix,
-                                             "bucket/listed_", ::getpid()));
-  CreateDirectory(StoragePathIn(store, 7));
-  CreateDirectory(StoragePathIn(store, 8));
-  ObjectStore().Publish(absl::StrCat(store, "/8/segment"), "rows");
-  ObjectStore().Publish(absl::StrCat(store, "/9/orphan"), "rows");
-
-  EXPECT_EQ(Oids(ListStorages(store)), (std::vector<duckdb::idx_t>{7, 8, 9}));
-  EXPECT_TRUE(RemoveTree(StoragePathIn(store, 9)));
-  EXPECT_FALSE(ObjectStore().Find(absl::StrCat(store, "/9/orphan")));
-  EXPECT_EQ(Oids(ListStorages(store)), (std::vector<duckdb::idx_t>{7, 8}));
+TEST_F(DatabaseDirectoryTest, SegmentIdsAreOneCounterForTheServer) {
+  EXPECT_EQ(SegmentIds().get(), SegmentIds().get());
 }
 
 }  // namespace

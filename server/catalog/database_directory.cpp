@@ -173,23 +173,6 @@ std::optional<duckdb::idx_t> OidFromName(std::string_view name) {
   return oid;
 }
 
-std::vector<StorageEntry> ListStorages(const std::string& root) {
-  std::vector<StorageEntry> found;
-  StorageFileSystem().ListFiles(
-    root,
-    [&](duckdb::OpenFileInfo& info) {
-      if (!duckdb::FileSystem::IsDirectory(info)) {
-        return;
-      }
-      if (const auto oid = OidFromName(info.path)) {
-        found.push_back(
-          {.oid = *oid, .path = duckdb::FileSystem::JoinPath(root, info.path)});
-      }
-    },
-    nullptr, {.strict = true});
-  return found;
-}
-
 uint64_t StorageBytes(const std::string& directory) {
   uint64_t size = 0;
   StorageFileSystem().ListFiles(
@@ -209,16 +192,14 @@ std::string StoreDirOf(std::string_view tablespace_directory) {
   return duckdb::FileSystem::JoinPath(tablespace_directory, kStoreDir);
 }
 
-std::string StoragePathIn(std::string_view store_directory, duckdb::idx_t oid) {
-  return duckdb::FileSystem::JoinPath(store_directory, absl::StrCat(oid));
+const std::shared_ptr<std::atomic_uint64_t>& SegmentIds() {
+  static const auto gIds = std::make_shared<std::atomic_uint64_t>(0);
+  return gIds;
 }
 
-void RemoveStorage(std::string path, absl::AnyInvocable<bool()> remove_files) {
+void RemoveStorage(absl::AnyInvocable<bool()> remove_files) {
   BeginStorageWork();
-  RunRemoval(
-    [path = std::move(path), remove_files = std::move(remove_files)]() mutable {
-      return remove_files() && RemoveTree(path);
-    });
+  RunRemoval(std::move(remove_files));
 }
 
 }  // namespace sdb::catalog

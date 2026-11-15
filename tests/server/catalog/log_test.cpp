@@ -19,6 +19,7 @@
 ////////////////////////////////////////////////////////////////////////////////
 
 #include <absl/strings/str_cat.h>
+#include <absl/strings/str_format.h>
 #include <gtest/gtest.h>
 #include <unistd.h>
 
@@ -96,6 +97,10 @@ class LogTest : public ::testing::Test {
 
   std::filesystem::path Chunk(uint64_t number) const {
     return _dir / Log::ChunkName(number);
+  }
+
+  std::filesystem::path SnapshotFile(uint64_t sequence) const {
+    return _dir / absl::StrFormat("%016x.snapshot", sequence);
   }
 
   void Overwrite(uint64_t number, uint64_t at, const std::string& bytes) const {
@@ -214,6 +219,66 @@ TEST_F(LogTest, ASnapshotOfTheWholeLogKeepsTheCurrentChunk) {
   Open();
   EXPECT_EQ(_records, (std::vector{Half('A'), Half('B'), Payload('C')}));
   EXPECT_FALSE(std::filesystem::exists(Chunk(2)));
+}
+
+TEST_F(LogTest, EachSnapshotIsWrittenOnceUnderItsOwnNumber) {
+  {
+    auto log = Open();
+    const auto a = log->Append(Bytes(Payload('A')));
+    Snapshot(*log, a);
+    EXPECT_TRUE(std::filesystem::exists(SnapshotFile(1)));
+    const auto b = log->Append(Bytes(Payload('B')));
+    Snapshot(*log, b);
+    EXPECT_FALSE(std::filesystem::exists(SnapshotFile(1)));
+    EXPECT_TRUE(std::filesystem::exists(SnapshotFile(2)));
+    log->Append(Bytes(Payload('C')));
+  }
+  Open();
+  EXPECT_EQ(_records, (std::vector{Payload('A'), Payload('B'), Payload('C')}));
+}
+
+TEST_F(LogTest, ASnapshotThePointerDoesNotNameYetIsRemoved) {
+  {
+    auto log = Open();
+    const auto a = log->Append(Bytes(Payload('A')));
+    Snapshot(*log, a);
+    log->Append(Bytes(Payload('B')));
+  }
+  std::ofstream{SnapshotFile(2)} << "cut short by a crash";
+  Open();
+  EXPECT_EQ(_records, (std::vector{Payload('A'), Payload('B')}));
+  EXPECT_FALSE(std::filesystem::exists(SnapshotFile(2)));
+  EXPECT_TRUE(std::filesystem::exists(SnapshotFile(1)));
+}
+
+TEST_F(LogTest, TheSnapshotThePointerMovedFromIsRemoved) {
+  {
+    auto log = Open();
+    const auto a = log->Append(Bytes(Payload('A')));
+    Snapshot(*log, a);
+    const auto b = log->Append(Bytes(Payload('B')));
+    Snapshot(*log, b);
+  }
+  std::ofstream{SnapshotFile(1)} << "left by a crash";
+  Open();
+  EXPECT_EQ(_records, (std::vector{Payload('A'), Payload('B')}));
+  EXPECT_FALSE(std::filesystem::exists(SnapshotFile(1)));
+  EXPECT_TRUE(std::filesystem::exists(SnapshotFile(2)));
+}
+
+TEST_F(LogTest, ADamagedSnapshotPointerIsRefused) {
+  {
+    auto log = Open();
+    const auto a = log->Append(Bytes(Payload('A')));
+    Snapshot(*log, a);
+  }
+  {
+    std::fstream pointer{_dir / "current_snapshot",
+                         std::ios::in | std::ios::out | std::ios::binary};
+    pointer.seekp(8);
+    pointer.put('\x7f');
+  }
+  EXPECT_THROW(Open(), irs::SqlException);
 }
 
 TEST_F(LogTest, ARecordOverTheSizeLimitIsRefused) {
