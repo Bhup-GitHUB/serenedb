@@ -21,11 +21,7 @@
 #pragma once
 
 #include <duckdb/common/memory_file_system.hpp>
-#include <iresearch/index/directory_reader.hpp>
 #include <iresearch/index/index_writer.hpp>
-#include <iresearch/store/index_files.hpp>
-#include <iresearch/utils/pg/errcodes.hpp>
-#include <iresearch/utils/pg/sql_exception_macro.hpp>
 #include <memory>
 #include <string>
 
@@ -39,37 +35,22 @@ class MemoryIndex {
   std::shared_ptr<const irs::SubReader> IndexChunk(size_t row_count,
                                                    WriteDocs&& write_docs) {
     irs::IndexWriterOptions opts;
-    opts.reader_options.refs = _refs;
-    auto writer = irs::IndexWriter::Make(
-      _db, _fs, _root, irs::OpenMode::kOmCreate, std::move(opts));
+    auto writer = irs::IndexWriter::Make(_db, _fs, _root, std::move(opts));
+    auto trx = writer->GetBatch();
+    const auto id = writer->NextSegmentId();
+    trx.SetHot(id);
     {
-      irs::IndexWriter::Transaction trx{*writer};
-      {
-        auto doc = trx.Insert(/*disable_flush=*/false,
-                              static_cast<irs::doc_id_t>(row_count));
-        doc.NextFieldBatch();
-        write_docs(doc);
-      }
-      if (!trx.Commit()) {
-        THROW_SQL_ERROR(
-          ERR_CODE(ERRCODE_OUT_OF_MEMORY),
-          ERR_MSG("failed to index the text to highlight: out of memory"));
-      }
+      auto doc = trx.Insert(static_cast<irs::doc_id_t>(row_count));
+      doc.NextFieldBatch();
+      write_docs(doc);
     }
-    writer->RefreshCommit();
-    auto reader = writer->GetSnapshot();
-    if (reader.size() == 0) {
-      return {std::shared_ptr<const irs::SubReader>{},
-              &irs::SubReader::empty()};
-    }
-    return {reader.GetImpl(), &reader[0]};
+    return trx.SealPiece(id);
   }
 
  private:
   duckdb::DatabaseInstance& _db;
   duckdb::MemoryFileSystem _fs;
   std::string _root;
-  std::shared_ptr<irs::IndexFileRefs> _refs;
 };
 
 }  // namespace sdb::connector::highlight

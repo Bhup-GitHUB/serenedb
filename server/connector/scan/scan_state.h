@@ -190,7 +190,7 @@ struct ScanGlobalState final : public duckdb::GlobalTableFunctionState {
   const ScanBindData* scan = nullptr;
   duckdb::ClientContext* client_context = nullptr;
   const irs::IndexReader* reader = nullptr;
-  search::StoreSnapshotPtr snapshot;
+  search::ReadView view;
   size_t total_segments = 0;
   bool remote = false;
   const VectorScorerOptions* vector_scorer = nullptr;
@@ -210,6 +210,7 @@ struct ScanGlobalState final : public duckdb::GlobalTableFunctionState {
   duckdb::idx_t doc_address_output_idx = duckdb::DConstants::INVALID_INDEX;
   duckdb::idx_t file_index_output_idx = duckdb::DConstants::INVALID_INDEX;
   duckdb::idx_t row_number_output_idx = duckdb::DConstants::INVALID_INDEX;
+  duckdb::idx_t empty_output_idx = duckdb::DConstants::INVALID_INDEX;
   bool has_real_column = false;
   bool has_output_column = false;
 
@@ -390,6 +391,7 @@ struct ScanLocalState : public duckdb::LocalTableFunctionState {
   irs::ColFilterStateCache filter_states;
   uint32_t classified_seg = std::numeric_limits<uint32_t>::max();
   irs::ColFilterClassification seg_cls;
+  irs::ColFilterClassification column_form_cls;
   uint32_t current_seg = std::numeric_limits<uint32_t>::max();
   uint32_t batch_next = 0;
   uint32_t batch_end = 0;
@@ -495,7 +497,7 @@ struct AnnLocalState final : public RankedLocalState {
 struct TsDictLocalState;
 
 const irs::QueryBuilder& EnsureSegmentQuery(ScanGlobalState& g,
-                                            ScanLocalState& l,
+                                            ScanLocalState* l,
                                             uint32_t seg_idx);
 bool RunPrepareStage(duckdb::TableFunctionInput& input, ScanGlobalState& g,
                      ScanLocalState& l);
@@ -521,6 +523,8 @@ void ClassifySegmentColFilters(
   std::span<const ScanGlobalState::ColFilter> filters,
   irs::ColFilterStateCache& states, irs::ColFilterClassification& out,
   bool prepare_leaves);
+
+bool UsesColumnForms(const ScanGlobalState& g, const irs::SubReader& seg);
 
 irs::detail::TableFilter* BeginVerify(ColFilterVerify& verify,
                                       const irs::SubReader& seg,

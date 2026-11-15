@@ -48,6 +48,7 @@
 #include <string_view>
 #include <vector>
 
+#include "index/test_index_writer.hpp"
 #include "insert_field.hpp"
 
 namespace {
@@ -214,11 +215,12 @@ Index BuildIndex(const std::vector<std::string>& docs,
   auto* db = &irs::DuckDBEngine::Instance().instance();
   auto& fs = duckdb::FileSystem::GetFileSystem(*db);
   const auto root = path.string();
+  tests::IndexDir dir{*db, fs, root};
   Index index{.strategy = &strategy, .tokenizer = MakeTokenizer(strategy)};
 
   irs::IndexWriterOptions writer_opts;
-  auto writer = irs::IndexWriter::Make(*db, fs, root, irs::kOmCreate,
-                                       std::move(writer_opts));
+  auto writer = tests::IndexWriter::Make(dir, tests::kOmCreate,
+                                         std::move(writer_opts));
 
   BenchField field{
     .tokenizer = index.tokenizer.get(),
@@ -238,7 +240,7 @@ Index BuildIndex(const std::vector<std::string>& docs,
                DirSize(path));
 
   irs::IndexReaderOptions reader_opts;
-  index.reader = irs::DirectoryReader{*db, fs, root, reader_opts};
+  index.reader = tests::OpenReader(dir, reader_opts);
   return index;
 }
 

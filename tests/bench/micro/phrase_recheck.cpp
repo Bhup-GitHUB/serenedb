@@ -60,6 +60,7 @@
 #include <utility>
 #include <vector>
 
+#include "index/test_index_writer.hpp"
 #include "insert_field.hpp"
 
 namespace {
@@ -200,11 +201,12 @@ const Index& IndexOf(size_t dictionary) {
   auto* db = &irs::DuckDBEngine::Instance().instance();
   auto& fs = duckdb::FileSystem::GetFileSystem(*db);
   const auto root = path.string();
+  tests::IndexDir dir{*db, fs, root};
   irs::IndexWriterOptions writer_opts;
   writer_opts.reader_options.scorer = &Bm25();
   writer_opts.norm_column_id = [](irs::field_id id) { return id + kNormBase; };
-  auto writer = irs::IndexWriter::Make(*db, fs, root, irs::kOmCreate,
-                                       std::move(writer_opts));
+  auto writer = tests::IndexWriter::Make(dir, tests::kOmCreate,
+                                         std::move(writer_opts));
   auto plain_tokens = spec.make();
   auto positional_tokens = spec.make();
   Field plain{.tokenizer = plain_tokens.get(),
@@ -235,7 +237,7 @@ const Index& IndexOf(size_t dictionary) {
     writer->RefreshCommit();
   }
   irs::IndexReaderOptions reader_opts;
-  index->reader = irs::DirectoryReader{*db, fs, root, reader_opts};
+  index->reader = tests::OpenReader(dir, reader_opts);
   std::fprintf(stderr, "[index] %-8s %zu segments\n", spec.name,
                index->reader.size());
   return *index;

@@ -44,6 +44,7 @@
 #include "connector/common.h"
 #include "connector/search_sink_writer.hpp"
 #include "gtest/gtest.h"
+#include "index/test_index_writer.hpp"
 
 namespace {
 
@@ -189,21 +190,14 @@ class DuckDBSearchSinkWriterTest : public ::testing::Test {
   }
 
   void SetUp() final {
-    irs::IndexWriterOptions options;
-    _data_writer = irs::IndexWriter::Make(TestDb(), _fs, kRoot, irs::kOmCreate,
-                                          std::move(options));
+    _data_writer = ::tests::IndexWriter::Make(_dir, ::tests::kOmCreate, {});
   }
 
-  void TearDown() final {
-    _data_writer.reset();
-    _fs.RemoveDirectory(kRoot);
-  }
+  void TearDown() final { _data_writer.reset(); }
 
  protected:
-  static inline const std::string kRoot = "memory://sink_writer";
-
-  duckdb::FileSystem& _fs = duckdb::FileSystem::GetFileSystem(TestDb());
-  irs::IndexWriter::ptr _data_writer;
+  ::tests::IndexDir _dir{TestDb(), "memory://sink_writer"};
+  ::tests::IndexWriter::ptr _data_writer;
 };
 
 TEST(TokenizerPoolTest, ReturnedGeoLeaseIsUnbound) {
@@ -251,7 +245,7 @@ TEST_F(DuckDBSearchSinkWriterTest, InsertDeleteMultipleColumns) {
   const std::vector<connector::ColumnId> col_id{
     connector::ColumnId{1}, connector::ColumnId{2}, connector::ColumnId{3},
     connector::ColumnId{4}, connector::ColumnId{5}};
-  DuckDBSearchSinkInsertWriter sink{trx, AnalyzerProvider, col_id};
+  DuckDBSearchSinkInsertWriter sink{trx.Native(), AnalyzerProvider, col_id};
 
   // Indexed term values per row (per column).
   const std::vector<std::string_view> string_values{
@@ -407,7 +401,7 @@ TEST_F(DuckDBSearchSinkWriterTest, InsertDeleteMultipleColumns) {
     ASSERT_FALSE(!irs::doc_limits::eof(big_postings->Next()));
   };
   {
-    auto reader = irs::DirectoryReader(TestDb(), _fs, kRoot, {});
+    auto reader = ::tests::OpenReader(_dir, {});
     ASSERT_EQ(1, reader.size());
     ASSERT_EQ(4, reader.docs_count());
     ASSERT_EQ(4, reader.live_docs_count());
@@ -435,7 +429,7 @@ TEST_F(DuckDBSearchSinkWriterTest, InsertDeleteMultipleColumns) {
   _data_writer->RefreshCommit();
 
   {
-    auto reader = irs::DirectoryReader(TestDb(), _fs, kRoot, {});
+    auto reader = ::tests::OpenReader(_dir, {});
     ASSERT_EQ(1, reader.size());
     ASSERT_EQ(4, reader.docs_count());
     ASSERT_EQ(2, reader.live_docs_count());
@@ -470,7 +464,7 @@ TEST_F(DuckDBSearchSinkWriterTest, InsertNullsColumns) {
     return nullptr;
   };
 
-  DuckDBSearchSinkInsertWriter sink{trx, AnalyzerProvider, col_id,
+  DuckDBSearchSinkInsertWriter sink{trx.Native(), AnalyzerProvider, col_id,
                                     std::move(entry_provider)};
   auto pk_vec =
     MakeNumericVector<int64_t>(duckdb::LogicalType::BIGINT, {1, 2, 3, 4});
@@ -494,7 +488,7 @@ TEST_F(DuckDBSearchSinkWriterTest, InsertNullsColumns) {
   ASSERT_TRUE(trx.Commit());
   _data_writer->RefreshCommit();
 
-  auto reader = irs::DirectoryReader(TestDb(), _fs, kRoot, {});
+  auto reader = ::tests::OpenReader(_dir, {});
   ASSERT_EQ(1, reader.size());
   ASSERT_EQ(4, reader.docs_count());
   ASSERT_EQ(4, reader.live_docs_count());
@@ -640,7 +634,7 @@ TEST_F(DuckDBSearchSinkWriterTest, InsertListNullRowsApartFromNullElements) {
     [&](irs::field_id id) -> const catalog::InvertedIndexField* {
     return id == col_id ? &list_entry : nullptr;
   };
-  DuckDBSearchSinkInsertWriter sink{trx, AnalyzerProvider,
+  DuckDBSearchSinkInsertWriter sink{trx.Native(), AnalyzerProvider,
                                     std::vector<connector::ColumnId>{col_id},
                                     std::move(entry_provider)};
   auto pk_vec =
@@ -662,7 +656,7 @@ TEST_F(DuckDBSearchSinkWriterTest, InsertListNullRowsApartFromNullElements) {
   ASSERT_TRUE(trx.Commit());
   _data_writer->RefreshCommit();
 
-  auto reader = irs::DirectoryReader(TestDb(), _fs, kRoot, {});
+  auto reader = ::tests::OpenReader(_dir, {});
   ASSERT_EQ(1, reader.size());
   auto& segment = reader[0];
   const auto* pk_column = segment.GetColReader()->Column(kPKFieldId);
@@ -713,7 +707,7 @@ TEST_F(DuckDBSearchSinkWriterTest, InsertJsonListLeavesInTheirMembers) {
     [&](irs::field_id id) -> const catalog::InvertedIndexField* {
     return id == col_id ? &list_entry : nullptr;
   };
-  DuckDBSearchSinkInsertWriter sink{trx, AnalyzerProvider,
+  DuckDBSearchSinkInsertWriter sink{trx.Native(), AnalyzerProvider,
                                     std::vector<connector::ColumnId>{col_id},
                                     std::move(entry_provider)};
   auto pk_vec =
@@ -738,7 +732,7 @@ TEST_F(DuckDBSearchSinkWriterTest, InsertJsonListLeavesInTheirMembers) {
   ASSERT_TRUE(trx.Commit());
   _data_writer->RefreshCommit();
 
-  auto reader = irs::DirectoryReader(TestDb(), _fs, kRoot, {});
+  auto reader = ::tests::OpenReader(_dir, {});
   ASSERT_EQ(1, reader.size());
   auto& segment = reader[0];
   const auto* pk_column = segment.GetColReader()->Column(kPKFieldId);
@@ -798,7 +792,7 @@ TEST_F(DuckDBSearchSinkWriterTest, InsertJsonListLeavesInTheirMembers) {
 TEST_F(DuckDBSearchSinkWriterTest, InsertStringPrefix) {
   auto trx = _data_writer->GetBatch();
   const connector::ColumnId col_id{1};
-  DuckDBSearchSinkInsertWriter sink{trx, AnalyzerProvider, {col_id}};
+  DuckDBSearchSinkInsertWriter sink{trx.Native(), AnalyzerProvider, {col_id}};
 
   auto pk_vec = MakeNumericVector<int64_t>(duckdb::LogicalType::BIGINT, {1});
   sink.Init(1, &pk_vec);
@@ -810,7 +804,7 @@ TEST_F(DuckDBSearchSinkWriterTest, InsertStringPrefix) {
   sink.Finish();
   ASSERT_TRUE(trx.Commit());
   _data_writer->RefreshCommit();
-  auto reader = irs::DirectoryReader(TestDb(), _fs, kRoot, {});
+  auto reader = ::tests::OpenReader(_dir, {});
   ASSERT_EQ(1, reader.size());
   ASSERT_EQ(1, reader.docs_count());
   ASSERT_EQ(1, reader.live_docs_count());

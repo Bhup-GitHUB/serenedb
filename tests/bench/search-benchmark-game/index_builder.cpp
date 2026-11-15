@@ -20,6 +20,7 @@
 
 #include "index_builder.h"
 
+#include <absl/algorithm/container.h>
 #include <absl/strings/str_format.h>
 #include <simdjson.h>
 
@@ -28,7 +29,14 @@
 #include <duckdb/common/serializer/write_stream.hpp>
 #include <duckdb/main/database.hpp>
 #include <filesystem>
+#include <iresearch/index/file_names.hpp>
+#include <iresearch/index/segment_hold.hpp>
+#include <iresearch/index/segment_list.hpp>
+#include <iresearch/index/segment_reader_impl.hpp>
 #include <iresearch/search/scorers/bm25.hpp>
+#include <iresearch/store/index_files.hpp>
+#include <iresearch/store/storage.hpp>
+#include <iresearch/utils/async.hpp>
 #include <iresearch/utils/duckdb_engine.hpp>
 #include <iresearch/utils/index_utils.hpp>
 #include <memory>
@@ -38,13 +46,15 @@
 
 namespace bench {
 
-static irs::IndexWriterOptions MakeWriterOptions(
-  irs::ScorerPtr scorer_ptr, std::shared_ptr<irs::IndexFileRefs> refs,
-  size_t segment_pool_size, size_t segment_mem_max, uint32_t row_group_size,
-  uint32_t segment_docs_max) {
+static irs::IndexWriterOptions MakeWriterOptions(irs::ScorerPtr scorer_ptr,
+                                                 size_t segment_pool_size,
+                                                 size_t segment_mem_max,
+                                                 uint32_t row_group_size,
+                                                 uint32_t segment_docs_max) {
   irs::IndexWriterOptions writer_opts;
   writer_opts.reader_options.scorer = scorer_ptr;
-  writer_opts.reader_options.refs = std::move(refs);
+  writer_opts.reader_options.released =
+    std::make_shared<irs::ReleasedSegments>();
   writer_opts.segment_pool_size = segment_pool_size;
   writer_opts.segment_memory_max = segment_mem_max;
   writer_opts.segment_docs_max = segment_docs_max;
@@ -69,13 +79,112 @@ IndexBuilder::IndexBuilder(std::string_view path,
     _scorer{irs::BM25::Make(irs::BM25::Options{})},
     _fs{duckdb::FileSystem::GetFileSystem(
       ::irs::DuckDBEngine::Instance().instance())},
-    _root{MakeDirectory(path)},
-    _refs{std::make_shared<irs::IndexFileRefs>()},
-    _writer{irs::IndexWriter::Make(
-      ::irs::DuckDBEngine::Instance().instance(), _fs, _root, irs::kOmCreate,
-      MakeWriterOptions(_scorer_ptr, _refs, opts.indexer_threads,
-                        config.segment_mem_max, opts.row_group_size,
-                        opts.segment_docs_max))} {}
+    _root{MakeDirectory(path)} {
+  auto options =
+    MakeWriterOptions(_scorer_ptr, opts.indexer_threads, config.segment_mem_max,
+                      opts.row_group_size, opts.segment_docs_max);
+  _reader_options = options.reader_options;
+  _writer = irs::IndexWriter::Make(::irs::DuckDBEngine::Instance().instance(),
+                                   _fs, _root, std::move(options));
+}
+
+irs::DirectoryReader IndexBuilder::GetReader() {
+  std::vector<irs::SegmentReader> readers;
+  absl::MutexLock lock{&_mutex};
+  readers.reserve(_segments.size());
+  for (const auto& meta : _segments) {
+    readers.emplace_back(irs::SegmentReaderImpl::Open(
+      ::irs::DuckDBEngine::Instance().instance(), _fs, _root, meta,
+      _reader_options));
+  }
+  return {_reader_options, std::move(readers), /*stats=*/true};
+}
+
+void IndexBuilder::Remove(const irs::DocRemoval& removal) {
+  absl::MutexLock lock{&_mutex};
+  for (const auto& group : removal.groups) {
+    const auto name = irs::FileName(group.segment);
+    const auto it = absl::c_find_if(
+      _segments, [&](const auto& meta) { return meta.name == name; });
+    if (it == _segments.end()) {
+      continue;
+    }
+    irs::DocumentMaskBuilder docs{group.docs};
+    if (it->docs_mask) {
+      docs.Merge(*it->docs_mask);
+    }
+    it->docs_mask =
+      std::make_shared<const irs::DocumentMask>(std::move(docs).Finish());
+    it->live_docs_count = it->docs_count - irs::RemovalCount(*it);
+  }
+}
+
+void IndexBuilder::Add(
+  std::span<const irs::IndexWriter::FlushedSegment> flushed) {
+  absl::MutexLock lock{&_mutex};
+  for (const auto& segment : flushed) {
+    SDB_ASSERT(segment.docs_mask.Empty());
+    _segments.push_back(segment.meta);
+  }
+}
+
+void IndexBuilder::Compact(const irs::CompactionPolicy& policy) {
+  {
+    auto merged = irs::GetBlocking(
+      _writer->MergeAsync(policy, GetReader(), nullptr, {}, nullptr));
+    if (!merged.reader) {
+      return;
+    }
+    absl::MutexLock lock{&_mutex};
+    for (const auto* candidate : merged.claim.candidates) {
+      const auto it = absl::c_find_if(_segments, [&](const auto& meta) {
+        return meta.name == candidate->Meta().name;
+      });
+      if (it == _segments.end() ||
+          it->docs_mask.get() != candidate->docs_mask()) {
+        return;
+      }
+    }
+    for (const auto* candidate : merged.claim.candidates) {
+      std::erase_if(_segments, [&](const auto& meta) {
+        return meta.name == candidate->Meta().name;
+      });
+    }
+    _segments.push_back(merged.meta);
+  }
+  irs::RemoveReleased(_fs, _root, *_reader_options.released);
+}
+
+void IndexBuilder::Settle() {
+  const auto policy =
+    irs::index_utils::MakePolicy(irs::index_utils::CompactionTier{});
+  const auto count = [&] {
+    absl::MutexLock lock{&_mutex};
+    return _segments.size();
+  };
+  for (auto segments = count(); segments > 1;) {
+    Compact(policy);
+    const auto left = count();
+    if (left >= segments) {
+      break;
+    }
+    segments = left;
+  }
+}
+
+void IndexBuilder::WriteSegmentList() {
+  std::string text;
+  {
+    absl::MutexLock lock{&_mutex};
+    for (const auto& meta : _segments) {
+      SDB_ASSERT(!meta.docs_mask);
+      uint64_t id = 0;
+      irs::ParseSegmentId(meta.name, id);
+      irs::AppendSegmentList(text, id, meta.kinds, meta.docs_count);
+    }
+  }
+  irs::WriteWhole(_fs, _fs.JoinPath(_root, kSegmentListFile), text, true);
+}
 
 void Batch::Add(std::string_view id, std::string_view text) {
   _spans.push_back(
@@ -176,29 +285,6 @@ void IndexBuilder::IndexFrom(LineSource& source, BatchHandlerFactory factory) {
   absl::Mutex compaction_mutex;
   absl::CondVar compaction_cv;
 
-  // commiter thread
-  if (_opts.refresh_interval_ms) {
-    threads.emplace_back(
-      [&compaction_cv, &compaction_mutex, &batch_provider, this] {
-        while (!batch_provider.done.load()) {
-          {
-            absl::PrintF("[COMMIT]\n");
-            std::fflush(stdout);
-            _writer->RefreshCommit();
-          }
-
-          // notify compaction threads
-          if (_opts.compaction_threads) {
-            absl::MutexLock lock{&compaction_mutex};
-            compaction_cv.notify_all();
-          }
-
-          std::this_thread::sleep_for(
-            std::chrono::milliseconds(_opts.refresh_interval_ms));
-        }
-      });
-  }
-
   // compaction threads
   const irs::index_utils::CompactionTier compaction_options;
   auto policy = irs::index_utils::MakePolicy(compaction_options);
@@ -215,14 +301,9 @@ void IndexBuilder::IndexFrom(LineSource& source, BatchHandlerFactory factory) {
           }
         }
 
-        {
-          absl::PrintF("[COMPACT]");
-          std::fflush(stdout);
-          _writer->Compact(policy);
-        }
-
-        irs::RemoveAllUnreferenced(_fs, _root, *_refs,
-                                   irs::ListIndexFiles(_fs, _root));
+        absl::PrintF("[COMPACT]");
+        std::fflush(stdout);
+        Compact(policy);
       }
     });
   }
@@ -237,7 +318,12 @@ void IndexBuilder::IndexFrom(LineSource& source, BatchHandlerFactory factory) {
       while (batch_provider.Take(batch)) {
         auto ctx = _writer->GetBatch();
         (*handler)(batch, ctx);
-        ctx.Commit();
+        Add(ctx.FlushSegments(true));
+        ctx.Abort();
+        if (_opts.compaction_threads) {
+          absl::MutexLock lock{&compaction_mutex};
+          compaction_cv.notify_all();
+        }
         absl::PrintF(".");
         std::fflush(stdout);
       }
@@ -246,46 +332,16 @@ void IndexBuilder::IndexFrom(LineSource& source, BatchHandlerFactory factory) {
 
   threads.clear();
 
-  absl::PrintF("[COMMIT]\n");
-  std::fflush(stdout);
-  _writer->RefreshCommit();
-
   if (_opts.compact_all) {
     absl::PrintF("Compacting all segments:\n");
     std::fflush(stdout);
-    CompactAll();
+    Compact(irs::index_utils::MakePolicy(irs::index_utils::CompactionCount()));
   } else if (_opts.settle) {
     absl::PrintF("Settling segments:\n");
     std::fflush(stdout);
     Settle();
-  } else if (_opts.compaction_threads) {
-    irs::RemoveAllUnreferenced(_fs, _root, *_refs,
-                               irs::ListIndexFiles(_fs, _root));
   }
-}
-
-void IndexBuilder::CompactAll() {
-  _writer->Compact(
-    irs::index_utils::MakePolicy(irs::index_utils::CompactionCount()));
-  _writer->RefreshCommit();
-  irs::RemoveAllUnreferenced(_fs, _root, *_refs,
-                             irs::ListIndexFiles(_fs, _root));
-}
-
-void IndexBuilder::Settle() {
-  const auto policy =
-    irs::index_utils::MakePolicy(irs::index_utils::CompactionTier{});
-  for (auto segments = GetReader().size(); segments > 1;) {
-    _writer->Compact(policy);
-    _writer->RefreshCommit();
-    const auto left = GetReader().size();
-    if (left >= segments) {
-      break;
-    }
-    segments = left;
-  }
-  irs::RemoveAllUnreferenced(_fs, _root, *_refs,
-                             irs::ListIndexFiles(_fs, _root));
+  WriteSegmentList();
 }
 
 bool TextField::Write(duckdb::WriteStream& out) const {

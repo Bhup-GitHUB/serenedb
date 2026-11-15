@@ -33,8 +33,9 @@
 #include <iresearch/utils/log.hpp>
 #include <iresearch/utils/operating_system.hpp>
 #include <iresearch/utils/string_utils.hpp>
-#include <system_error>
+#include <string>
 
+#include "backup/pg_control.h"
 #include "server/utils/lifecycle.h"
 #include "server/utils/lockfile.h"
 
@@ -61,12 +62,10 @@ DatabasePathFeature::DatabasePathFeature()
     _hba_config_file = duckdb::FileSystem::JoinPath(_directory, hba);
   }
 
+  auto& fs = irs::DuckDBEngine::Instance().instance().GetInternalFileSystem();
   try {
-    if (irs::DuckDBEngine::Instance()
-          .instance()
-          .GetInternalFileSystem()
-          .CreateDirectoryExtended(
-            _directory, {.mode = duckdb::CreateDirectoryMode::RECURSIVE})) {
+    if (fs.CreateDirectoryExtended(
+          _directory, {.mode = duckdb::CreateDirectoryMode::RECURSIVE})) {
       SDB_INFO(STARTUP, "Created database directory: ", _directory);
     }
   } catch (const std::exception& e) {
@@ -74,28 +73,20 @@ DatabasePathFeature::DatabasePathFeature()
               "': ", duckdb::ErrorData{e}.RawMessage());
   }
 
-  // Acquire the LOCK file in the data directory. The lockfile guards against
-  // a second serened starting on the same data dir. No explicit shutdown hook
-  // needed: server/utils/lockfile.cpp owns a LockfileRemover whose static dtor
-  // runs on normal exit and releases / unlinks every lockfile we acquired.
-  // Fatal paths (_exit / abort) skip static dtors; the stale lockfile that
-  // remains is handled by VerifyLockFile on the next start.
-  const auto lock_filename = duckdb::FileSystem::JoinPath(_directory, "LOCK");
-  if (const auto status = VerifyLockFile(lock_filename.c_str()); !status.ok()) {
-    SDB_FATAL(GENERAL, status.message());
+  const auto version = fs.JoinPath(_directory, backup::kPgVersionFile);
+  std::string locked;
+  try {
+    _initialized = fs.FileExists(version);
+    locked = _initialized ? version : backup::PendingPgVersion(_directory);
+  } catch (const std::exception& e) {
+    SDB_FATAL(GENERAL, "Unable to check '", version,
+              "': ", duckdb::ErrorData{e}.RawMessage());
   }
-  std::error_code ec;
-  if (std::filesystem::exists(lock_filename, ec) && !ec) {
-    std::filesystem::remove(lock_filename, ec);
-    if (ec) {
-      SDB_FATAL(GENERAL, "failed to remove an abandoned lockfile '",
-                lock_filename, "': ", ec.message());
-    }
+  auto lock = FileLock::Take(locked, FileLock::Mode::Exclusive);
+  if (!lock.ok()) {
+    SDB_FATAL(GENERAL, lock.status().message());
   }
-  if (const auto status = CreateLockFile(lock_filename.c_str()); !status.ok()) {
-    SDB_FATAL(GENERAL,
-              "failed to lock the database directory: ", status.message());
-  }
+  _lock = std::move(*lock);
 
   gInstance = this;
 }

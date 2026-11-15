@@ -49,6 +49,7 @@
 #include <utility>
 #include <vector>
 
+#include "index/test_index_writer.hpp"
 #include "insert_field.hpp"
 #include "test_resources.hpp"
 #include "text_chain.hpp"
@@ -343,9 +344,12 @@ Corpus BuildIndex() {
   auto* db = &irs::DuckDBEngine::Instance().instance();
   auto& fs = duckdb::FileSystem::GetFileSystem(*db);
   const auto root = tmp_root.string();
+  tests::IndexDir dir{*db, fs, root};
 
-  auto writer = irs::IndexWriter::Make(*db, fs, root, irs::kOmCreate,
-                                       irs::IndexWriterOptions{});
+  auto* db = &irs::DuckDBEngine::Instance().instance();
+  irs::IndexWriterOptions options;
+  auto writer =
+    tests::IndexWriter::Make(dir, tests::kOmCreate, std::move(options));
   if (!writer) {
     Die("IndexWriter::Make returned null");
   }
@@ -376,8 +380,9 @@ Corpus BuildIndex() {
                "regexp_vs_wildcard bench: indexed %zu documents from %s\n",
                inserted, data_path.string().c_str());
 
-  auto rdr = irs::DirectoryReader{*db, fs, root, irs::IndexReaderOptions{}};
-  return Corpus{.dir_path = std::move(tmp_root), .reader = std::move(rdr)};
+  auto rdr = tests::OpenReader(dir, irs::IndexReaderOptions{});
+  return Corpus{.dir_path = std::move(tmp_root),
+                .reader = std::move(rdr)};
 }
 
 const Corpus& GetCorpus() {

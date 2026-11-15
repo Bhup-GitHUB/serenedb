@@ -31,13 +31,10 @@
 #include <string_view>
 #include <vector>
 
+#include "iresearch/index/segment_hold.hpp"
 #include "iresearch/utils/containers/flat_hash_set.hpp"
-#include "iresearch/utils/ref_counter.hpp"
 
 namespace irs {
-
-using IndexFileRefs = RefCounter<std::string>;
-using FileRefs = std::vector<IndexFileRefs::ref_t>;
 
 class FileObserver {
  public:
@@ -65,33 +62,11 @@ class FileTracker final : public FileObserver {
   void Renamed(std::string_view src, std::string_view dst) final;
 
   TrackedFiles Flush();
-  void Clear() noexcept;
+  void Remove(duckdb::FileSystem& fs, std::string_view root) noexcept;
 
  private:
   containers::FlatHashSet<std::string> _files;
   uint64_t _files_size = 0;
-};
-
-class RefTracker final : public FileObserver {
- public:
-  explicit RefTracker(IndexFileRefs& refs) noexcept : _refs{refs} {}
-
-  void Created(std::string_view name) final;
-  void Written(uint64_t bytes) final;
-  void Removed(std::string_view name) final;
-  void Renamed(std::string_view src, std::string_view dst) final;
-
-  std::vector<IndexFileRefs::ref_t> GetRefs() const;
-  void Clear();
-
- private:
-  using Refs =
-    containers::FlatHashSet<IndexFileRefs::ref_t, IndexFileRefs::Hash,
-                            IndexFileRefs::EqualTo>;
-
-  IndexFileRefs& _refs;
-  mutable absl::Mutex _mutex;
-  Refs _tracked ABSL_GUARDED_BY(_mutex);
 };
 
 std::unique_ptr<duckdb::BufferedFileWriter> OpenOutput(
@@ -104,14 +79,12 @@ void CloseOutput(duckdb::BufferedFileWriter& out,
 std::vector<std::string> ListIndexFiles(duckdb::FileSystem& fs,
                                         std::string_view root);
 
-IndexFileRefs::ref_t Reference(duckdb::FileSystem& fs, std::string_view root,
-                               IndexFileRefs& refs, std::string_view name);
+uint64_t MaxSegmentId(std::span<const std::string> files);
 
-void RemoveUnreferenced(duckdb::FileSystem& fs, std::string_view root,
-                        IndexFileRefs& refs);
+bool RemoveIndexFiles(duckdb::FileSystem& fs, std::string_view root,
+                      std::span<const std::string> names);
 
-void RemoveAllUnreferenced(duckdb::FileSystem& fs, std::string_view root,
-                           IndexFileRefs& refs,
-                           std::span<const std::string> files);
+void RemoveReleased(duckdb::FileSystem& fs, std::string_view root,
+                    ReleasedSegments& released);
 
 }  // namespace irs

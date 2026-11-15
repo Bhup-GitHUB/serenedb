@@ -13,7 +13,6 @@ add_library(
     OBJECT
     formats/column/test_cs_helpers.cpp
     hook_file_system.cpp
-    index_dir.cpp
     search/filter_test_case_base.cpp
     tests_main.cpp
     tests_param.cpp
@@ -108,7 +107,6 @@ add_executable(
     index/index_adopt_tests.cpp
     index/index_column_tests.cpp
     index/index_death_tests.cpp
-    index/index_meta_tests.cpp
     index/index_profile_tests.cpp
     index/index_tests.cpp
     index/inverter_oracle_test.cpp
@@ -116,6 +114,7 @@ add_executable(
     index/merge_writer_tests.cpp
     index/norm_test.cpp
     index/object_store_index_tests.cpp
+    index/piece_tests.cpp
     index/segment_writer_tests.cpp
     index/sorted_index_tests.cpp
     parser/lucene_parser_test.cpp
@@ -194,7 +193,6 @@ add_executable(
     utils/re2_owned_dfa_test.cpp
     utils/re2_required_literal_test.cpp
     utils/re2_segment_plan_test.cpp
-    utils/ref_counter_tests.cpp
     utils/regexp_ngram_test.cpp
     utils/regexp_utils_test.cpp
     utils/std_test.cpp
@@ -206,13 +204,17 @@ add_executable(
 )
 target_link_libraries(
     iresearch-tests
-    PRIVATE iresearch-test-support search-benchmark-common
+    PRIVATE iresearch-test-support iresearch-test-writer search-benchmark-common
 )
 sdb_link_duckdb_extensions(iresearch-tests)
 
 add_executable(iresearch-load-tests search/load_test.cpp)
 target_link_libraries(
     iresearch-load-tests
-    PRIVATE iresearch-test-support search-benchmark-common serene
+    PRIVATE
+        iresearch-test-support
+        iresearch-test-writer
+        search-benchmark-common
+        serene
 )
 sdb_link_duckdb_extensions(iresearch-load-tests)

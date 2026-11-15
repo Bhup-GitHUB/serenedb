@@ -1,17 +1,14 @@
-"""What boot does with a data directory that lost files or holds leftovers.
+"""What boot does with a data directory that lost files.
 
-A database whose data file is missing: the default refuses to start, since
-coming back with an empty database would turn a lost file into silent data
-loss. --missing_database=skip boots without attaching it, and
---missing_database=drop removes it from the catalog.
-
-A missing catalog log beside database directories that hold data refuses to
-start too. Empty directories a crashed first boot left are removed.
+A table or index whose directory is missing refuses to start, since coming
+back without its data would turn a lost file into silent data loss. A missing
+catalog log beside table directories refuses to start too.
 """
 
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -71,67 +68,6 @@ class _Server:
         return self.log.read_text()
 
 
-def _databases(server: _Server) -> list[str]:
-    with server.connect() as conn:
-        rows = conn.execute(
-            "SELECT datname FROM pg_database ORDER BY datname").fetchall()
-    return [row[0] for row in rows]
-
-
-def test_missing_database_file(tmp_path: Path) -> None:
-    datadir = tmp_path / "data"
-    server = _Server(datadir)
-    try:
-        assert server.wait_ready(), server.output()
-        with server.connect() as conn:
-            conn.execute("CREATE DATABASE lost")
-            conn.execute("CREATE TABLE lost.public.t(a INTEGER)")
-            conn.execute("INSERT INTO lost.public.t VALUES (1)")
-            conn.execute("CREATE INDEX t_inv ON lost.public.t USING inverted (a)")
-            conn.execute("CREATE TABLE lost.public.s(a INTEGER PRIMARY KEY, b TEXT) "
-                         "WITH (storage = 'search')")
-            conn.execute("INSERT INTO lost.public.s VALUES (1, 'x')")
-            oid = conn.execute(
-                "SELECT oid FROM pg_database WHERE datname = 'lost'"
-            ).fetchone()[0]
-    finally:
-        server.stop()
-    database_dir = datadir / "engine_v1" / str(oid)
-    assert sum(path.is_dir() for path in database_dir.iterdir()) == 2
-    for path in database_dir.glob("data.db*"):
-        path.unlink()
-
-    refused = _Server(datadir)
-    try:
-        assert not refused.wait_ready(timeout=30)
-        assert refused.proc.wait(timeout=30) != 0
-        assert "--missing_database=skip" in refused.output()
-    finally:
-        refused.stop()
-
-    skipped = _Server(datadir, "--missing_database=skip")
-    try:
-        assert skipped.wait_ready(), skipped.output()
-        assert _databases(skipped) == ["lost", "postgres"]
-    finally:
-        skipped.stop()
-
-    dropped = _Server(datadir, "--missing_database=drop")
-    try:
-        assert dropped.wait_ready(), dropped.output()
-        assert _databases(dropped) == ["postgres"]
-    finally:
-        dropped.stop()
-    assert not (datadir / "engine_v1" / str(oid)).exists()
-
-    after = _Server(datadir)
-    try:
-        assert after.wait_ready(), after.output()
-        assert _databases(after) == ["postgres"]
-    finally:
-        after.stop()
-
-
 def test_missing_catalog_log(tmp_path: Path) -> None:
     datadir = tmp_path / "data"
     server = _Server(datadir)
@@ -140,76 +76,29 @@ def test_missing_catalog_log(tmp_path: Path) -> None:
         with server.connect() as conn:
             conn.execute("CREATE TABLE kept(a INTEGER)")
             conn.execute("INSERT INTO kept VALUES (1)")
+        storage = _search_table_dir(server, datadir, "postgres", "kept")
     finally:
         server.stop()
-    (datadir / "engine_v1" / "catalog.wal").unlink()
+    shutil.rmtree(datadir / "engine_v1" / "wal")
 
     refused = _Server(datadir)
     try:
         assert not refused.wait_ready(timeout=30)
         assert refused.proc.wait(timeout=30) != 0
-        assert "holds database directories" in refused.output()
+        assert "holds no catalog log" in refused.output()
     finally:
         refused.stop()
-    assert any((datadir / "engine_v1").glob("*/data.db"))
-
-
-@pytest.mark.skipif(os.geteuid() == 0,
-                    reason="root reads a directory whatever its mode")
-def test_unreadable_database_directory(tmp_path: Path) -> None:
-    datadir = tmp_path / "data"
-    server = _Server(datadir)
-    try:
-        assert server.wait_ready(), server.output()
-        with server.connect() as conn:
-            conn.execute("CREATE TABLE kept(a INTEGER)")
-            conn.execute("INSERT INTO kept VALUES (1)")
-    finally:
-        server.stop()
-    engine = datadir / "engine_v1"
-    (engine / "catalog.wal").unlink()
-    databases = [path for path in engine.iterdir() if path.is_dir()]
-    assert databases
-    for database in databases:
-        database.chmod(0)
-
-    refused = _Server(datadir)
-    try:
-        assert not refused.wait_ready(timeout=30)
-        assert refused.proc.wait(timeout=30) != 0
-        assert "cannot list '" in refused.output()
-        assert "Permission denied" in refused.output()
-    finally:
-        refused.stop()
-        for database in databases:
-            database.chmod(0o700)
-    assert any(engine.glob("*/data.db"))
-
-
-def test_first_boot_leftovers(tmp_path: Path) -> None:
-    datadir = tmp_path / "data"
-    engine = datadir / "engine_v1"
-    (engine / "5").mkdir(parents=True)
-    (engine / "4242").mkdir()
-
-    server = _Server(datadir)
-    try:
-        assert server.wait_ready(), server.output()
-        assert _databases(server) == ["postgres"]
-    finally:
-        server.stop()
-    assert not (engine / "4242").exists()
-    assert (engine / "5" / "data.db").exists()
+    assert storage.is_dir()
 
 
 def _search_table_dir(server: _Server, datadir: Path, database: str,
                       table: str) -> Path:
     with server.connect() as conn:
-        db_oid, table_oid = conn.execute(
-            "SELECT d.oid, t.table_oid FROM pg_database d, duckdb_tables() t "
-            "WHERE d.datname = %s AND t.database_name = %s "
-            "AND t.table_name = %s", (database, database, table)).fetchone()
-    return datadir / "engine_v1" / str(db_oid) / str(table_oid)
+        table_oid = conn.execute(
+            "SELECT table_oid FROM duckdb_tables() "
+            "WHERE database_name = %s AND table_name = %s",
+            (database, table)).fetchone()[0]
+    return datadir / "engine_v1" / "store" / str(table_oid)
 
 
 def test_missing_storage_directory(tmp_path: Path) -> None:
@@ -219,10 +108,8 @@ def test_missing_storage_directory(tmp_path: Path) -> None:
         assert server.wait_ready(), server.output()
         with server.connect() as conn:
             conn.execute(
-                "CREATE TABLE docs(id BIGINT PRIMARY KEY, body TEXT) "
-                "WITH (storage = 'search')")
+                "CREATE TABLE docs(id BIGINT PRIMARY KEY, body TEXT) ")
             conn.execute("INSERT INTO docs VALUES (1, 'kept')")
-            conn.execute("VACUUM (REFRESH_TABLE) docs")
         storage = _search_table_dir(server, datadir, "postgres", "docs")
     finally:
         server.stop()
@@ -239,89 +126,3 @@ def test_missing_storage_directory(tmp_path: Path) -> None:
         assert "is missing" in refused.output()
     finally:
         refused.stop()
-
-
-def test_missing_database_directory(tmp_path: Path) -> None:
-    datadir = tmp_path / "data"
-    server = _Server(datadir)
-    try:
-        assert server.wait_ready(), server.output()
-        with server.connect() as conn:
-            conn.execute("CREATE DATABASE gone")
-            conn.execute(
-                "CREATE TABLE gone.public.docs(id BIGINT PRIMARY KEY, v INT) "
-                "WITH (storage = 'search')")
-            conn.execute("INSERT INTO gone.public.docs VALUES (1, 1)")
-        storage = _search_table_dir(server, datadir, "gone", "docs")
-    finally:
-        server.stop()
-    database = storage.parent
-    for path in sorted(database.rglob("*"), reverse=True):
-        path.rmdir() if path.is_dir() else path.unlink()
-    database.rmdir()
-
-    skipped = _Server(datadir, "--missing_database=skip")
-    try:
-        assert skipped.wait_ready(), skipped.output()
-        assert _databases(skipped) == ["gone", "postgres"]
-    finally:
-        skipped.stop()
-    assert not database.exists()
-
-    dropped = _Server(datadir, "--missing_database=drop")
-    try:
-        assert dropped.wait_ready(), dropped.output()
-        assert _databases(dropped) == ["postgres"]
-    finally:
-        dropped.stop()
-    assert not database.exists()
-
-
-def test_skipped_database_keeps_its_tablespace(tmp_path: Path) -> None:
-    datadir = tmp_path / "data"
-    location = tmp_path / "space"
-    server = _Server(datadir)
-    try:
-        assert server.wait_ready(), server.output()
-        with server.connect() as conn:
-            conn.execute(f"CREATE TABLESPACE lost_space LOCATION '{location}'")
-            conn.execute("CREATE DATABASE lost")
-            conn.execute(
-                "CREATE TABLE lost.public.docs(id BIGINT PRIMARY KEY, body TEXT) "
-                "WITH (storage = 'search') TABLESPACE lost_space")
-            conn.execute("INSERT INTO lost.public.docs VALUES (1, 'kept')")
-            conn.execute("VACUUM (REFRESH_TABLE) lost.public.docs")
-            oid = conn.execute(
-                "SELECT oid FROM pg_database WHERE datname = 'lost'"
-            ).fetchone()[0]
-    finally:
-        server.stop()
-    database = datadir / "engine_v1" / str(oid)
-    for path in sorted(database.rglob("*"), reverse=True):
-        path.rmdir() if path.is_dir() else path.unlink()
-    database.rmdir()
-    [stored] = location.glob(f"*/engine_v1/{oid}")
-    files = sorted(stored.rglob("*"))
-    assert any(path.is_file() for path in files), files
-
-    skipped = _Server(datadir, "--missing_database=skip")
-    try:
-        assert skipped.wait_ready(), skipped.output()
-        assert _databases(skipped) == ["lost", "postgres"]
-        with skipped.connect() as conn:
-            conn.execute(f"CREATE TABLESPACE unused_space "
-                         f"LOCATION '{tmp_path / 'unused'}'")
-            for tablespace in ("lost_space", "unused_space"):
-                with pytest.raises(
-                        psycopg.errors.ObjectNotInPrerequisiteState,
-                        match=f'tablespace "{tablespace}" cannot be dropped '
-                              'while database "lost" is not attached'):
-                    conn.execute(f"DROP TABLESPACE {tablespace}")
-        assert sorted(stored.rglob("*")) == files
-        with skipped.connect() as conn:
-            conn.execute("DROP DATABASE lost")
-            conn.execute("DROP TABLESPACE lost_space")
-            conn.execute("DROP TABLESPACE unused_space")
-    finally:
-        skipped.stop()
-    assert not any(stored.parent.iterdir())

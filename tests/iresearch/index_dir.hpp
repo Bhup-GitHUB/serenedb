@@ -20,16 +20,17 @@
 
 #pragma once
 
+#include <absl/base/thread_annotations.h>
 #include <absl/functional/function_ref.h>
+#include <absl/synchronization/mutex.h>
 
 #include <duckdb/common/file_system.hpp>
 #include <duckdb/common/memory_mapped_file.hpp>
 #include <duckdb/main/database.hpp>
 #include <duckdb/storage/external_file_cache/input_file_reader.hpp>
-#include <iresearch/formats/index_meta_reader.hpp>
-#include <iresearch/index/directory_reader.hpp>
+#include <iresearch/index/index_meta.hpp>
 #include <iresearch/index/index_reader_options.hpp>
-#include <iresearch/index/index_writer.hpp>
+#include <iresearch/index/segment_hold.hpp>
 #include <iresearch/store/index_files.hpp>
 #include <iresearch/store/storage.hpp>
 #include <iresearch/utils/string.hpp>
@@ -37,6 +38,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace tests {
 
@@ -70,34 +72,37 @@ class IndexDir {
   duckdb::FileSystem& Fs() const noexcept { return _state->fs; }
   const std::string& Root() const noexcept { return _state->root; }
   StorageKind Kind() const noexcept { return _state->kind; }
-  irs::IndexFileRefs& Refs() const noexcept { return *_state->refs; }
+  irs::ReleasedSegments& Released() const noexcept { return *_state->released; }
   const irs::FileObservers& Observers() const noexcept { return _observers; }
 
   irs::IndexReaderOptions ReaderOptions(
     irs::IndexReaderOptions options = {}) const;
 
+  std::vector<irs::SegmentMeta> Committed() const;
+  void Publish(std::vector<irs::SegmentMeta> segments) const;
+  size_t RemoveReleased() const;
+
   IndexDir Observed(irs::FileObserver& observer) const;
 
  private:
   struct State {
+    State(duckdb::DatabaseInstance& db, duckdb::FileSystem& fs,
+          std::string root, StorageKind kind)
+      : db{db}, fs{fs}, root{std::move(root)}, kind{kind} {}
     ~State();
 
     duckdb::DatabaseInstance& db;
     duckdb::FileSystem& fs;
     std::string root;
     StorageKind kind;
-    std::shared_ptr<irs::IndexFileRefs> refs;
+    std::shared_ptr<irs::ReleasedSegments> released =
+      std::make_shared<irs::ReleasedSegments>();
+    absl::Mutex mutex;
+    std::vector<irs::SegmentMeta> committed ABSL_GUARDED_BY(mutex);
   };
 
   std::shared_ptr<State> _state;
   irs::FileObservers _observers;
 };
-
-irs::DirectoryReader OpenReader(const IndexDir& dir,
-                                const irs::IndexReaderOptions& options = {},
-                                irs::MetaPayloadReader payload = {});
-
-irs::IndexWriter::ptr MakeWriter(const IndexDir& dir, irs::OpenMode mode,
-                                 irs::IndexWriterOptions options = {});
 
 }  // namespace tests

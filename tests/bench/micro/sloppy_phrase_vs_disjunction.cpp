@@ -71,6 +71,7 @@
 #include <utility>
 #include <vector>
 
+#include "index/test_index_writer.hpp"
 #include "insert_field.hpp"
 #include "test_resources.hpp"
 #include "text_chain.hpp"
@@ -390,11 +391,12 @@ Corpus BuildIndex() {
   auto* db = &::irs::DuckDBEngine::Instance().instance();
   auto& fs = duckdb::FileSystem::GetFileSystem(*db);
   const auto root = tmp_root.string();
+  tests::IndexDir dir{*db, fs, root};
 
   irs::IndexWriterOptions writer_opts;
 
-  auto writer = irs::IndexWriter::Make(*db, fs, root, irs::kOmCreate,
-                                       std::move(writer_opts));
+  auto writer =
+    tests::IndexWriter::Make(dir, tests::kOmCreate, std::move(writer_opts));
   if (!writer) {
     Die("IndexWriter::Make returned null");
   }
@@ -425,8 +427,9 @@ Corpus BuildIndex() {
     inserted, data_path.string().c_str());
 
   irs::IndexReaderOptions reader_opts;
-  auto rdr = irs::DirectoryReader{*db, fs, root, reader_opts};
-  return Corpus{.dir_path = std::move(tmp_root), .reader = std::move(rdr)};
+  auto rdr = tests::OpenReader(dir, reader_opts);
+  return Corpus{.dir_path = std::move(tmp_root),
+                .reader = std::move(rdr)};
 }
 
 // Builds a synthetic corpus where every document is 30x "zzcmn", one
@@ -442,11 +445,12 @@ Corpus BuildSyntheticIndex() {
   auto* db = &::irs::DuckDBEngine::Instance().instance();
   auto& fs = duckdb::FileSystem::GetFileSystem(*db);
   const auto root = tmp_root.string();
+  tests::IndexDir dir{*db, fs, root};
 
   irs::IndexWriterOptions writer_opts;
 
-  auto writer = irs::IndexWriter::Make(*db, fs, root, irs::kOmCreate,
-                                       std::move(writer_opts));
+  auto writer =
+    tests::IndexWriter::Make(dir, tests::kOmCreate, std::move(writer_opts));
   if (!writer) {
     Die("IndexWriter::Make returned null");
   }
@@ -481,8 +485,9 @@ Corpus BuildSyntheticIndex() {
                kSyntheticDocs);
 
   irs::IndexReaderOptions reader_opts;
-  auto rdr = irs::DirectoryReader{*db, fs, root, reader_opts};
-  return Corpus{.dir_path = std::move(tmp_root), .reader = std::move(rdr)};
+  auto rdr = tests::OpenReader(dir, reader_opts);
+  return Corpus{.dir_path = std::move(tmp_root),
+                .reader = std::move(rdr)};
 }
 
 // Builds a dense 3-term corpus: each doc is "aaa bbb ccc" repeated
@@ -498,11 +503,12 @@ Corpus BuildDense3Index() {
   auto* db = &::irs::DuckDBEngine::Instance().instance();
   auto& fs = duckdb::FileSystem::GetFileSystem(*db);
   const auto root = tmp_root.string();
+  tests::IndexDir dir{*db, fs, root};
 
   irs::IndexWriterOptions writer_opts;
 
-  auto writer = irs::IndexWriter::Make(*db, fs, root, irs::kOmCreate,
-                                       std::move(writer_opts));
+  auto writer =
+    tests::IndexWriter::Make(dir, tests::kOmCreate, std::move(writer_opts));
   if (!writer) {
     Die("IndexWriter::Make returned null");
   }
@@ -533,8 +539,9 @@ Corpus BuildDense3Index() {
                kDense3Docs, kDense3Reps);
 
   irs::IndexReaderOptions reader_opts;
-  auto rdr = irs::DirectoryReader{*db, fs, root, reader_opts};
-  return Corpus{.dir_path = std::move(tmp_root), .reader = std::move(rdr)};
+  auto rdr = tests::OpenReader(dir, reader_opts);
+  return Corpus{.dir_path = std::move(tmp_root),
+                .reader = std::move(rdr)};
 }
 
 // Single-term corpus: each doc is "aaa" repeated kAllSameReps times.
@@ -547,11 +554,12 @@ Corpus BuildAllSameIndex() {
   auto* db = &::irs::DuckDBEngine::Instance().instance();
   auto& fs = duckdb::FileSystem::GetFileSystem(*db);
   const auto root = tmp_root.string();
+  tests::IndexDir dir{*db, fs, root};
 
   irs::IndexWriterOptions writer_opts;
 
-  auto writer = irs::IndexWriter::Make(*db, fs, root, irs::kOmCreate,
-                                       std::move(writer_opts));
+  auto writer =
+    tests::IndexWriter::Make(dir, tests::kOmCreate, std::move(writer_opts));
   if (!writer) {
     Die("IndexWriter::Make returned null");
   }
@@ -582,8 +590,9 @@ Corpus BuildAllSameIndex() {
                kAllSameDocs, kAllSameReps);
 
   irs::IndexReaderOptions reader_opts;
-  auto rdr = irs::DirectoryReader{*db, fs, root, reader_opts};
-  return Corpus{.dir_path = std::move(tmp_root), .reader = std::move(rdr)};
+  auto rdr = tests::OpenReader(dir, reader_opts);
+  return Corpus{.dir_path = std::move(tmp_root),
+                .reader = std::move(rdr)};
 }
 
 // Never-matching dense pair corpus: each doc is kFarApartReps of "aaa",
@@ -600,11 +609,12 @@ Corpus BuildFarApartIndex() {
   auto* db = &::irs::DuckDBEngine::Instance().instance();
   auto& fs = duckdb::FileSystem::GetFileSystem(*db);
   const auto root = tmp_root.string();
+  tests::IndexDir dir{*db, fs, root};
 
   irs::IndexWriterOptions writer_opts;
 
-  auto writer = irs::IndexWriter::Make(*db, fs, root, irs::kOmCreate,
-                                       std::move(writer_opts));
+  auto writer =
+    tests::IndexWriter::Make(dir, tests::kOmCreate, std::move(writer_opts));
   if (!writer) {
     Die("IndexWriter::Make returned null");
   }
@@ -641,8 +651,9 @@ Corpus BuildFarApartIndex() {
                kFarApartDocs, kFarApartReps, kFarApartGap, kFarApartReps);
 
   irs::IndexReaderOptions reader_opts2;
-  auto rdr2 = irs::DirectoryReader{*db, fs, root, reader_opts2};
-  return Corpus{.dir_path = std::move(tmp_root), .reader = std::move(rdr2)};
+  auto rdr2 = tests::OpenReader(dir, reader_opts2);
+  return Corpus{.dir_path = std::move(tmp_root),
+                .reader = std::move(rdr2)};
 }
 
 const Corpus& GetCorpus() {

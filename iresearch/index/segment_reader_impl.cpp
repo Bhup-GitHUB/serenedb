@@ -22,10 +22,7 @@
 
 #include "segment_reader_impl.hpp"
 
-#include <absl/algorithm/container.h>
-
 #include <duckdb/common/types.hpp>
-#include <duckdb/main/database.hpp>
 #include <utility>
 #include <vector>
 
@@ -42,7 +39,6 @@
 #include "iresearch/index/index_meta.hpp"
 #include "iresearch/search/detail/with_mask.hpp"
 #include "iresearch/search/lead/impl.hpp"
-#include "iresearch/utils/index_utils.hpp"
 #include "iresearch/utils/type_limits.hpp"
 
 namespace irs {
@@ -71,62 +67,137 @@ class SegmentAllDocs : public lead::Node {
   doc_id_t _doc = doc_limits::invalid();
 };
 
-FileRefs GetRefs(IndexFileRefs& refs, const SegmentMeta& meta) {
-  FileRefs file_refs;
-  file_refs.reserve(meta.files.size());
-  for (auto& file : meta.files) {
-    file_refs.emplace_back(refs.add(file));
-  }
-  return file_refs;
-}
-
-bool HasFile(const SegmentMeta& meta, std::string_view ext) {
-  return absl::c_linear_search(meta.files, irs::FileName(meta.name, ext));
-}
-
 }  // namespace
 
 std::shared_ptr<const SegmentReaderImpl> SegmentReaderImpl::Open(
   duckdb::DatabaseInstance& db, duckdb::FileSystem& fs, std::string_view root,
   const SegmentMeta& meta, const IndexReaderOptions& options) {
-  SDB_ASSERT(options.refs);
   auto reader = std::make_shared<SegmentReaderImpl>(PrivateTag{}, meta);
-  reader->_refs = GetRefs(*options.refs, meta);
   ParseSegmentId(meta.name, reader->_id);
-  reader->_doc_maps = std::make_shared<DocMapsSlot>();
-  reader->_readers =
-    std::make_shared<const Readers>(db, fs, root, meta, options.hnsw_bases);
+  reader->_data = std::make_shared<ColumnData>();
+  reader->_data->Open(db, fs, root, meta, options);
+  reader->_field_reader = std::make_shared<term_dict::FieldReader>();
+  reader->_field_reader->prepare(ReaderState{
+    .db = db,
+    .fs = fs,
+    .root = root,
+    .meta = meta,
+    .idx = reader->_data->idx_reader.get(),
+  });
+  if (reader->_info.byte_size == 0) {
+    const auto handles = reader->_field_reader->Postings().Handles();
+    for (const auto* file :
+         {reader->_data->col_reader->File(), reader->_data->idx_reader->File(),
+          handles.doc, handles.pos, handles.pay}) {
+      if (file) {
+        reader->_info.byte_size += file->GetSize();
+      }
+    }
+  }
+  reader->_hold = meta.hold;
+  if (!reader->_hold && options.released) {
+    reader->_hold = std::make_shared<const SegmentHold>(
+      options.released, meta.name, meta.kinds);
+  }
   return reader;
 }
 
-std::shared_ptr<const SegmentReaderImpl> SegmentReaderImpl::UpdateMeta(
-  IndexFileRefs& refs, const SegmentMeta& meta) const {
+std::shared_ptr<const SegmentReaderImpl> SegmentReaderImpl::OpenInMemory(
+  const SegmentMeta& meta, uint64_t id, std::unique_ptr<ColReader> columns) {
   auto reader = std::make_shared<SegmentReaderImpl>(PrivateTag{}, meta);
-  reader->_refs = GetRefs(refs, meta);
-  reader->_id = _id;
-  reader->_doc_maps = _doc_maps;
-  reader->_readers = _readers;
+  reader->_id = id;
+  reader->_data = std::make_shared<ColumnData>();
+  reader->_data->col_reader = std::move(columns);
   return reader;
 }
 
-std::shared_ptr<const SegmentReaderImpl> SegmentReaderImpl::Reopen(
-  duckdb::DatabaseInstance& db, duckdb::FileSystem& fs, std::string_view root,
-  const SegmentMeta& meta, const IndexReaderOptions& options) const {
+std::shared_ptr<const SegmentReaderImpl> SegmentReaderImpl::OpenPiece(
+  const SegmentMeta& meta, uint64_t id, std::unique_ptr<ColReader> columns,
+  std::shared_ptr<const PieceFields> fields) {
   auto reader = std::make_shared<SegmentReaderImpl>(PrivateTag{}, meta);
-  reader->_refs = _refs;
+  reader->_id = id;
+  reader->_data = std::make_shared<ColumnData>();
+  reader->_data->col_reader = std::move(columns);
+  reader->_pieces = std::move(fields);
+  return reader;
+}
+
+std::shared_ptr<const SegmentReaderImpl> SegmentReaderImpl::WithDocsMask(
+  std::shared_ptr<const DocumentMask> mask) const {
+  SegmentMeta meta;
+  static_cast<SegmentInfo&>(meta) = _info;
+  meta.docs_mask = std::move(mask);
+  meta.live_docs_count = meta.docs_count - RemovalCount(meta);
+  auto reader = std::make_shared<SegmentReaderImpl>(PrivateTag{}, meta);
+  reader->_hold = _hold;
   reader->_id = _id;
-  reader->_doc_maps = _doc_maps;
-  reader->_readers =
-    std::make_shared<const Readers>(db, fs, root, meta, options.hnsw_bases);
+  reader->_patch_tick = _patch_tick;
+  reader->_patched_docs = _patched_docs;
+  reader->_field_reader = _field_reader;
+  reader->_pieces = _pieces;
+  reader->_data = _data;
+  return reader;
+}
+
+std::shared_ptr<const SegmentReaderImpl> SegmentReaderImpl::WithPatches(
+  std::span<const FieldPatch> patches) const {
+  SegmentMeta meta;
+  static_cast<SegmentInfo&>(meta) = _info;
+  meta.docs_mask = _docs_mask;
+  auto reader = std::make_shared<SegmentReaderImpl>(PrivateTag{}, meta);
+  reader->_hold = _hold;
+  reader->_id = _id;
+  reader->_field_reader = _field_reader;
+  reader->_pieces = _pieces;
+  const auto& root = _data->base ? _data->base : _data;
+  if (patches.empty()) {
+    reader->_data = root;
+    return reader;
+  }
+  std::vector<std::shared_ptr<const ColumnReader>> replaced;
+  replaced.reserve(patches.size());
+  for (const auto& [field, patch] : patches) {
+    reader->_patch_tick = std::max(reader->_patch_tick, patch->MaxTick());
+    reader->_patched_docs = std::max(reader->_patched_docs, patch->Count());
+    if (const auto* column = root->col_reader->Column(field)) {
+      SDB_ASSERT(column->Type() == patch->Type());
+      replaced.push_back(std::make_shared<PatchedColumnReader>(*column, patch));
+      continue;
+    }
+    replaced.push_back(std::make_shared<PatchedColumnReader>(
+      std::make_unique<NullColumnReader>(root->col_reader->Database(), field,
+                                         patch->Type(), _info.docs_count),
+      patch));
+  }
+  auto data = std::make_shared<ColumnData>();
+  data->col_reader =
+    std::make_unique<ColReader>(*root->col_reader, std::move(replaced));
+  data->base = root;
+  reader->_data = std::move(data);
   return reader;
 }
 
 NormReader::ptr SegmentReaderImpl::norms(field_id field) const {
-  const auto* nc = _readers->col_reader.NormColumn(field);
+  if (!_data) {
+    return {};
+  }
+  const auto* nc = _data->col_reader->NormColumn(field);
   if (!nc) {
     return {};
   }
   return MakePersistedNormReader(*nc);
+}
+
+const ColumnReader* SegmentReaderImpl::Column(field_id field) const {
+  return _data->col_reader->Column(field);
+}
+
+const AnnIndex* SegmentReaderImpl::Ann(field_id field) const {
+  const auto* idx = _data ? _data->Idx() : nullptr;
+  if (!idx) {
+    return nullptr;
+  }
+  return idx->Ann(field);
 }
 
 lead::Node::ptr SegmentReaderImpl::docs_iterator() const {
@@ -145,25 +216,16 @@ lead::Node::ptr SegmentReaderImpl::docs_iterator() const {
     });
 }
 
-SegmentReaderImpl::Readers::Readers(duckdb::DatabaseInstance& db,
-                                    duckdb::FileSystem& fs,
-                                    std::string_view root,
-                                    const SegmentMeta& meta,
-                                    HnswBases* hnsw_bases)
-  : col_reader{db,
-               fs,
-               root,
-               meta.name,
-               HasFile(meta, kFormatExt),
-               duckdb::MappedFileAccess::RANDOM},
-    idx_reader{fs, root, meta.name, HasFile(meta, kIdxFormatExt), hnsw_bases} {
-  field_reader.prepare(ReaderState{
-    .db = db,
-    .fs = fs,
-    .root = root,
-    .meta = meta,
-    .idx = &idx_reader,
-  });
+void SegmentReaderImpl::ColumnData::Open(duckdb::DatabaseInstance& db,
+                                         duckdb::FileSystem& fs,
+                                         std::string_view root,
+                                         const SegmentMeta& meta,
+                                         const IndexReaderOptions& options) {
+  col_reader = std::make_unique<ColReader>(db, fs, root, meta.name,
+                                           (meta.kinds & kColFile) != 0,
+                                           duckdb::MappedFileAccess::RANDOM);
+  idx_reader = std::make_unique<IdxReader>(
+    fs, root, meta.name, (meta.kinds & kIdxFile) != 0, options.hnsw_bases);
 }
 
 }  // namespace irs

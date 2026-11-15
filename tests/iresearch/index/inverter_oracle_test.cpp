@@ -36,6 +36,7 @@
 #include "formats/column/test_cs_helpers.hpp"
 #include "index_dir.hpp"
 #include "insert_field.hpp"
+#include "test_index_writer.hpp"
 #include "tests_shared.hpp"
 #include "token_sink_utils.hpp"
 
@@ -122,8 +123,8 @@ TEST(InverterOracleTest, WriteDeterministicIndex) {
   std::filesystem::create_directories(out_dir);
 
   ::tests::IndexDir dir{DuckDBEngine::Instance().instance(), out_dir};
-  auto writer =
-    ::tests::MakeWriter(dir, kOmCreate, irs::tests::DefaultWriterOptions());
+  auto writer = ::tests::IndexWriter::Make(dir, ::tests::kOmCreate,
+                                           irs::tests::DefaultWriterOptions());
   ASSERT_NE(nullptr, writer);
 
   constexpr field_id kText = 1;

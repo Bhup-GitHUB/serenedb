@@ -67,14 +67,19 @@ uint64_t SectorAligned(uint64_t size) noexcept {
 
 }  // namespace
 
+ReadContext::ReadContext(duckdb::DatabaseInstance& db)
+  : BlockManager{db, DEFAULT_BLOCK_ALLOC_SIZE, /*block_header_size=*/0} {}
+
 ReadContext::ReadContext(const ColReader& reader, bool random_access)
-  : ReadContext{reader.Database(), reader.File()} {
+  : BlockManager{reader.Database(), reader.BlockAllocSize(),
+                 /*block_header_size=*/0} {
+  ResetFile(reader.File());
   _random_access = random_access;
 }
 
 ReadContext::ReadContext(duckdb::DatabaseInstance& db,
                          const duckdb::InputFile* file)
-  : BlockManager{db, /*block_header_size=*/0} {
+  : BlockManager{db, duckdb::optional_idx{}, /*block_header_size=*/0} {
   ResetFile(file);
 }
 
@@ -87,6 +92,7 @@ void ReadContext::Reset(const ColReader& reader) {
   SDB_ASSERT(_db == &reader.Database(),
              "ReadContext::Reset: Database mismatch");
   SDB_ASSERT(_live_handles == 0, "ReadContext::Reset with live block handles");
+  SDB_ASSERT(GetBlockAllocSize() == reader.BlockAllocSize());
   ResetFile(reader.File());
 }
 

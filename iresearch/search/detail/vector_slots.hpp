@@ -114,7 +114,8 @@ class RawVectorReader {
     : _read_ctx{col_reader, true},
       _vreader{vector_column, _read_ctx},
       _column{&vector_column},
-      _d{d} {}
+      _d{d},
+      _in_memory{vector_column.InMemory()} {}
 
   explicit RawVectorReader(const RawRecipe& recipe)
     : RawVectorReader{*recipe.column, *recipe.reader, recipe.d} {
@@ -175,6 +176,9 @@ class RawVectorReader {
 
   template<int Locality = 3>
   const byte_type* PrefetchRow(doc_id_t doc) noexcept {
+    if (_in_memory) {
+      return nullptr;
+    }
     const auto* child = _column->Child();
     const uint64_t elem = (static_cast<uint64_t>(doc) - doc_limits::min()) * _d;
     const auto w = child->Locate(elem, _win);
@@ -212,7 +216,7 @@ class RawVectorReader {
  private:
   void HintRun(doc_id_t first, size_t count) noexcept {
     const auto* file = _read_ctx.File();
-    if (!file) {
+    if (_in_memory || !file) {
       return;
     }
     const auto* child = _column->Child();
@@ -235,6 +239,11 @@ class RawVectorReader {
   }
 
   const byte_type* ReadSome(doc_id_t first, size_t count, size_t& got) {
+    if (_in_memory) {
+      got = count;
+      return reinterpret_cast<const byte_type*>(
+        _vreader.ReadDocBatch(first, count));
+    }
     const auto* child = _column->Child();
     SDB_ASSERT(child);
     const uint64_t elem =
@@ -295,6 +304,7 @@ class RawVectorReader {
   VectorDistanceFn _dist = nullptr;
   std::vector<float> _query;
   uint32_t _d;
+  bool _in_memory;
 };
 
 struct AcceptAll {

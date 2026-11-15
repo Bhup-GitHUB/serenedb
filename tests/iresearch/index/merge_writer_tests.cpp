@@ -133,7 +133,7 @@ struct MergeWriterTestCase : public tests::DirectoryTestCaseBase {
 };
 
 void MergeWriterTestCase::EnsureDocBlocksNotMixed() {
-  auto insert_documents = [](irs::IndexWriter::Transaction& ctx,
+  auto insert_documents = [](tests::IndexWriter::Transaction& ctx,
                              irs::doc_id_t seed, irs::doc_id_t count) {
     for (; seed < count; ++seed) {
       auto doc = ctx.Insert();
@@ -151,7 +151,8 @@ void MergeWriterTestCase::EnsureDocBlocksNotMixed() {
 
   auto opts = irs::tests::DefaultWriterOptions();
 
-  auto writer = tests::MakeWriter(dir, irs::kOmCreate, std::move(opts));
+  auto writer =
+    tests::IndexWriter::Make(dir, tests::kOmCreate, std::move(opts));
   ASSERT_NE(nullptr, writer);
 
   {
@@ -174,7 +175,6 @@ void MergeWriterTestCase::EnsureDocBlocksNotMixed() {
     tests::OpenReader(dir, irs::tests::DefaultReaderOptions()));
 
   auto reader = tests::OpenReader(dir, irs::tests::DefaultReaderOptions());
-  ASSERT_NE(nullptr, reader);
 
   ASSERT_EQ(3, reader.size());
   for (auto& segment : reader) {
@@ -193,8 +193,7 @@ void MergeWriterTestCase::EnsureDocBlocksNotMixed() {
     writer->GetSnapshot(),
     tests::OpenReader(dir, irs::tests::DefaultReaderOptions()));
 
-  reader = reader.Reopen();
-  ASSERT_NE(nullptr, reader);
+  reader = writer->GetSnapshot();
 
   ASSERT_EQ(1, reader.size());
   auto& segment = reader[0];
@@ -244,8 +243,8 @@ TEST_P(MergeWriterTestCase, test_merge_writer_add_segments) {
       docs.emplace_back(gen.next());
     }
 
-    auto writer = tests::MakeWriter(data_dir, irs::kOmCreate,
-                                    irs::tests::DefaultWriterOptions());
+    auto writer = tests::IndexWriter::Make(data_dir, tests::kOmCreate,
+                                           irs::tests::DefaultWriterOptions());
 
     for (auto* doc : docs) {
       ASSERT_NE(nullptr, doc);
@@ -294,8 +293,8 @@ TEST_P(MergeWriterTestCase, test_merge_writer_flush_progress) {
                                 &tests::GenericJsonFieldFactory);
     auto* doc1 = gen.next();
     auto* doc2 = gen.next();
-    auto writer = tests::MakeWriter(data_dir, irs::kOmCreate,
-                                    irs::tests::DefaultWriterOptions());
+    auto writer = tests::IndexWriter::Make(data_dir, tests::kOmCreate,
+                                           irs::tests::DefaultWriterOptions());
     ASSERT_TRUE(Insert(*writer, doc1->indexed.begin(), doc1->indexed.end()));
     writer->RefreshCommit();  // create segment0
     AssertSnapshotEquality(
@@ -327,10 +326,9 @@ TEST_P(MergeWriterTestCase, test_merge_writer_flush_progress) {
     writer.Reset(reader.begin(), reader.end());
     ASSERT_TRUE(irs::GetReady(writer.Flush(index_segment, progress)));
 
-    ASSERT_FALSE(index_segment.files.empty());
+    ASSERT_NE(0, index_segment.kinds);
     ASSERT_EQ(2, index_segment.docs_count);
     ASSERT_EQ(2, index_segment.live_docs_count);
-    ASSERT_EQ(0, index_segment.version);
 
     auto segment = irs::SegmentReaderImpl::Open(
       dir.Db(), dir.Fs(), dir.Root(), index_segment, dir.ReaderOptions());
@@ -351,8 +349,7 @@ TEST_P(MergeWriterTestCase, test_merge_writer_flush_progress) {
     ASSERT_FALSE(irs::GetReady(writer.Flush(index_segment, progress)));
 
     ASSERT_TRUE(index_segment.name.empty());
-    ASSERT_TRUE(index_segment.files.empty());
-    ASSERT_EQ(0, index_segment.version);
+    ASSERT_EQ(0, index_segment.kinds);
     ASSERT_EQ(0, index_segment.docs_count);
     ASSERT_EQ(0, index_segment.live_docs_count);
     ASSERT_EQ(0, index_segment.byte_size);
@@ -377,10 +374,9 @@ TEST_P(MergeWriterTestCase, test_merge_writer_flush_progress) {
     writer.Reset(reader.begin(), reader.end());
     ASSERT_TRUE(irs::GetReady(writer.Flush(index_segment, progress)));
 
-    ASSERT_FALSE(index_segment.files.empty());
+    ASSERT_NE(0, index_segment.kinds);
     ASSERT_EQ(2, index_segment.docs_count);
     ASSERT_EQ(2, index_segment.live_docs_count);
-    ASSERT_EQ(0, index_segment.version);
 
     auto segment = irs::SegmentReaderImpl::Open(
       dir.Db(), dir.Fs(), dir.Root(), index_segment, dir.ReaderOptions());
@@ -410,8 +406,7 @@ TEST_P(MergeWriterTestCase, test_merge_writer_flush_progress) {
     ASSERT_EQ(0, call_count);
 
     ASSERT_TRUE(index_segment.name.empty());
-    ASSERT_TRUE(index_segment.files.empty());
-    ASSERT_EQ(0, index_segment.version);
+    ASSERT_EQ(0, index_segment.kinds);
     ASSERT_EQ(0, index_segment.docs_count);
     ASSERT_EQ(0, index_segment.live_docs_count);
     ASSERT_EQ(0, index_segment.byte_size);
@@ -452,8 +447,8 @@ TEST_P(MergeWriterTestCase, test_merge_writer_field_features) {
 
   // populate directory
   {
-    auto writer = tests::MakeWriter(dir, irs::kOmCreate,
-                                    irs::tests::DefaultWriterOptions());
+    auto writer = tests::IndexWriter::Make(dir, tests::kOmCreate,
+                                           irs::tests::DefaultWriterOptions());
     ASSERT_TRUE(Insert(*writer, doc1.indexed.begin(), doc1.indexed.end()));
     writer->RefreshCommit();
     AssertSnapshotEquality(
@@ -746,7 +741,8 @@ TEST_P(MergeWriterTestCase, test_merge_writer) {
   // populate directory
   {
     auto query_doc4 = MakeByTerm("doc_string", "string4_data");
-    auto writer = tests::MakeWriter(dir, irs::kOmCreate, std::move(opts));
+    auto writer =
+      tests::IndexWriter::Make(dir, tests::kOmCreate, std::move(opts));
 
     ASSERT_TRUE(Insert(*writer, doc1.indexed.begin(), doc1.indexed.end()));
     ASSERT_TRUE(Insert(*writer, doc2.indexed.begin(), doc2.indexed.end()));
@@ -1427,8 +1423,8 @@ TEST_P(MergeWriterTestCase, test_merge_writer_columns) {
   // under the same field_ids -- crucial: this is the cross-segment
   // id-stability invariant the merge depends on.
   {
-    auto writer = tests::MakeWriter(dir, irs::kOmCreate,
-                                    irs::tests::DefaultWriterOptions());
+    auto writer = tests::IndexWriter::Make(dir, tests::kOmCreate,
+                                           irs::tests::DefaultWriterOptions());
     {
       auto seg = writer->GetBatch();
       for (size_t i = 0; i < 2; ++i) {
@@ -1545,8 +1541,8 @@ TEST_P(MergeWriterTestCase, test_merge_writer_columns) {
 
   // Merge both segments into a single one.
   {
-    auto writer = tests::MakeWriter(dir, irs::kOmAppend,
-                                    irs::tests::DefaultWriterOptions());
+    auto writer = tests::IndexWriter::Make(dir, tests::kOmAppend,
+                                           irs::tests::DefaultWriterOptions());
     ASSERT_TRUE(writer->Compact(
       irs::index_utils::MakePolicy(irs::index_utils::CompactionCount{})));
     ASSERT_TRUE(writer->RefreshCommit());
@@ -1733,8 +1729,8 @@ TEST_P(MergeWriterTestCase, test_merge_writer_columns_remove) {
   constexpr int32_t kInts[4] = {1 * 42, 2 * 42, 3 * 42, 0};
 
   {
-    auto writer = tests::MakeWriter(dir, irs::kOmCreate,
-                                    irs::tests::DefaultWriterOptions());
+    auto writer = tests::IndexWriter::Make(dir, tests::kOmCreate,
+                                           irs::tests::DefaultWriterOptions());
     // Segment 0: doc1 + doc3 -- both have string + int columns.
     {
       auto seg = writer->GetBatch();
@@ -1878,8 +1874,8 @@ TEST_P(MergeWriterTestCase, test_merge_writer_columns_remove) {
 
   // Compact to a single segment.
   {
-    auto writer = tests::MakeWriter(dir, irs::kOmAppend,
-                                    irs::tests::DefaultWriterOptions());
+    auto writer = tests::IndexWriter::Make(dir, tests::kOmAppend,
+                                           irs::tests::DefaultWriterOptions());
     ASSERT_TRUE(writer->Compact(
       irs::index_utils::MakePolicy(irs::index_utils::CompactionCount{})));
     ASSERT_TRUE(writer->RefreshCommit());
@@ -2003,8 +1999,8 @@ TEST_P(MergeWriterTestCase, test_merge_writer_columns_remove) {
     tests::IndexDir dir2{irs::DuckDBEngine::Instance().instance(),
                          TestEnv::MemoryRoot()};
     {
-      auto writer = tests::MakeWriter(dir2, irs::kOmCreate,
-                                      irs::tests::DefaultWriterOptions());
+      auto writer = tests::IndexWriter::Make(
+        dir2, tests::kOmCreate, irs::tests::DefaultWriterOptions());
       // Segment 0: doc1, doc2 -- both carry all 3 columns.
       {
         auto seg = writer->GetBatch();
@@ -2057,8 +2053,8 @@ TEST_P(MergeWriterTestCase, test_merge_writer_columns_remove) {
 
     // Compact.
     {
-      auto writer = tests::MakeWriter(dir2, irs::kOmAppend,
-                                      irs::tests::DefaultWriterOptions());
+      auto writer = tests::IndexWriter::Make(
+        dir2, tests::kOmAppend, irs::tests::DefaultWriterOptions());
       ASSERT_TRUE(writer->Compact(
         irs::index_utils::MakePolicy(irs::index_utils::CompactionCount{})));
       ASSERT_TRUE(writer->RefreshCommit());
@@ -2142,8 +2138,8 @@ TEST_P(MergeWriterTestCase, merges_every_dictionary_of_a_layout) {
   tests::IndexDir data_dir{irs::DuckDBEngine::Instance().instance(),
                            TestEnv::MemoryRoot()};
   {
-    auto writer = tests::MakeWriter(data_dir, irs::kOmCreate,
-                                    irs::tests::DefaultWriterOptions());
+    auto writer = tests::IndexWriter::Make(data_dir, tests::kOmCreate,
+                                           irs::tests::DefaultWriterOptions());
     for (size_t segment = 0; segment != 2; ++segment) {
       auto trx = writer->GetBatch();
       {
@@ -2266,8 +2262,8 @@ TEST_P(MergeWriterTestCase, merges_every_member_of_a_json_list) {
   tests::IndexDir data_dir{irs::DuckDBEngine::Instance().instance(),
                            TestEnv::MemoryRoot()};
   {
-    auto writer = tests::MakeWriter(data_dir, irs::kOmCreate,
-                                    irs::tests::DefaultWriterOptions());
+    auto writer = tests::IndexWriter::Make(data_dir, tests::kOmCreate,
+                                           irs::tests::DefaultWriterOptions());
     for (size_t segment = 0; segment != 2; ++segment) {
       auto trx = writer->GetBatch();
       {
@@ -2361,9 +2357,9 @@ TEST_P(MergeWriterTestCase, refuses_segments_with_different_layouts) {
   tests::IndexDir data_dir{irs::DuckDBEngine::Instance().instance(),
                            TestEnv::MemoryRoot()};
   for (const auto layout : {irs::DictLayout::Bool, irs::DictLayout::Json}) {
-    auto writer = tests::MakeWriter(
+    auto writer = tests::IndexWriter::Make(
       data_dir,
-      layout == irs::DictLayout::Bool ? irs::kOmCreate : irs::kOmAppend,
+      layout == irs::DictLayout::Bool ? tests::kOmCreate : tests::kOmAppend,
       irs::tests::DefaultWriterOptions());
     {
       auto trx = writer->GetBatch();

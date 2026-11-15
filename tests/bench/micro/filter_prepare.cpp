@@ -53,6 +53,7 @@
 #include <system_error>
 #include <vector>
 
+#include "index/test_index_writer.hpp"
 #include "insert_field.hpp"
 
 namespace {
@@ -191,6 +192,7 @@ void FilterPrepareFixture::BuildIndex(size_t num_segments) {
   auto* db = &irs::DuckDBEngine::Instance().instance();
   auto& fs = duckdb::FileSystem::GetFileSystem(*db);
   const auto root = _dir_path.string();
+  tests::IndexDir dir{*db, fs, root};
 
   irs::IndexWriterOptions writer_opts;
   writer_opts.column_options = [](irs::field_id) -> irs::ColumnOptions {
@@ -201,8 +203,8 @@ void FilterPrepareFixture::BuildIndex(size_t num_segments) {
       irs::field_id) -> irs::field_id {
     return next->fetch_add(1, std::memory_order_relaxed);
   };
-  auto writer = irs::IndexWriter::Make(*db, fs, root, irs::kOmCreate,
-                                       std::move(writer_opts));
+  auto writer =
+    tests::IndexWriter::Make(dir, tests::kOmCreate, std::move(writer_opts));
 
   KeywordField kw_field{.id = kKwFieldId};
   TextField body_field{.id = kBodyFieldId};
@@ -224,7 +226,7 @@ void FilterPrepareFixture::BuildIndex(size_t num_segments) {
     writer->RefreshCommit();
   }
 
-  _reader = irs::DirectoryReader{*db, fs, root, irs::IndexReaderOptions{}};
+  _reader = tests::OpenReader(dir, irs::IndexReaderOptions{});
 }
 
 void ApplyArgs(benchmark::internal::Benchmark* b) {

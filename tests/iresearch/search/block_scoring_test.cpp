@@ -253,7 +253,7 @@ class BlockScoringTestCase : public IndexTestBase {
     }
   }
 
-  void WriteSegment(irs::IndexWriter& writer, auto& gens) {
+  void WriteSegment(tests::IndexWriter& writer, auto& gens) {
     auto& index = const_cast<tests::index_t&>(this->index());
     for (auto& gen : gens) {
       index.emplace_back();
@@ -265,7 +265,7 @@ class BlockScoringTestCase : public IndexTestBase {
   // Create single segment from multiple JSON files (420 total docs)
   void CreateLargeIndex() {
     auto writer =
-      open_writer(irs::kOmCreate, irs::tests::DefaultWriterOptions());
+      open_writer(tests::kOmCreate, irs::tests::DefaultWriterOptions());
 
     std::vector<tests::JsonDocGenerator> gens;
     gens.emplace_back(resource("block_scoring_segment1.json"),
@@ -284,7 +284,7 @@ class BlockScoringTestCase : public IndexTestBase {
   // Create multi-segment index (3 segments with ~140 docs each)
   void CreateMultiSegmentIndex() {
     auto writer =
-      open_writer(irs::kOmCreate, irs::tests::DefaultWriterOptions());
+      open_writer(tests::kOmCreate, irs::tests::DefaultWriterOptions());
     auto& index_ref = const_cast<tests::index_t&>(index());
 
     // Segment 1

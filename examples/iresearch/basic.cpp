@@ -40,13 +40,15 @@
 #include <iresearch/search/filters/filter_optimizer.hpp>
 #include <iresearch/search/scorers/bm25.hpp>
 #include <iresearch/search/scorers/scorer.hpp>
-#include <iresearch/store/index_files.hpp>
+#include <iresearch/index/segment_hold.hpp>
+#include <iresearch/utils/async.hpp>
 #include <iresearch/utils/duckdb_engine.hpp>
 #include <iresearch/utils/index_utils.hpp>
 #include <iresearch/utils/type_limits.hpp>
 #include <memory>
 
 #include "examples.h"
+#include "segments.h"
 
 // This example demonstrates the core iresearch workflow:
 //   1. Create an index writer over a memory:// root
@@ -209,15 +211,12 @@ std::shared_ptr<const irs::DocRemoval> MatchingDocs(
 }
 
 // Index five sample documents about information retrieval topics.
-void BuildIndex(irs::IndexWriter& writer) {
+void BuildIndex(irs::IndexWriter& writer, examples::Segments& segments) {
   TextField title_field{.id = kTitleColumnId};
   TextField body_field{.id = kBodyColumnId};
 
   {
     auto ctx = writer.GetBatch();
-    // cs writers are opened lazily by the first IndexDocument that observes
-    // a non-null `Document::GetColWriter()`. The pointers refer into the
-    // per-segment cs Writer and stay valid until the transaction commits.
     irs::ColumnWriter* title_cw = nullptr;
     irs::ColumnWriter* body_cw = nullptr;
 
@@ -253,11 +252,9 @@ void BuildIndex(irs::IndexWriter& writer) {
                   "from banking to social media.",
                   title_cw, body_cw);
 
-    ctx.Commit();
+    segments.Add(ctx.FlushSegments(true));
   }
 
-  // Commit flushes segments to disk and makes documents visible to readers.
-  writer.RefreshCommit();
   std::cout << "Indexed 5 documents.\n\n";
 }
 
@@ -390,18 +387,13 @@ void ReadStoredFields(const irs::DirectoryReader& reader) {
 }
 
 // Remove documents matching a query and print updated stats.
-void RemoveDocuments(irs::IndexWriter& writer,
+void RemoveDocuments(examples::Segments& segments,
                      irs::analysis::Tokenizer& tokenizer) {
   std::cout << "=== Remove Documents ===\n";
   auto filter = ParseQuery("databases", kTitleColumnId, tokenizer);
-  {
-    auto trx = writer.GetBatch();
-    trx.Remove(MatchingDocs(writer.GetSnapshot(), *filter));
-    trx.Commit();
-  }
-  writer.RefreshCommit();
+  segments.Remove(*MatchingDocs(segments.Reader(), *filter));
 
-  auto updated_reader = writer.GetSnapshot();
+  auto updated_reader = segments.Reader();
   std::cout << "After removal:\n";
   std::cout << "  Total documents: " << updated_reader.docs_count() << "\n";
   std::cout << "  Live documents:  " << updated_reader.live_docs_count()
@@ -410,11 +402,10 @@ void RemoveDocuments(irs::IndexWriter& writer,
 
 // Compact segments after removal to reclaim space and merge segments.
 // Deleted documents are only physically removed during compaction.
-void CompactIndex(irs::IndexWriter& writer, duckdb::FileSystem& fs,
-                  std::string_view root, irs::IndexFileRefs& refs) {
+void CompactIndex(irs::IndexWriter& writer, examples::Segments& segments) {
   std::cout << "=== Compact Index ===\n";
 
-  auto before = writer.GetSnapshot();
+  auto before = segments.Reader();
   std::cout << "Before compaction: " << before.size() << " segment(s)\n";
 
   // Tier-based compaction merges segments of similar size.
@@ -423,13 +414,10 @@ void CompactIndex(irs::IndexWriter& writer, duckdb::FileSystem& fs,
   tier_opts.max_segments = 10;
   auto policy = irs::index_utils::MakePolicy(tier_opts);
 
-  writer.Compact(policy);
-  writer.RefreshCommit();
+  segments.Replace(irs::GetBlocking(
+    writer.MergeAsync(policy, segments.Reader(), nullptr, {}, nullptr)));
 
-  // Remove files no longer referenced by any reader.
-  irs::RemoveAllUnreferenced(fs, root, refs);
-
-  auto after = writer.GetSnapshot();
+  auto after = segments.Reader();
   std::cout << "After compaction:  " << after.size() << " segment(s)\n";
   std::cout << "  Total documents: " << after.docs_count() << "\n";
   std::cout << "  Live documents:  " << after.live_docs_count() << "\n";
@@ -450,20 +438,19 @@ int BasicMain() {
 
     auto& fs = duckdb::FileSystem::GetFileSystem(Db());
     constexpr std::string_view kRoot = "memory://basic";
-    auto refs = std::make_shared<irs::IndexFileRefs>();
     irs::IndexWriterOptions options;
-    options.reader_options.refs = refs;
+    options.reader_options.released = std::make_shared<irs::ReleasedSegments>();
     options.norm_column_id =
       [next = std::make_shared<std::atomic<irs::field_id>>(0)](
         irs::field_id) -> irs::field_id {
       return next->fetch_add(1, std::memory_order_relaxed);
     };
-    auto writer = irs::IndexWriter::Make(Db(), fs, kRoot, irs::kOmCreate,
-                                         std::move(options));
+    examples::Segments segments{Db(), fs, kRoot, options.reader_options};
+    auto writer = irs::IndexWriter::Make(Db(), fs, kRoot, std::move(options));
 
-    BuildIndex(*writer);
+    BuildIndex(*writer, segments);
 
-    auto reader = writer->GetSnapshot();
+    auto reader = segments.Reader();
 
     PrintIndexStats(reader);
     QuerySingleTerm(reader, *tokenizer);
@@ -474,8 +461,8 @@ int BasicMain() {
     QueryPrefix(reader, *tokenizer);
     QueryExclusion(reader, *tokenizer);
     ReadStoredFields(reader);
-    RemoveDocuments(*writer, *tokenizer);
-    CompactIndex(*writer, fs, kRoot, *refs);
+    RemoveDocuments(segments, *tokenizer);
+    CompactIndex(*writer, segments);
   }
 
   engine.Shutdown();

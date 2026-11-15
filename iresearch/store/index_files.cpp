@@ -22,9 +22,10 @@
 
 #include <absl/cleanup/cleanup.h>
 
+#include <algorithm>
 #include <duckdb/common/error_data.hpp>
-#include <duckdb/parallel/task_scheduler.hpp>
 
+#include "iresearch/index/file_names.hpp"
 #include "iresearch/utils/log.hpp"
 
 namespace irs {
@@ -51,43 +52,12 @@ TrackedFiles FileTracker::Flush() {
   return flushed;
 }
 
-void FileTracker::Clear() noexcept {
+void FileTracker::Remove(duckdb::FileSystem& fs,
+                         std::string_view root) noexcept {
+  const std::vector<std::string> names{_files.begin(), _files.end()};
+  RemoveIndexFiles(fs, root, names);
   _files_size = 0;
   _files.clear();
-}
-
-void RefTracker::Created(std::string_view name) {
-  auto ref = _refs.add(name);
-  absl::MutexLock lock{&_mutex};
-  _tracked.insert(std::move(ref));
-}
-
-void RefTracker::Written(uint64_t) {}
-
-void RefTracker::Removed(std::string_view name) {
-  _refs.remove(name);
-  absl::MutexLock lock{&_mutex};
-  _tracked.erase(name);
-}
-
-void RefTracker::Renamed(std::string_view src, std::string_view dst) {
-  auto ref = _refs.add(dst);
-  {
-    absl::MutexLock lock{&_mutex};
-    _tracked.erase(src);
-    _tracked.emplace(std::move(ref));
-  }
-  _refs.remove(src);
-}
-
-std::vector<IndexFileRefs::ref_t> RefTracker::GetRefs() const {
-  absl::MutexLock lock{&_mutex};
-  return {_tracked.begin(), _tracked.end()};
-}
-
-void RefTracker::Clear() {
-  absl::MutexLock lock{&_mutex};
-  _tracked.clear();
 }
 
 std::unique_ptr<duckdb::BufferedFileWriter> OpenOutput(
@@ -131,54 +101,48 @@ std::vector<std::string> ListIndexFiles(duckdb::FileSystem& fs,
   return files;
 }
 
-IndexFileRefs::ref_t Reference(duckdb::FileSystem& fs, std::string_view root,
-                               IndexFileRefs& refs, std::string_view name) {
-  auto ref = refs.add(name);
-  if (!fs.FileExists(fs.JoinPath(root, name))) {
-    return nullptr;
+uint64_t MaxSegmentId(std::span<const std::string> files) {
+  uint64_t max_id = 0;
+  for (const auto& name : files) {
+    if (uint64_t id = 0; ParseSegmentId(name, id)) {
+      max_id = std::max(max_id, id);
+    }
   }
-  return ref;
+  return max_id;
 }
 
-void RemoveUnreferenced(duckdb::FileSystem& fs, std::string_view root,
-                        IndexFileRefs& refs) {
-  refs.RemoveUnused([&](std::span<const std::string> names) {
-    std::vector<std::string> kept;
-    if (names.empty()) {
-      return kept;
-    }
+bool RemoveIndexFiles(duckdb::FileSystem& fs, std::string_view root,
+                      std::span<const std::string> names) {
+  if (names.empty()) {
+    return true;
+  }
+  try {
     duckdb::vector<std::string> paths;
     paths.reserve(names.size());
     for (const auto& name : names) {
       paths.push_back(fs.JoinPath(root, name));
     }
-    try {
-      fs.RemoveFiles(paths);
-      return kept;
-    } catch (const std::exception& e) {
-      SDB_WARN(IRESEARCH, "Failed to remove unreferenced files of '", root,
-               "': ", duckdb::ErrorData{e}.RawMessage());
-    }
-    const auto left = ListIndexFiles(fs, root);
-    const containers::FlatHashSet<std::string_view> present{left.begin(),
-                                                            left.end()};
-    for (const auto& name : names) {
-      if (present.contains(name)) {
-        kept.push_back(name);
-      }
-    }
-    return kept;
-  });
+    fs.RemoveFiles(paths);
+    return true;
+  } catch (const std::exception& e) {
+    SDB_WARN(IRESEARCH, "Failed to remove index files of '", root,
+             "': ", duckdb::ErrorData{e}.RawMessage());
+    return false;
+  }
 }
 
-void RemoveAllUnreferenced(duckdb::FileSystem& fs, std::string_view root,
-                           IndexFileRefs& refs,
-                           std::span<const std::string> files) {
-  duckdb::TaskScheduler::BlockingScope blocking;
-  for (const auto& name : files) {
-    refs.add(name);
+void RemoveReleased(duckdb::FileSystem& fs, std::string_view root,
+                    ReleasedSegments& released) {
+  auto segments = released.Take();
+  std::vector<std::string> names;
+  for (const auto& segment : segments) {
+    for (auto& name : SegmentFiles(segment.name, segment.kinds)) {
+      names.push_back(std::move(name));
+    }
   }
-  RemoveUnreferenced(fs, root, refs);
+  if (!RemoveIndexFiles(fs, root, names)) {
+    released.Return(std::move(segments));
+  }
 }
 
 }  // namespace irs

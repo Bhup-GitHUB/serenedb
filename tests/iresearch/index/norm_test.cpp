@@ -197,7 +197,7 @@ TEST_P(NormTestCase, CheckNorms) {
   auto opts = irs::tests::DefaultWriterOptions();
 
   // Create actual index
-  auto writer = open_writer(irs::kOmCreate, std::move(opts));
+  auto writer = open_writer(tests::kOmCreate, std::move(opts));
   ASSERT_NE(nullptr, writer);
   ASSERT_TRUE(Insert(*writer, doc0->indexed.begin(), doc0->indexed.end()));
   ASSERT_TRUE(Insert(*writer, doc1->indexed.begin(), doc1->indexed.end()));
@@ -281,7 +281,8 @@ TEST_P(NormTestCase, StackedTokensCountOnce) {
   tests::Document doc3;
   add(doc3, 2048, 3);
 
-  auto writer = open_writer(irs::kOmCreate, irs::tests::DefaultWriterOptions());
+  auto writer =
+    open_writer(tests::kOmCreate, irs::tests::DefaultWriterOptions());
   ASSERT_NE(nullptr, writer);
   for (const auto* doc : {&doc0, &doc1, &doc2, &doc3}) {
     ASSERT_TRUE(Insert(*writer, doc->indexed.begin(), doc->indexed.end()));
@@ -333,7 +334,8 @@ TEST_P(NormTestCase, RareLongNormsAcrossCompaction) {
     EXPECT_TRUE(exceptions);
   };
 
-  auto writer = open_writer(irs::kOmCreate, irs::tests::DefaultWriterOptions());
+  auto writer =
+    open_writer(tests::kOmCreate, irs::tests::DefaultWriterOptions());
   ASSERT_NE(nullptr, writer);
   std::vector<std::vector<std::pair<irs::doc_id_t, uint32_t>>> expected(2);
   for (size_t segment = 0; segment < 2; ++segment) {
@@ -429,7 +431,7 @@ TEST_P(NormTestCase, CheckNormsBatched) {
   auto opts = irs::tests::DefaultWriterOptions();
 
   // Create actual index
-  auto writer = open_writer(irs::kOmCreate, std::move(opts));
+  auto writer = open_writer(tests::kOmCreate, std::move(opts));
   ASSERT_NE(nullptr, writer);
   for (const auto* d : docs) {
     ASSERT_TRUE(Insert(*writer, d->indexed.begin(), d->indexed.end()));
@@ -536,7 +538,7 @@ TEST_P(NormTestCase, CheckNormsCompaction) {
   auto opts = irs::tests::DefaultWriterOptions();
 
   // Create actual index
-  auto writer = open_writer(irs::kOmCreate, std::move(opts));
+  auto writer = open_writer(tests::kOmCreate, std::move(opts));
   ASSERT_NE(nullptr, writer);
   ASSERT_TRUE(Insert(*writer, doc0->indexed.begin(), doc0->indexed.end()));
   ASSERT_TRUE(Insert(*writer, doc1->indexed.begin(), doc1->indexed.end()));
@@ -785,7 +787,7 @@ TEST_P(NormTestCase, CheckNormsCompactionWithRemovals) {
   auto opts = irs::tests::DefaultWriterOptions();
 
   // Create actual index
-  auto writer = open_writer(irs::kOmCreate, std::move(opts));
+  auto writer = open_writer(tests::kOmCreate, std::move(opts));
   ASSERT_NE(nullptr, writer);
   ASSERT_TRUE(Insert(*writer, doc0->indexed.begin(), doc0->indexed.end()));
   ASSERT_TRUE(Insert(*writer, doc1->indexed.begin(), doc1->indexed.end()));

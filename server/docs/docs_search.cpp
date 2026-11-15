@@ -40,9 +40,14 @@
 #include <iresearch/analysis/token_sinks.hpp>
 #include <iresearch/formats/column/column_reader.hpp>
 #include <iresearch/formats/column/read_context.hpp>
+#include <iresearch/index/directory_reader.hpp>
 #include <iresearch/index/docs_mask/docs_mask.hpp>
+#include <iresearch/index/file_names.hpp>
+#include <iresearch/index/index_meta.hpp>
 #include <iresearch/index/index_reader_options.hpp>
 #include <iresearch/index/iterators.hpp>
+#include <iresearch/index/segment_list.hpp>
+#include <iresearch/index/segment_reader_impl.hpp>
 #include <iresearch/parser/parser.hpp>
 #include <iresearch/search/detail/doc_collector.hpp>
 #include <iresearch/search/detail/lazy_bitset.hpp>
@@ -68,7 +73,6 @@
 
 #include "connector/functions/markdown_render.h"
 #include "docs/docs_index_data.h"
-#include "search/index_durability.h"
 
 namespace sdb::docs {
 namespace {
@@ -203,10 +207,18 @@ irs::DirectoryReader LoadIndex(duckdb::DatabaseInstance& db,
     fs.AddFile(absl::StrCat(root, "/", file.name), file.bytes.data(),
                file.bytes.size());
   }
-  return irs::DirectoryReader{
-    db, fs, root, {}, [](duckdb::BinaryDeserializer& payload) {
-      search::IndexStamp::Read(payload);
-    }};
+  const auto segments = absl::c_find_if(
+    files, [](const IndexFile& file) { return file.name == kSegmentsFile; });
+  if (segments == files.end()) {
+    THROW_SQL_ERROR(
+      ERR_CODE(ERRCODE_INTERNAL_ERROR),
+      ERR_MSG("the documentation index carries no ", kSegmentsFile));
+  }
+  return irs::OpenSegmentList(
+    db, fs, root,
+    {reinterpret_cast<const char*>(segments->bytes.data()),
+     segments->bytes.size()},
+    {});
 }
 
 class EmbeddedIndex {

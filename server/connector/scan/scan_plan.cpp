@@ -31,7 +31,6 @@
 #include <duckdb/common/vector_operations/unary_executor.hpp>
 #include <duckdb/function/scalar/generic_common.hpp>
 #include <duckdb/function/scalar_function.hpp>
-#include <duckdb/main/database_file_opener.hpp>
 #include <duckdb/planner/expression/bound_cast_expression.hpp>
 #include <duckdb/planner/expression/bound_comparison_expression.hpp>
 #include <duckdb/planner/expression/bound_conjunction_expression.hpp>
@@ -42,7 +41,6 @@
 #include <duckdb/planner/expression_iterator.hpp>
 #include <duckdb/planner/filter/expression_filter.hpp>
 #include <duckdb/planner/table_filter_set.hpp>
-#include <iresearch/index/directory_reader_impl.hpp>
 #include <iresearch/search/filters/all_filter.hpp>
 #include <iresearch/utils/pg/errcodes.hpp>
 #include <iresearch/utils/pg/sql_exception_macro.hpp>
@@ -297,12 +295,26 @@ void BuildRowFilters(ScanGlobalState& state, const ScanBindData& bind_data) {
   }
 }
 
+void AddDualFilter(ScanGlobalState& state, std::span<const ColumnId> columns,
+                   std::span<const duckdb::LogicalType> types,
+                   const duckdb::TableFilter& filter) {
+  auto& cf = state.dual_filters.emplace_back();
+  if (columns.size() == 1) {
+    cf.field = columns.front();
+    BindExpressionFilter(cf, filter, types.front());
+    return;
+  }
+  cf.filter = &filter;
+  cf.row_fields.assign(columns.begin(), columns.end());
+  cf.row_types.assign(types.begin(), types.end());
+  cf.field = cf.row_fields.front();
+  cf.type = cf.row_types.front();
+}
+
 void BuildDualFilters(ScanGlobalState& state,
                       std::span<const RowFilter> duals) {
   for (const auto& dual : duals) {
-    auto& cf = state.dual_filters.emplace_back();
-    cf.field = dual.columns.front();
-    BindExpressionFilter(cf, *dual.filter, dual.types.front());
+    AddDualFilter(state, dual.columns, dual.types, *dual.filter);
   }
 }
 
@@ -349,6 +361,22 @@ std::optional<ColumnId> FetchableColumn(
     return std::nullopt;
   }
   return col_id;
+}
+
+void ApplyDeferredClaim(ScanGlobalState& state, DeferredBuild&& built) {
+  state.owned_where = std::move(built.filter);
+  state.owned_index_only = std::move(built.index_only);
+  state.owned_where_scorers = std::move(built.scorers);
+  for (auto& column_filter : built.column_filters) {
+    AddDeferredColumnFilter(state, std::move(column_filter));
+  }
+  for (auto& dual : built.dual_filters) {
+    const auto& owned =
+      state.deferred_filters.emplace_back(std::move(dual.filter));
+    AddDualFilter(state, dual.columns, dual.types, *owned);
+  }
+  state.deferred_checks = std::move(built.checks);
+  AddDeferredChecks(state, state.deferred_checks);
 }
 
 }  // namespace
@@ -439,27 +467,21 @@ void DecodeExtractPath(const duckdb::ColumnIndex& column_index,
   }
 }
 
-void ApplyDeferredClaim(ScanGlobalState& state, duckdb::ClientContext& context,
-                        const ScanBindData& bind_data) {
-  auto built = BuildDeferredFilter(context, bind_data, *state.snapshot);
-  state.owned_where = std::move(built.filter);
-  state.owned_index_only = std::move(built.index_only);
-  state.owned_where_scorers = std::move(built.scorers);
-  for (auto& column_filter : built.column_filters) {
-    AddDeferredColumnFilter(state, std::move(column_filter));
+void AcquireScanSnapshot(ScanGlobalState& state, duckdb::ClientContext& context,
+                         const ScanBindData& bind_data) {
+  state.view = bind_data.Read(context);
+  std::optional<DeferredBuild> built;
+  if (bind_data.plan_cache.deferred) {
+    built = BuildDeferredFilter(context, bind_data, *state.view.reader);
   }
-  for (auto& dual : built.dual_filters) {
-    const auto& owned =
-      state.deferred_filters.emplace_back(std::move(dual.filter));
-    auto& cf = state.dual_filters.emplace_back();
-    cf.field = dual.column;
-    BindExpressionFilter(cf, *owned, std::move(dual.type));
+  state.reader = state.view.reader;
+  state.total_segments = state.view.reader->size();
+  if (built) {
+    ApplyDeferredClaim(state, std::move(*built));
   }
-  state.deferred_checks = std::move(built.checks);
-  AddDeferredChecks(state, state.deferred_checks);
 }
 
-void InitScanState(ScanGlobalState& state, duckdb::ClientContext& context,
+void InitScanState(ScanGlobalState& state, duckdb::ClientContext* context,
                    const ScanBindData& bind_data,
                    duckdb::TableFunctionInitInput& input) {
   const auto in_output = [&](duckdb::idx_t proj) {
@@ -508,6 +530,7 @@ void InitScanState(ScanGlobalState& state, duckdb::ClientContext& context,
       state.projected_types.push_back(file_index ? duckdb::LogicalType::UBIGINT
                                                  : duckdb::LogicalType::BIGINT);
     } else if (col_id == duckdb::COLUMN_IDENTIFIER_EMPTY) {
+      state.empty_output_idx = proj;
       state.projected_columns.push_back(duckdb::DConstants::INVALID_INDEX);
       state.projected_types.push_back(duckdb::LogicalType::BOOLEAN);
       continue;
@@ -555,7 +578,7 @@ void InitScanState(ScanGlobalState& state, duckdb::ClientContext& context,
     return p != duckdb::DConstants::INVALID_INDEX;
   });
 
-  state.client_context = &context;
+  state.client_context = context;
   state.projected_column_indexes = input.column_indexes;
   SDB_ASSERT(state.projected_column_indexes.size() ==
              state.projected_columns.size());
@@ -576,15 +599,10 @@ void InitScanState(ScanGlobalState& state, duckdb::ClientContext& context,
     BuildDualFilters(state, bind_data.search.duals);
   }
 
-  state.scan = &bind_data;
-  state.snapshot = bind_data.Snapshot(context);
-  state.reader = &state.snapshot->reader;
-  state.total_segments = state.reader->size();
   state.rg_size = bind_data.relation.row_group_size != 0
                     ? bind_data.relation.row_group_size
                     : DEFAULT_ROW_GROUP_SIZE;
-  const auto& impl = state.snapshot->reader.GetImpl();
-  state.remote = impl && duckdb::DatabaseFileSystem::IsRemote(impl->Root());
+  state.remote = bind_data.Storage().Remote();
 }
 
 void ClassifyColumnstoreProjections(ScanGlobalState& state,
@@ -723,6 +741,10 @@ void WriteVirtualColumns(ScanGlobalState& g, duckdb::idx_t num_rows,
     auto* tableoid_data = duckdb::FlatVector::GetDataMutable<int64_t>(
       output.data[g.tableoid_output_idx]);
     std::fill_n(tableoid_data, num_rows, g.tableoid_value);
+  }
+  if (g.empty_output_idx != duckdb::DConstants::INVALID_INDEX) {
+    output.data[g.empty_output_idx].Reference(
+      duckdb::Value{duckdb::LogicalType::BOOLEAN}, duckdb::count_t(num_rows));
   }
   if (!g.ScanScore()) {
     return;
@@ -866,10 +888,10 @@ duckdb::idx_t FinalizeBatch(duckdb::ClientContext& ctx, ScanGlobalState& g,
     return collected;
   }
   if (!f.index_source) {
-    f.index_source =
-      MakeIndexSource(ctx, g.Bind(), *g.snapshot, g.lookup_projected_columns,
-                      g.projected_types, g.Bind().columns.ids,
-                      const_cast<duckdb::TableFilterSet*>(g.pushed_filters));
+    f.index_source = MakeIndexSource(
+      ctx, g.Bind(), g.view.manifest, g.lookup_projected_columns,
+      g.projected_types, g.Bind().columns.ids,
+      const_cast<duckdb::TableFilterSet*>(g.pushed_filters));
   }
   SDB_ASSERT(f.pk_column);
   const auto rows =

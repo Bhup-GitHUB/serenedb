@@ -60,7 +60,7 @@ void StartUnit(ScanGlobalState& g, StreamLocalState& l) {
   } else if (!g.remote) {
     return;
   }
-  const auto& seg_query = EnsureSegmentQuery(g, l, seg_idx);
+  const auto& seg_query = EnsureSegmentQuery(g, &l, seg_idx);
   const auto span = g.UnitSpan(l.unit);
   l.scored = g.ScanScore();
   if (l.scored) {

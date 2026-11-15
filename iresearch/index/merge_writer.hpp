@@ -35,6 +35,7 @@
 #include "iresearch/index/index_features.hpp"
 #include "iresearch/index/index_meta.hpp"
 #include "iresearch/index/index_reader.hpp"
+#include "iresearch/index/segment_reader_impl.hpp"
 #include "iresearch/index/segment_writer_options.hpp"
 #include "iresearch/store/index_files.hpp"
 #include "iresearch/utils/memory.hpp"
@@ -76,12 +77,10 @@ class MergeWriter : public util::Noncopyable {
     DocRemap remap;
   };
 
-  explicit MergeWriter(duckdb::DatabaseInstance& db, duckdb::FileSystem& fs,
-                       std::string_view root, const FileObservers& observers,
-                       const SegmentWriterOptions& options)
+  MergeWriter(duckdb::DatabaseInstance& db, duckdb::FileSystem& fs,
+              std::string_view root, const SegmentWriterOptions& options)
     : _fs{fs},
       _root{root},
-      _observers{observers},
       _readers{{IResourceManager::gNoop}},
       _scorer{options.scorer},
       _db{db},
@@ -102,6 +101,9 @@ class MergeWriter : public util::Noncopyable {
   auto Flush(SegmentMeta& segment, const FlushProgress& progress = {},
              const AnnBuildEnv* env = nullptr) -> yaclib::Future<bool>;
 
+  std::shared_ptr<const SegmentReaderImpl> FlushPiece(SegmentMeta& segment,
+                                                      uint64_t id);
+
   const ReaderCtx& operator[](size_t i) const noexcept {
     SDB_ASSERT(i < _readers.size());
     return _readers[i];
@@ -110,7 +112,6 @@ class MergeWriter : public util::Noncopyable {
  private:
   duckdb::FileSystem& _fs;
   std::string _root;
-  FileObservers _observers;
   ManagedVector<ReaderCtx> _readers;
   ScorerPtr _scorer;
   duckdb::DatabaseInstance& _db;

@@ -23,7 +23,6 @@
 #include <absl/strings/str_cat.h>
 #include <absl/synchronization/mutex.h>
 
-#include <duckdb/catalog/catalog_entry/replication_origin_catalog_entry.hpp>
 #include <duckdb/function/scalar_function.hpp>
 #include <duckdb/main/client_context.hpp>
 #include <duckdb/main/client_context_state.hpp>
@@ -31,7 +30,6 @@
 #include <duckdb/main/database_manager.hpp>
 #include <duckdb/main/extension/extension_loader.hpp>
 #include <duckdb/parser/parsed_data/drop_info.hpp>
-#include <duckdb/transaction/duck_transaction.hpp>
 #include <iresearch/utils/containers/flat_hash_map.hpp>
 #include <iresearch/utils/pg/errcodes.hpp>
 #include <iresearch/utils/pg/sql_exception_macro.hpp>
@@ -43,10 +41,11 @@
 #include "catalog/catalog.h"
 #include "catalog/cluster.h"
 #include "catalog/database_directory.h"
-#include "connector/duckdb_client_state.h"
+#include "catalog/entry/replication_lsn.h"
 #include "pg/commands/create_subscription.h"
 #include "pg/connection_context.h"
 #include "pg/types/logical.h"
+#include "replication/origin_session.h"
 #include "replication/subscription_engine.h"
 
 namespace sdb::replication {
@@ -54,7 +53,6 @@ namespace {
 
 using duckdb::idx_t;
 
-constexpr const char* kSessionKey = "sdb_replication_origin_session";
 constexpr size_t kMaxOriginName = 512;
 
 std::string_view View(const duckdb::string_t& text) {
@@ -100,27 +98,22 @@ class OriginHolders {
   irs::containers::FlatHashMap<idx_t, int32_t> _holders ABSL_GUARDED_BY(_mu);
 };
 
-struct OriginSession final : public duckdb::ClientContextState {
-  OriginSession(idx_t origin, std::string name, int32_t pid, bool owner)
-    : origin{origin}, name{std::move(name)}, pid{pid}, owner{owner} {}
-  ~OriginSession() override {
-    if (owner) {
-      OriginHolders::Instance().Release(origin, pid);
-    }
+}  // namespace
+
+OriginSession::~OriginSession() {
+  if (owner) {
+    OriginHolders::Instance().Release(origin, pid);
   }
+}
 
-  idx_t origin;
-  std::string name;
-  int32_t pid;
-  bool owner;
-};
+namespace {
 
-duckdb::shared_ptr<OriginSession> Session(duckdb::ClientContext& context) {
-  return context.registered_state->Get<OriginSession>(kSessionKey);
+OriginSession* Session(duckdb::ClientContext& context) {
+  return ConnectionContext::Get(context).replication_origin.get();
 }
 
 OriginSession& RequireSession(duckdb::ClientContext& context) {
-  auto session = Session(context);
+  auto* session = Session(context);
   if (!session) {
     THROW_SQL_ERROR(ERR_CODE(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
                     ERR_MSG("no replication origin is configured"));
@@ -129,7 +122,7 @@ OriginSession& RequireSession(duckdb::ClientContext& context) {
 }
 
 struct Origin {
-  duckdb::ReplicationLsnEntry& entry;
+  catalog::ReplicationLsnEntry& entry;
   duckdb::Catalog& catalog;
   bool subscription;
 };
@@ -146,12 +139,11 @@ std::optional<Origin> FindOrigin(duckdb::ClientContext& context,
   if (const auto oid = SubscriptionOriginOid(name)) {
     for (const auto& database :
          catalog::SereneDBDatabases(duckdb::DatabaseManager::Get(context))) {
-      auto& catalog = database->GetCatalog();
-      auto& duck = catalog.Cast<duckdb::DuckCatalog>();
-      const auto transaction = duck.GetCatalogTransaction(context);
-      auto entry = duck.GetOidIndex().GetVisible(*oid, transaction.view);
+      auto& catalog = database->GetCatalog().Cast<catalog::SereneDBCatalog>();
+      auto entry =
+        catalog.LookupOid(catalog.GetCatalogTransaction(context), *oid);
       if (entry && entry->type == duckdb::CatalogType::SUBSCRIPTION_ENTRY) {
-        return Origin{entry->Cast<duckdb::ReplicationLsnEntry>(), catalog,
+        return Origin{entry->Cast<catalog::ReplicationLsnEntry>(), catalog,
                       true};
       }
     }
@@ -159,13 +151,12 @@ std::optional<Origin> FindOrigin(duckdb::ClientContext& context,
   }
   auto& cluster = catalog::ClusterOf(context);
   auto entry =
-    cluster.GetCatalogSet(duckdb::CatalogType::REPLICATION_ORIGIN_ENTRY)
-      .GetEntry(cluster.GetCatalogTransaction(context),
-                duckdb::Identifier{name});
+    cluster.Set(duckdb::CatalogType::REPLICATION_ORIGIN_ENTRY)
+      .Get(cluster.GetCatalogTransaction(context), duckdb::Identifier{name});
   if (!entry) {
     return std::nullopt;
   }
-  return Origin{entry->Cast<duckdb::ReplicationLsnEntry>(), cluster, false};
+  return Origin{entry->Cast<catalog::ReplicationLsnEntry>(), cluster, false};
 }
 
 Origin RequireOrigin(duckdb::ClientContext& context, std::string_view name) {
@@ -209,10 +200,10 @@ uint64_t RequireLsn(std::string_view text) {
   return *lsn;
 }
 
-duckdb::DuckTransaction& Transaction(duckdb::ClientContext& context,
-                                     duckdb::Catalog& catalog) {
+catalog::SessionTransaction& Transaction(duckdb::ClientContext& context,
+                                         duckdb::Catalog& catalog) {
   catalog::DeclareModified(catalog.GetCatalogTransaction(context), catalog);
-  return duckdb::DuckTransaction::Get(context, catalog);
+  return catalog::SessionOf(context, catalog);
 }
 
 void ValidateNewName(std::string_view name) {
@@ -367,7 +358,7 @@ void SetupSession(duckdb::ClientContext& context, std::string_view name,
   }
   const auto origin = RequireOrigin(context, name);
   const auto id = origin.entry.oid;
-  const auto pid = connector::GetSereneDBContext(context).GetBackendPid();
+  const auto pid = ConnectionContext::Get(context).GetBackendPid();
   auto& holders = OriginHolders::Instance();
   if (acquired_by != 0) {
     if (holders.Holder(id) != acquired_by) {
@@ -384,9 +375,9 @@ void SetupSession(duckdb::ClientContext& context, std::string_view name,
       RequireIdle(origin);
     }
   }
-  context.registered_state->Insert(
-    kSessionKey, duckdb::make_shared_ptr<OriginSession>(id, std::string{name},
-                                                        pid, acquired_by == 0));
+  ConnectionContext::Get(context).replication_origin =
+    std::make_unique<OriginSession>(id, std::string{name}, pid,
+                                    acquired_by == 0);
 }
 
 void SessionSetup(duckdb::DataChunk& args, duckdb::ExpressionState& state,
@@ -417,7 +408,7 @@ void ForgetXactLsn(duckdb::ClientContext& context,
     return;
   }
   if (const auto origin = FindOrigin(context, session.name)) {
-    duckdb::DuckTransaction::Get(context, origin->catalog)
+    catalog::SessionOf(context, origin->catalog)
       .ForgetReplicationLsn(origin->entry);
   }
 }
@@ -427,7 +418,7 @@ void SessionReset(duckdb::DataChunk& args, duckdb::ExpressionState& state,
   auto& context = state.GetContext();
   auth::RequireSuperuser(context, "pg_replication_origin_session_reset");
   ForgetXactLsn(context, RequireSession(context));
-  context.registered_state->Remove(kSessionKey);
+  ConnectionContext::Get(context).replication_origin.reset();
   ReturnVoid(result);
 }
 
@@ -478,7 +469,7 @@ void XactReset(duckdb::DataChunk& args, duckdb::ExpressionState& state,
                duckdb::Vector& result) {
   auto& context = state.GetContext();
   auth::RequireSuperuser(context, "pg_replication_origin_xact_reset");
-  if (auto session = Session(context)) {
+  if (auto* session = Session(context)) {
     ForgetXactLsn(context, *session);
   }
   ReturnVoid(result);

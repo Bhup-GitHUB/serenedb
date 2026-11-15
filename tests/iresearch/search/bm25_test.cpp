@@ -133,7 +133,7 @@ void Bm25TestCase::TestQueryNorms() {
         }
       });
 
-    add_segment(gen, irs::kOmCreate, irs::tests::DefaultWriterOptions(),
+    add_segment(gen, tests::kOmCreate, irs::tests::DefaultWriterOptions(),
                 StoreSeq());
   }
 
@@ -323,7 +323,7 @@ TEST_P(Bm25TestCase, test_bm1_idf_only) {
   {
     tests::JsonDocGenerator gen(resource("phrase_sequential.json"),
                                 analyzed_json_field_factory);
-    add_segment(gen, irs::kOmCreate, irs::tests::DefaultWriterOptions(),
+    add_segment(gen, tests::kOmCreate, irs::tests::DefaultWriterOptions(),
                 StoreName());
   }
 
@@ -333,14 +333,14 @@ TEST_P(Bm25TestCase, test_bm1_idf_only) {
   ASSERT_EQ(irs::IndexFeatures::None, impl->GetIndexFeatures());
 
   auto index = open_reader(irs::tests::DefaultReaderOptions());
-  ASSERT_EQ(1, index->size());
+  ASSERT_EQ(1, index.size());
 
   MaxMemoryCounter counter;
   irs::ColumnArgsFetcher fetcher;
 
   auto collect = [&](const irs::Filter& filter) {
     std::map<irs::doc_id_t, irs::score_t> scores;
-    tests::PreparedFilter prepared_filter{filter, *index, impl.get(), counter};
+    tests::PreparedFilter prepared_filter{filter, index, impl.get(), counter};
     fetcher.Clear();
     auto docs = prepared_filter.ExecuteScored(0, fetcher);
     auto score = docs->PrepareScore();
@@ -460,7 +460,7 @@ TEST_P(Bm25TestCase, test_phrase) {
   {
     tests::JsonDocGenerator gen(resource("phrase_sequential.json"),
                                 analyzed_json_field_factory);
-    add_segment(gen, irs::kOmCreate, irs::tests::DefaultWriterOptions(),
+    add_segment(gen, tests::kOmCreate, irs::tests::DefaultWriterOptions(),
                 StoreName());
   }
 
@@ -468,7 +468,7 @@ TEST_P(Bm25TestCase, test_phrase) {
 
   // read segment
   auto index = open_reader(irs::tests::DefaultReaderOptions());
-  ASSERT_EQ(1, index->size());
+  ASSERT_EQ(1, index.size());
   auto& segment = *(index.begin());
 
   MaxMemoryCounter counter;
@@ -491,7 +491,7 @@ TEST_P(Bm25TestCase, test_phrase) {
       "Q",   // jumps high jumps left jumps right jumps down walks back
       "R"};  // jumps high jumps left jumps right walks down walks back
 
-    tests::PreparedFilter prepared_filter{filter, *index, impl.get(), counter};
+    tests::PreparedFilter prepared_filter{filter, index, impl.get(), counter};
 
     fetcher.Clear();
 
@@ -553,7 +553,7 @@ TEST_P(Bm25TestCase, test_phrase) {
       "SPWLC3"};  // cookies cake pie biscuet marshmallows cake meringue
 
     tests::PreparedFilter prepared_filter{*Lower(std::move(filter), impl.get()),
-                                          *index, impl.get(), counter};
+                                          index, impl.get(), counter};
 
     fetcher.Clear();
 
@@ -603,7 +603,7 @@ TEST_P(Bm25TestCase, test_query) {
           doc.insert(std::move(field), false, true);
         }
       });
-    add_segment(gen, irs::kOmCreate, irs::tests::DefaultWriterOptions(),
+    add_segment(gen, tests::kOmCreate, irs::tests::DefaultWriterOptions(),
                 StoreSeq());
   }
 
@@ -679,7 +679,7 @@ TEST_P(Bm25TestCase, test_query) {
         }
       });
     auto writer =
-      open_writer(irs::kOmCreate, irs::tests::DefaultWriterOptions());
+      open_writer(tests::kOmCreate, irs::tests::DefaultWriterOptions());
     auto store_seq = StoreSeq();
     const Document* doc;
 
@@ -790,7 +790,7 @@ TEST_P(Bm25TestCase, test_query) {
         }
       });
     auto writer =
-      open_writer(irs::kOmCreate, irs::tests::DefaultWriterOptions());
+      open_writer(tests::kOmCreate, irs::tests::DefaultWriterOptions());
     auto store_seq = StoreSeq();
     const Document* doc;
 
@@ -913,7 +913,7 @@ TEST_P(Bm25TestCase, test_query) {
         }
       });
     auto writer =
-      open_writer(irs::kOmCreate, irs::tests::DefaultWriterOptions());
+      open_writer(tests::kOmCreate, irs::tests::DefaultWriterOptions());
     auto store_seq = StoreSeq();
     const Document* doc;
 
@@ -1360,7 +1360,7 @@ TEST_P(Bm25TestCase, test_order) {
           doc.insert(std::move(field), false, true);
         }
       });
-    add_segment(gen, irs::kOmCreate, irs::tests::DefaultWriterOptions(),
+    add_segment(gen, tests::kOmCreate, irs::tests::DefaultWriterOptions(),
                 StoreSeq());
   }
 

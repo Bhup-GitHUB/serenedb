@@ -40,6 +40,7 @@
 #include <utility>
 #include <vector>
 
+#include "index/test_index_writer.hpp"
 #include "insert_field.hpp"
 
 namespace {
@@ -100,11 +101,12 @@ const Index& IndexOf() {
   auto* db = &irs::DuckDBEngine::Instance().instance();
   auto& fs = duckdb::FileSystem::GetFileSystem(*db);
   const auto root = index.path.string();
+  tests::IndexDir dir{*db, fs, root};
 
   irs::IndexWriterOptions opts;
   opts.column_options = [](irs::field_id) -> irs::ColumnOptions { return {}; };
   auto writer =
-    irs::IndexWriter::Make(*db, fs, root, irs::kOmCreate, std::move(opts));
+    tests::IndexWriter::Make(dir, tests::kOmCreate, std::move(opts));
   {
     auto trx = writer->GetBatch();
     BodyField field;
@@ -123,7 +125,8 @@ const Index& IndexOf() {
     trx.Commit();
   }
   writer->RefreshCommit();
-  index.reader = irs::DirectoryReader{*db, fs, root, irs::IndexReaderOptions{}};
+  index.reader =
+    tests::OpenReader(dir, irs::IndexReaderOptions{});
   SDB_ASSERT(index.reader.size() == 1);
   return index;
 }

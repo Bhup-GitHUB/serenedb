@@ -31,6 +31,9 @@ void RequireUnreservedTablespaceName(std::string_view name);
 
 class TablespaceCatalogEntry final : public duckdb::InCatalogEntry {
  public:
+  static constexpr duckdb::CatalogType Type =
+    duckdb::CatalogType::TABLESPACE_ENTRY;
+
   TablespaceCatalogEntry(duckdb::Catalog& catalog,
                          duckdb::CreateTablespaceInfo& info,
                          std::string directory);
@@ -39,6 +42,7 @@ class TablespaceCatalogEntry final : public duckdb::InCatalogEntry {
     duckdb::ClientContext& context) const final;
   duckdb::unique_ptr<duckdb::CreateInfo> GetInfo() const final;
   std::string ToSQL() const final { return GetInfo()->ToString(); }
+  void OnDrop() final;
 
   const std::string& Location() const noexcept { return _location; }
   const std::string& Directory() const noexcept { return _directory; }

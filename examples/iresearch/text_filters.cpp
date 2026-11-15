@@ -40,6 +40,7 @@
 #include <memory>
 
 #include "examples.h"
+#include "segments.h"
 
 // This example shows direct construction of the advanced text filters:
 //   - ByPhrase            (positional, "quick brown fox")
@@ -122,8 +123,9 @@ irs::IndexWriterOptions MakeWriterOptions() {
 // in order, so doc_id N corresponds to kCorpus[N-min_doc_id].
 irs::DirectoryReader BuildIndex(duckdb::FileSystem& fs, std::string_view root,
                                 std::vector<std::string>& names_out) {
-  auto writer =
-    irs::IndexWriter::Make(Db(), fs, root, irs::kOmCreate, MakeWriterOptions());
+  auto options = MakeWriterOptions();
+  examples::Segments segments{Db(), fs, root, options.reader_options};
+  auto writer = irs::IndexWriter::Make(Db(), fs, root, std::move(options));
 
   TextField body;
 
@@ -135,10 +137,9 @@ irs::DirectoryReader BuildIndex(duckdb::FileSystem& fs, std::string_view root,
       InsertTokens(doc, body);
       names_out.emplace_back(name);
     }
-    trx.Commit();
+    segments.Add(trx.FlushSegments(true));
   }
-  writer->RefreshCommit();
-  return writer->GetSnapshot();
+  return segments.Reader();
 }
 
 // Run a prepared filter over all segments, collect doc names

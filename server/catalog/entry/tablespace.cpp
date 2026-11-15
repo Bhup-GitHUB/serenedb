@@ -20,9 +20,12 @@
 
 #include "catalog/entry/tablespace.h"
 
+#include <duckdb/common/file_system.hpp>
 #include <iresearch/utils/pg/errcodes.hpp>
 #include <iresearch/utils/pg/sql_exception_macro.hpp>
 #include <utility>
+
+#include "catalog/database_directory.h"
 
 namespace sdb::catalog {
 
@@ -64,6 +67,11 @@ duckdb::unique_ptr<duckdb::CatalogEntry> TablespaceCatalogEntry::Copy(
   tablespace.internal = internal;
   return duckdb::make_uniq<TablespaceCatalogEntry>(catalog, tablespace,
                                                    _directory);
+}
+
+void TablespaceCatalogEntry::OnDrop() {
+  RemoveStorage(duckdb::FileSystem::JoinPath(_directory, ".."),
+                [] { return true; });
 }
 
 }  // namespace sdb::catalog

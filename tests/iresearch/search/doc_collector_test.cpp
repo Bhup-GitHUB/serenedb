@@ -279,7 +279,7 @@ TEST_P(DocCollectorTestCase, test_execute_topk_multi_segment) {
   {
     tests::JsonDocGenerator gen(resource("simple_sequential.json"),
                                 &tests::GenericJsonFieldFactory);
-    auto writer = open_writer(irs::kOmCreate);
+    auto writer = open_writer(tests::kOmCreate);
     const Document* doc;
 
     // Add first segment (even docs)
@@ -368,7 +368,7 @@ TEST_P(DocCollectorTestCase, test_execute_topk_term_filter) {
 }
 
 TEST_P(DocCollectorTestCase, test_execute_topk_skips_deleted) {
-  auto writer = open_writer(irs::kOmCreate);
+  auto writer = open_writer(tests::kOmCreate);
   {
     tests::JsonDocGenerator gen(resource("simple_sequential.json"),
                                 WrapFactory);
@@ -411,14 +411,14 @@ TEST_P(DocCollectorTestCase, test_execute_topk_skips_deleted) {
 
   ASSERT_EQ(live, count);
   for (size_t i = 0; i != std::min(count, k); ++i) {
-    auto masked = reader[results[i].segment_idx].MaskedDocs();
-    ASSERT_FALSE(masked.Contains(results[i].doc))
+    const auto* masked = reader[results[i].segment_idx].docs_mask();
+    ASSERT_FALSE(masked && masked->Contains(results[i].doc))
       << "deleted doc " << results[i].doc << " reached the top-k";
   }
 }
 
 TEST_P(DocCollectorTestCase, test_lead_all_walks_live_docs) {
-  auto writer = open_writer(irs::kOmCreate);
+  auto writer = open_writer(tests::kOmCreate);
   {
     tests::JsonDocGenerator gen(resource("simple_sequential.json"),
                                 WrapFactory);
@@ -464,7 +464,7 @@ TEST_P(DocCollectorTestCase, test_lead_all_walks_live_docs) {
 }
 
 TEST_P(DocCollectorTestCase, test_count_negation_skips_deleted) {
-  auto writer = open_writer(irs::kOmCreate);
+  auto writer = open_writer(tests::kOmCreate);
   {
     tests::JsonDocGenerator gen(resource("simple_sequential.json"),
                                 WrapFactory);
@@ -526,7 +526,7 @@ TEST_P(DocCollectorTestCase, test_count_negation_skips_deleted) {
 }
 
 TEST_P(DocCollectorTestCase, test_count_all_skips_deleted) {
-  auto writer = open_writer(irs::kOmCreate);
+  auto writer = open_writer(tests::kOmCreate);
   {
     tests::JsonDocGenerator gen(resource("simple_sequential.json"),
                                 WrapFactory);
@@ -575,7 +575,7 @@ TEST_P(DocCollectorTestCase, test_count_split_single_doc_term) {
   constexpr size_t kDocs = 4096;
   constexpr size_t kSingle = 3001;
   {
-    auto writer = open_writer(irs::kOmCreate);
+    auto writer = open_writer(tests::kOmCreate);
     auto field = std::make_shared<tests::StringField>("name");
     field->id = kNameFieldId;
     tests::Document doc;

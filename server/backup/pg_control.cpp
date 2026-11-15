@@ -24,12 +24,17 @@
 #include <absl/random/random.h>
 #include <absl/strings/str_cat.h>
 #include <absl/time/clock.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #include <algorithm>
 #include <array>
+#include <cerrno>
 #include <cstddef>
 #include <cstring>
 #include <duckdb/common/file_system.hpp>
+#include <duckdb/common/query_context.hpp>
 #include <iresearch/store/storage.hpp>
 #include <iresearch/utils/assert.hpp>
 #include <iresearch/utils/pg/errcodes.hpp>
@@ -141,13 +146,34 @@ void WritePgControl(const std::string& data_dir, const ControlState& state) {
   irs::WriteWhole(fs, path, buffer, true);
 }
 
-void EnsurePgVersion(const std::string& data_dir) {
-  auto& fs = catalog::StorageFileSystem();
-  const auto path = fs.JoinPath(data_dir, kPgVersionFile);
-  if (fs.FileExists(path)) {
-    return;
+std::string PendingPgVersion(const std::string& data_dir) {
+  auto path = duckdb::FileSystem::JoinPath(data_dir, kPendingPgVersionFile);
+  const int fd =
+    ::open(path.c_str(), O_WRONLY | O_CREAT | O_CLOEXEC, S_IRUSR | S_IWUSR);
+  if (fd < 0) {
+    const int error = errno;
+    THROW_SQL_ERROR(
+      ERR_CODE(irs::pg::ErrcodeForFileAccess(error)),
+      ERR_MSG("could not create file \"", path, "\": ", std::strerror(error)));
   }
-  irs::WriteWhole(fs, path, absl::StrCat(pg::kPgMajorVersion, "\n"), true);
+  ::close(fd);
+  return path;
+}
+
+void PublishPgVersion(const std::string& data_dir) {
+  auto& fs = catalog::StorageFileSystem();
+  const auto pending = fs.JoinPath(data_dir, kPendingPgVersionFile);
+  {
+    const auto version = absl::StrCat(pg::kPgMajorVersion, "\n");
+    const auto handle =
+      fs.OpenFile(pending, duckdb::FileFlags::FILE_FLAGS_WRITE |
+                             duckdb::FileFlags::FILE_FLAGS_FILE_CREATE_NEW);
+    handle->Write(duckdb::QueryContext{}, const_cast<char*>(version.data()),
+                  version.size(), 0);
+    handle->Sync();
+  }
+  fs.MoveFile(pending, fs.JoinPath(data_dir, kPgVersionFile));
+  fs.SyncDirectory(data_dir);
 }
 
 PositionSource& PositionSource::Instance() {

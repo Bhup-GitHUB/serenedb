@@ -512,10 +512,6 @@ class FormatTestCase : public IndexTestBase {
     }
     ASSERT_FALSE(actual_pos->next());
   }
-
-  void AssertNoDirectoryArtifacts(
-    const IndexDir& dir,
-    const std::unordered_set<std::string>& expect_additional = {});
 };
 
 }  // namespace tests

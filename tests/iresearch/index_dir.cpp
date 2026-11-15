@@ -20,6 +20,8 @@
 
 #include "index_dir.hpp"
 
+#include <absl/algorithm/container.h>
+
 #include <duckdb/common/memory_file_system.hpp>
 #include <duckdb/main/database_file_opener.hpp>
 
@@ -51,8 +53,8 @@ IndexDir::IndexDir(duckdb::DatabaseInstance& db, std::string_view root)
 
 IndexDir::IndexDir(duckdb::DatabaseInstance& db, duckdb::FileSystem& fs,
                    std::string_view root)
-  : _state{std::make_shared<State>(db, fs, std::string{root}, KindOf(root),
-                                   std::make_shared<irs::IndexFileRefs>())} {}
+  : _state{
+      std::make_shared<State>(db, fs, std::string{root}, KindOf(root))} {}
 
 std::unique_ptr<duckdb::BufferedFileWriter> IndexDir::Create(
   std::string_view name) const {
@@ -116,30 +118,36 @@ void IndexDir::Visit(absl::FunctionRef<void(std::string_view)> visitor) const {
 
 irs::IndexReaderOptions IndexDir::ReaderOptions(
   irs::IndexReaderOptions options) const {
-  if (!options.refs) {
-    options.refs = _state->refs;
+  if (!options.released) {
+    options.released = _state->released;
   }
   return options;
+}
+
+std::vector<irs::SegmentMeta> IndexDir::Committed() const {
+  absl::MutexLock lock{&_state->mutex};
+  return _state->committed;
+}
+
+void IndexDir::Publish(std::vector<irs::SegmentMeta> segments) const {
+  absl::MutexLock lock{&_state->mutex};
+  _state->committed.swap(segments);
+}
+
+size_t IndexDir::RemoveReleased() const {
+  const auto before = Files();
+  irs::RemoveReleased(Fs(), Root(), Released());
+  const auto after = Files();
+  const irs::containers::FlatHashSet<std::string_view> kept{after.begin(),
+                                                            after.end()};
+  return static_cast<size_t>(absl::c_count_if(
+    before, [&](const std::string& name) { return !kept.contains(name); }));
 }
 
 IndexDir IndexDir::Observed(irs::FileObserver& observer) const {
   auto result = *this;
   result._observers.push_back(&observer);
   return result;
-}
-
-irs::DirectoryReader OpenReader(const IndexDir& dir,
-                                const irs::IndexReaderOptions& options,
-                                irs::MetaPayloadReader payload) {
-  return irs::DirectoryReader{dir.Db(), dir.Fs(), dir.Root(),
-                              dir.ReaderOptions(options), std::move(payload)};
-}
-
-irs::IndexWriter::ptr MakeWriter(const IndexDir& dir, irs::OpenMode mode,
-                                 irs::IndexWriterOptions options) {
-  options.reader_options = dir.ReaderOptions(std::move(options.reader_options));
-  return irs::IndexWriter::Make(dir.Db(), dir.Fs(), dir.Root(), mode,
-                                std::move(options));
 }
 
 }  // namespace tests

@@ -36,7 +36,6 @@
 int main(int argc, const char* argv[]) {
   bench::IndexBuilderOptions builder_options{
     .batch_size = 100000,
-    .refresh_interval_ms = 0,
     .compaction_interval_ms = 5000,
     .compaction_threads = 0,
     .compact_all = true,
@@ -45,7 +44,6 @@ int main(int argc, const char* argv[]) {
   const std::string_view layout = argc > 2 ? argv[2] : "single";
   constexpr std::string_view kSegmentDocs = "segment_docs=";
   if (layout == "tiered") {
-    builder_options.refresh_interval_ms = 1000;
     builder_options.compaction_interval_ms = 1000;
     builder_options.compaction_threads = 1;
     builder_options.compact_all = false;

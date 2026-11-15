@@ -208,7 +208,7 @@ void ScorePruneTestCase::AssertResults(const irs::DirectoryReader& index,
 void ScorePruneTestCase::CompactAll(irs::ScorerPtr scorer, bool write_norms) {
   const irs::index_utils::CompactionCount compact_all;
   auto writer =
-    open_writer(irs::kOmAppend, GetWriterOptions(scorer, write_norms));
+    open_writer(tests::kOmAppend, GetWriterOptions(scorer, write_norms));
   ASSERT_TRUE(writer->Compact(irs::index_utils::MakePolicy(compact_all)));
   ASSERT_TRUE(writer->RefreshCommit());
   ASSERT_EQ(1, writer->GetSnapshot().size());
@@ -240,9 +240,9 @@ void ScorePruneTestCase::GenerateSegment(irs::ScorerPtr scorer,
       }
     });
 
-  auto open_mode = irs::kOmCreate;
+  auto open_mode = tests::kOmCreate;
   if (append_data) {
-    open_mode |= irs::kOmAppend;
+    open_mode |= tests::kOmAppend;
   }
 
   add_segment(gen, open_mode, GetWriterOptions(scorer, write_norms));
@@ -264,7 +264,7 @@ void ScorePruneTestCase::GenerateSegmentMinNorm(irs::ScorerPtr scorer) {
       }
     });
 
-  auto open_mode = irs::kOmCreate;
+  auto open_mode = tests::kOmCreate;
   // if (append_data) {
   //   open_mode |= irs::OM_APPEND;
   // }
@@ -281,7 +281,6 @@ void ScorePruneTestCase::AssertTermFilter(const irs::Scorer& scorer,
 
   auto reader =
     tests::OpenReader(dir(), irs::IndexReaderOptions{.scorer = &scorer});
-  ASSERT_NE(nullptr, reader);
 
   for (const auto& segment : reader) {
     const auto* field = segment.field(kFieldId);
@@ -306,7 +305,6 @@ void ScorePruneTestCase::AssertConjunctionFilter(const irs::Scorer& scorer,
 
   auto reader =
     tests::OpenReader(dir(), irs::IndexReaderOptions{.scorer = &scorer});
-  ASSERT_NE(nullptr, reader);
 
   for (const auto& segment : reader) {
     const auto* field = segment.field(kFieldId);
@@ -338,7 +336,6 @@ void ScorePruneTestCase::AssertDisjunctionFilter(const irs::Scorer& scorer,
 
   auto reader =
     tests::OpenReader(dir(), irs::IndexReaderOptions{.scorer = &scorer});
-  ASSERT_NE(nullptr, reader);
 
   for (const auto& segment : reader) {
     const auto* field = segment.field(kFieldId);

@@ -20,28 +20,32 @@
 
 #pragma once
 
-#include <duckdb/catalog/catalog_entry.hpp>
-#include <duckdb/common/helper.hpp>
+#include <cstdint>
 #include <duckdb/common/shared_ptr.hpp>
 #include <duckdb/main/attached_database.hpp>
-#include <optional>
+#include <duckdb/main/client_context.hpp>
+#include <memory>
 #include <span>
-#include <string>
+#include <vector>
 
-#include "catalog/catalog.h"
+#include "catalog/transaction.h"
+#include "search/store.h"
+#include "search/table.h"
 
 namespace sdb::search {
 
-struct MissingStorage {
-  duckdb::reference<const duckdb::CatalogEntry> entry;
-  std::string path;
+struct TableSnapshot {
+  std::shared_ptr<Store> store;
+  std::shared_ptr<const TableState> state;
 };
 
-std::optional<MissingStorage> OpenSearchStorages(
-  std::span<const duckdb::reference<catalog::SereneDBCatalog>> catalogs);
-
-void RecoverSearchStorages(
-  std::span<const duckdb::shared_ptr<duckdb::AttachedDatabase>> attached);
+bool RecoverSearchStorages(
+  duckdb::ClientContext& context,
+  std::span<const duckdb::shared_ptr<duckdb::AttachedDatabase>> attached,
+  bool orphans);
 void StartSearchStorageTasks();
+std::vector<TableSnapshot> CaptureSnapshot(const catalog::CommittedView& view);
+std::vector<std::vector<uint8_t>> SnapshotRecords(
+  std::span<const TableSnapshot> tables);
 
 }  // namespace sdb::search

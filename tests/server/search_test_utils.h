@@ -47,6 +47,7 @@
 #include "connector/column_id.h"
 #include "connector/search_sink_writer.hpp"
 #include "engine_context.h"
+#include "index/test_index_writer.hpp"
 
 namespace sdb::test {
 
@@ -107,32 +108,24 @@ inline std::vector<std::pair<uint64_t, irs::doc_id_t>> RemovedDocs(
   const irs::DocRemoval& removal) {
   std::vector<std::pair<uint64_t, irs::doc_id_t>> docs;
   for (const auto& group : removal.groups) {
-    group.docs.ForEachRun(nullptr,
-                          [&](irs::doc_id_t first, irs::doc_id_t last) {
-                            for (auto doc = first; doc < last; ++doc) {
-                              docs.emplace_back(group.segment, doc);
-                            }
-                            return true;
-                          });
+    irs::DocumentMask::Cursor cursor{group.docs};
+    std::array<irs::doc_id_t, 64> batch;
+    while (const auto count = cursor.Read(batch)) {
+      for (const auto doc : std::span{batch}.first(count)) {
+        docs.emplace_back(group.segment, doc);
+      }
+    }
   }
   return docs;
 }
 
 struct OneRowIndex {
-  ~OneRowIndex() {
-    reader = irs::DirectoryReader{};
-    fs.RemoveDirectory(root);
-  }
-
-  duckdb::FileSystem& fs = duckdb::FileSystem::GetFileSystem(EngineDb());
-  std::string root = MemoryRoot("one_row_segments");
+  ::tests::IndexDir dir{EngineDb(), MemoryRoot("one_row_segments")};
   irs::DirectoryReader reader = [this] {
-    irs::IndexWriterOptions options;
-    auto writer = irs::IndexWriter::Make(EngineDb(), fs, root, irs::kOmCreate,
-                                         std::move(options));
+    auto writer = ::tests::IndexWriter::Make(dir, ::tests::kOmCreate, {});
     for (int64_t value = 0; value != 8; ++value) {
-      auto trx = writer->GetBatch(/*exclusive_segment=*/true);
-      WriteValues(trx, std::array{value});
+      auto trx = writer->GetBatch();
+      WriteValues(trx.Native(), std::array{value});
       EXPECT_TRUE(trx.Commit());
       writer->RefreshCommit();
     }

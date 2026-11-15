@@ -20,14 +20,12 @@
 
 #pragma once
 
+#include <absl/functional/any_invocable.h>
+
 #include <atomic>
 #include <duckdb/common/file_system.hpp>
 #include <duckdb/common/typedefs.hpp>
-#include <duckdb/storage/storage_extension.hpp>
-#include <iresearch/utils/containers/flat_hash_set.hpp>
-#include <memory>
 #include <optional>
-#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -35,8 +33,7 @@
 namespace sdb::catalog {
 
 inline constexpr std::string_view kEngineDir = "engine_v1";
-inline constexpr std::string_view kCatalogLog = "catalog.wal";
-inline constexpr std::string_view kDataFile = "data.db";
+inline constexpr std::string_view kStoreDir = "store";
 
 duckdb::FileSystem& StorageFileSystem();
 void CreateDirectory(const std::string& path);
@@ -45,6 +42,10 @@ bool RemoveTree(const std::string& path) noexcept;
 // While a backup runs, removals of dropped storages wait for ResumeRemovals.
 void DeferRemovals() noexcept;
 void ResumeRemovals();
+void BeginStorageWork() noexcept;
+void EndStorageWork(bool tidy) noexcept;
+bool StorageTidy() noexcept;
+
 std::optional<duckdb::idx_t> OidFromName(std::string_view name);
 
 struct StorageEntry {
@@ -53,57 +54,29 @@ struct StorageEntry {
 };
 
 std::vector<StorageEntry> ListStorages(const std::string& root);
-bool HoldsFiles(const StorageEntry& entry);
 
-struct StorageSize {
-  uint64_t files = 0;
-  uint64_t nested = 0;
-};
+uint64_t StorageBytes(const std::string& directory);
 
-StorageSize StorageBytes(const std::string& directory);
+std::string StoreDirOf(std::string_view tablespace_directory);
+std::string StoragePathIn(std::string_view store_directory, duckdb::idx_t oid);
+void RemoveStorage(std::string path, absl::AnyInvocable<bool()> remove_files);
 
-void RemoveUnowned(std::span<const StorageEntry> entries,
-                   const irs::containers::FlatHashSet<duckdb::idx_t>& owned);
-
-class StorageDirectory final {
+class DatabaseDirectory final {
  public:
-  explicit StorageDirectory(
-    std::string path, std::shared_ptr<const StorageDirectory> parent = nullptr)
-    : _path{std::move(path)}, _parent{std::move(parent)} {}
-  ~StorageDirectory();
+  explicit DatabaseDirectory(std::string path) : _path{std::move(path)} {}
 
   const std::string& Path() const noexcept { return _path; }
-  void MarkDropped(std::vector<std::string> beside = {}) noexcept;
+
+  void MarkDropped() noexcept {
+    _dropped.store(true, std::memory_order_release);
+  }
+  bool Dropped() const noexcept {
+    return _dropped.load(std::memory_order_acquire);
+  }
 
  private:
   std::string _path;
-  std::shared_ptr<const StorageDirectory> _parent;
-  std::vector<std::string> _beside;
   std::atomic_bool _dropped{false};
-};
-
-class DatabaseDirectory final : public duckdb::StorageExtensionInfo {
- public:
-  DatabaseDirectory(duckdb::idx_t oid, std::string path,
-                    std::string_view tablespace = {});
-
-  duckdb::idx_t Oid() const noexcept { return _oid; }
-  const std::string& Path() const noexcept { return _storage->Path(); }
-  std::string_view Tablespace() const noexcept { return _tablespace; }
-  std::string DataFile() const;
-  std::unique_ptr<StorageDirectory> StorageOf(std::string_view tablespace,
-                                              duckdb::idx_t oid) const;
-
-  void SetTablespaces(std::vector<std::string> tablespaces) {
-    _tablespaces = std::move(tablespaces);
-  }
-  void MarkDropped() noexcept;
-
- private:
-  duckdb::idx_t _oid;
-  std::string _tablespace;
-  std::shared_ptr<StorageDirectory> _storage;
-  std::vector<std::string> _tablespaces;
 };
 
 }  // namespace sdb::catalog

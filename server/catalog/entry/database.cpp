@@ -24,6 +24,7 @@
 #include <duckdb/common/fault_points.hpp>
 #include <utility>
 
+#include "pg/catalog/oids.h"
 #include "pg/progress_registry.h"
 
 namespace sdb::catalog {
@@ -34,7 +35,8 @@ DatabaseCatalogEntry::DatabaseCatalogEntry(
   : duckdb::InCatalogEntry{duckdb::CatalogType::DATABASE_ENTRY, catalog,
                            info.GetQualifiedName().Name(), info.oid},
     _options{info.options},
-    _tablespace{info.tablespace_oid},
+    _tablespace{info.tablespace_oid == 0 ? pg::kPgDefaultTablespace
+                                         : info.tablespace_oid},
     _directory{std::move(directory)} {
   comment = info.comment;
   tags = info.tags;
@@ -45,6 +47,8 @@ DatabaseCatalogEntry::DatabaseCatalogEntry(
 duckdb::unique_ptr<duckdb::CreateInfo> DatabaseCatalogEntry::GetInfo() const {
   auto info = duckdb::make_uniq<duckdb::CreateDatabaseInfo>();
   info->SetName(name);
+  info->oid = oid;
+  info->permissions = permissions;
   info->comment = comment;
   info->tags = tags;
   info->options = _options;

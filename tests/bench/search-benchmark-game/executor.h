@@ -35,6 +35,12 @@
 
 namespace bench {
 
+inline constexpr std::string_view kSegmentListFile = "segments";
+
+irs::DirectoryReader OpenIndex(duckdb::DatabaseInstance& db,
+                               duckdb::FileSystem& fs, std::string_view root,
+                               const irs::IndexReaderOptions& options);
+
 struct BenchConfig {
   std::string_view scorer = "bm25";
   std::string_view scorer_options = R"({})";
@@ -84,6 +90,7 @@ struct EmitResult {
 class Executor {
  public:
   explicit Executor(std::string_view path);
+  explicit Executor(irs::DirectoryReader reader);
 
   size_t ExecuteTopK(size_t k, std::string_view query);
   size_t ExecuteTopKWithCount(size_t k, std::string_view query);

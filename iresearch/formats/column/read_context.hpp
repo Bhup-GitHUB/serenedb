@@ -40,6 +40,7 @@ class ReadContext final : public BlockManager,
                           public duckdb::OverflowStringReader,
                           public duckdb::ColumnStreamReader {
  public:
+  explicit ReadContext(duckdb::DatabaseInstance& db);
   explicit ReadContext(const ColReader& reader, bool random_access = false);
   ReadContext(duckdb::DatabaseInstance& db, const duckdb::InputFile* file);
   ~ReadContext() final;

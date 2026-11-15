@@ -88,7 +88,7 @@ void HitBatcher::BeginSegment(uint32_t seg_idx,
     _ctx.reset();
     return;
   }
-  if (_ctx) {
+  if (_ctx && _ctx->GetBlockAllocSize() == col_reader->BlockAllocSize()) {
     _ctx->Reset(*col_reader);
   } else {
     _ctx = std::make_unique<irs::ReadContext>(*col_reader);
@@ -265,7 +265,8 @@ float* HitBatcher::ScoreData() {
   auto& s = _score_bufs[_score_idx];
   if (!s) {
     s = std::make_unique<irs::ColumnReader::VectorScratch>(
-      duckdb::LogicalType::FLOAT);
+      duckdb::LogicalType::FLOAT,
+      STANDARD_VECTOR_SIZE + irs::doc_limits::kScoresSlack);
   }
   return duckdb::FlatVector::GetDataMutable<float>(s->vector);
 }
