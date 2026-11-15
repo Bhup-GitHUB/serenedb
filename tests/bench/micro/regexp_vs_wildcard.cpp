@@ -346,7 +346,6 @@ Corpus BuildIndex() {
   const auto root = tmp_root.string();
   tests::IndexDir dir{*db, fs, root};
 
-  auto* db = &irs::DuckDBEngine::Instance().instance();
   irs::IndexWriterOptions options;
   auto writer =
     tests::IndexWriter::Make(dir, tests::kOmCreate, std::move(options));

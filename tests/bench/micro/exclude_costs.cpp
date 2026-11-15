@@ -91,7 +91,7 @@ struct Index {
 
 const Index& IndexOf() {
   static Index index;
-  if (index.reader) {
+  if (!index.path.empty()) {
     return index;
   }
   index.path =
