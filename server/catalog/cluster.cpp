@@ -21,11 +21,8 @@
 #include "catalog/cluster.h"
 
 #include <absl/algorithm/container.h>
-#include <absl/strings/ascii.h>
-#include <absl/strings/match.h>
 #include <absl/strings/str_cat.h>
 #include <absl/strings/str_join.h>
-#include <absl/strings/str_split.h>
 #include <absl/time/time.h>
 
 #include <cstdlib>
@@ -44,7 +41,6 @@
 #include <duckdb/function/function_list.hpp>
 #include <duckdb/main/attached_database.hpp>
 #include <duckdb/main/database_manager.hpp>
-#include <duckdb/main/settings.hpp>
 #include <duckdb/parser/parsed_data/alter_info.hpp>
 #include <duckdb/parser/parsed_data/alter_table_info.hpp>
 #include <duckdb/parser/parsed_data/attach_info.hpp>
@@ -461,24 +457,11 @@ void ClusterCatalog::Alter(duckdb::CatalogTransaction transaction,
     DropOwned(transaction, info.Cast<duckdb::DropOwnedInfo>());
     return;
   }
-  if (info.type == duckdb::AlterType::ALTER_DATABASE_SETTINGS) {
-    auto& alter = info.Cast<duckdb::AlterDatabaseSettingsInfo>();
-    if (transaction.HasContext()) {
-      duckdb::Settings::ResolveCurrentValues(transaction.GetContext(),
-                                             alter.set_config);
-    }
-    ApplyAlter(transaction, info);
-    return;
-  }
   if (info.type != duckdb::AlterType::ALTER_ROLE) {
     ApplyAlter(transaction, info);
     return;
   }
   auto& alter = info.Cast<duckdb::AlterRoleInfo>();
-  if (transaction.HasContext()) {
-    duckdb::Settings::ResolveCurrentValues(transaction.GetContext(),
-                                           alter.set_config);
-  }
   if (alter.revoke && !alter.grant_role.empty() &&
       info.bind_mode == duckdb::AlterBindMode::BIND_ON_ALTER) {
     RevokeMembership(transaction, alter);
@@ -663,25 +646,14 @@ duckdb::optional_ptr<duckdb::CatalogEntry> ClusterCatalog::CreateRole(
     alter.inherit_option = false;
     alter.set_option = false;
     ApplyAlter(transaction, alter);
-    duckdb::Value self_grant;
-    context.TryGetCurrentSetting(duckdb::Identifier{"createrole_self_grant"},
-                                 self_grant);
-    bool inherit = false;
-    bool set = false;
-    for (const auto option : absl::StrSplit(
-           self_grant.IsNull() ? std::string{} : self_grant.ToString(), ',',
-           absl::SkipWhitespace())) {
-      const auto keyword = absl::StripAsciiWhitespace(option);
-      inherit |= absl::EqualsIgnoreCase(keyword, "inherit");
-      set |= absl::EqualsIgnoreCase(keyword, "set");
-    }
-    if (inherit || set) {
+    if (const auto self_grant = GetCreateroleSelfGrant(context);
+        self_grant.inherit || self_grant.set) {
       duckdb::AlterRoleInfo own{alter.GetQualifiedName().Name()};
       own.grant_role = alter.grant_role;
       own.grantor_id = creator;
       own.admin_option = false;
-      own.inherit_option = inherit;
-      own.set_option = set;
+      own.inherit_option = self_grant.inherit;
+      own.set_option = self_grant.set;
       ApplyAlter(transaction, own);
     }
   }

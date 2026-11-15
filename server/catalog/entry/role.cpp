@@ -101,8 +101,8 @@ std::string StoredPassword(duckdb::ClientContext& context,
   if (network::IsScramVerifier(password) || network::IsMd5Verifier(password)) {
     return std::string{password};
   }
-  constexpr std::string_view kMethods[] = {"scram-sha-256", "md5"};
-  if (GetEnumSetting(context, "password_encryption", kMethods) == 1) {
+  if (GetEnumSetting<PasswordEncryption>(context, "password_encryption") ==
+      PasswordEncryption::Md5) {
     return network::BuildMd5Verifier(role, password);
   }
   auto verifier = network::BuildScramVerifierString(password);

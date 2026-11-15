@@ -615,17 +615,16 @@ void SetConfigFunction(duckdb::DataChunk& args, duckdb::ExpressionState& state,
     args.data[0], args.data[1], args.data[2], result, args.size(),
     [&](duckdb::string_t name, duckdb::string_t value,
         bool is_local) -> duckdb::string_t {
+      const duckdb::Identifier setting{AsView(name)};
       if constexpr (kSecurityDefinerBody) {
-        for (const std::string_view guarded :
-             {"role", "session_authorization"}) {
-          if (absl::EqualsIgnoreCase(AsView(name), guarded)) {
-            THROW_SQL_ERROR(ERR_CODE(ERRCODE_INSUFFICIENT_PRIVILEGE),
-                            ERR_MSG("cannot set parameter \"", guarded,
-                                    "\" within security-definer function"));
-          }
+        if (const auto access = duckdb::Settings::GetAccess(context, setting);
+            access && access->session_identity) {
+          THROW_SQL_ERROR(
+            ERR_CODE(ERRCODE_INSUFFICIENT_PRIVILEGE),
+            ERR_MSG("cannot set parameter \"", GetOriginalName(AsView(name)),
+                    "\" within security-definer function"));
         }
       }
-      const duckdb::Identifier setting{AsView(name)};
       duckdb::PhysicalSet::SetVariable(
         context, setting,
         is_local ? duckdb::SetScope::LOCAL : duckdb::SetScope::AUTOMATIC,

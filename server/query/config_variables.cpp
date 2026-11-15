@@ -31,6 +31,7 @@
 #include <cmath>
 #include <duckdb/common/assert.hpp>
 #include <duckdb/common/case_insensitive_map.hpp>
+#include <duckdb/common/enums/trigger_type.hpp>
 #include <duckdb/common/fault_points.hpp>
 #include <duckdb/common/types/string.hpp>
 #include <duckdb/main/client_context.hpp>
@@ -137,6 +138,31 @@ duckdb::Value GetSetting(duckdb::ClientContext& context,
   return value;
 }
 
+CreateroleSelfGrant ParseCreateroleSelfGrant(std::string_view text) {
+  CreateroleSelfGrant result;
+  if (text.empty()) {
+    return result;
+  }
+  for (const auto option : absl::StrSplit(text, ',')) {
+    const auto keyword =
+      absl::AsciiStrToLower(absl::StripAsciiWhitespace(option));
+    if (keyword == "set") {
+      result.set = true;
+    } else if (keyword == "inherit") {
+      result.inherit = true;
+    } else {
+      THROW_SQL_ERROR(
+        ERR_CODE(ERRCODE_INVALID_PARAMETER_VALUE),
+        ERR_MSG("invalid value for parameter \"createrole_self_grant\": \"",
+                text, "\""),
+        ERR_DETAIL(keyword.empty() ? std::string{"List syntax is invalid."}
+                                   : absl::StrCat("Unrecognized key word: \"",
+                                                  keyword, "\".")));
+    }
+  }
+  return result;
+}
+
 }  // namespace
 
 uint32_t GetIntSetting(duckdb::ClientContext& context, std::string_view name) {
@@ -166,6 +192,11 @@ uint32_t GetEnumSetting(duckdb::ClientContext& context, std::string_view name,
     }
   }
   return static_cast<uint32_t>(options.size());
+}
+
+CreateroleSelfGrant GetCreateroleSelfGrant(duckdb::ClientContext& context) {
+  return ParseCreateroleSelfGrant(
+    duckdb::StringValue::Get(GetSetting(context, "createrole_self_grant")));
 }
 
 using duckdb::LogicalTypeId;
@@ -215,25 +246,27 @@ void PositiveOrMinusOne(duckdb::ClientContext&, duckdb::SetScope,
   }
 }
 
-template<typename E, irs::utils::detail::FixedString Name>
-void OneOfEnum(duckdb::ClientContext&, duckdb::SetScope, duckdb::Value& value) {
-  const auto mode = value.ToString();
-  if (magic_enum::enum_cast<E>(mode, magic_enum::case_insensitive)) {
+void RequireOneOf(std::string_view name,
+                  std::span<const std::string_view> values,
+                  duckdb::Value& value) {
+  const auto text = value.ToString();
+  const auto chosen = absl::c_find_if(values, [&](std::string_view candidate) {
+    return absl::EqualsIgnoreCase(text, candidate);
+  });
+  if (chosen != values.end()) {
+    value = duckdb::Value{absl::AsciiStrToLower(*chosen)};
     return;
-  }
-  constexpr auto kNames = magic_enum::enum_names<E>();
-  std::string choices;
-  for (size_t i = 0; i < kNames.size(); ++i) {
-    absl::StrAppend(&choices,
-                    i == 0                   ? ""
-                    : i + 1 == kNames.size() ? " or "
-                                             : ", ",
-                    absl::AsciiStrToLower(kNames[i]));
   }
   THROW_SQL_ERROR(
     ERR_CODE(ERRCODE_INVALID_PARAMETER_VALUE),
-    ERR_MSG("invalid value for parameter \"", std::string_view{Name}, "\": \"",
-            mode, "\" (", choices, ")"));
+    ERR_MSG("invalid value for parameter \"", name, "\": \"", text, "\""),
+    ERR_HINT("Available values: ",
+             absl::AsciiStrToLower(absl::StrJoin(values, ", ")), "."));
+}
+
+template<typename E, irs::utils::detail::FixedString Name>
+void OneOfEnum(duckdb::ClientContext&, duckdb::SetScope, duckdb::Value& value) {
+  RequireOneOf(std::string_view{Name}, magic_enum::enum_names<E>(), value);
 }
 
 template<irs::utils::detail::FixedString Name>
@@ -318,42 +351,9 @@ void SetServerDuration(duckdb::ClientContext&, duckdb::SetScope,
     kName, value.ToString(), static_cast<double>(UnitlessMs)))};
 }
 
-template<irs::utils::detail::FixedString Name,
-         irs::utils::detail::FixedString... Values>
-void OneOf(duckdb::ClientContext&, duckdb::SetScope, duckdb::Value& value) {
-  auto chosen = absl::AsciiStrToLower(value.ToString());
-  if (((chosen == std::string_view{Values}) || ...)) {
-    value = duckdb::Value{std::move(chosen)};
-    return;
-  }
-  THROW_SQL_ERROR(
-    ERR_CODE(ERRCODE_INVALID_PARAMETER_VALUE),
-    ERR_MSG("invalid value for parameter \"", std::string_view{Name}, "\": \"",
-            value.ToString(), "\""),
-    ERR_HINT("Available values: ",
-             absl::StrJoin({std::string_view{Values}...}, ", "), "."));
-}
-
 void SetCreateroleSelfGrant(duckdb::ClientContext&, duckdb::SetScope,
                             duckdb::Value& value) {
-  const auto text = value.ToString();
-  if (text.empty()) {
-    return;
-  }
-  for (const auto option : absl::StrSplit(text, ',')) {
-    const auto keyword =
-      absl::AsciiStrToLower(absl::StripAsciiWhitespace(option));
-    if (keyword == "set" || keyword == "inherit") {
-      continue;
-    }
-    THROW_SQL_ERROR(
-      ERR_CODE(ERRCODE_INVALID_PARAMETER_VALUE),
-      ERR_MSG("invalid value for parameter \"createrole_self_grant\": \"", text,
-              "\""),
-      ERR_DETAIL(keyword.empty() ? std::string{"List syntax is invalid."}
-                                 : absl::StrCat("Unrecognized key word: \"",
-                                                keyword, "\".")));
-  }
+  ParseCreateroleSelfGrant(value.ToString());
 }
 
 const catalog::RoleCatalogEntry& RoleNamed(duckdb::ClientContext& ctx,
@@ -513,8 +513,8 @@ struct VariableEntry {
 };
 
 constexpr duckdb::SettingAccess kUserSetting{duckdb::SettingContext::USER};
-constexpr duckdb::SettingAccess kHiddenUserSetting{duckdb::SettingContext::USER,
-                                                   false, true};
+constexpr duckdb::SettingAccess kSessionIdentitySetting{
+  duckdb::SettingContext::USER, false, true, true};
 constexpr duckdb::SettingAccess kInternalSetting{
   duckdb::SettingContext::INTERNAL};
 constexpr duckdb::SettingAccess kHiddenInternalSetting{
@@ -699,16 +699,7 @@ constexpr VariableEntry kEngineVariableDescription[] = {
       LogicalTypeId::VARCHAR,
       "Sets the output format for bytea.",
       [] { return duckdb::Value{"hex"}; },
-      [](duckdb::ClientContext&, duckdb::SetScope, duckdb::Value& value) {
-        if (!magic_enum::enum_cast<ByteaOutput>(value.ToString(),
-                                                magic_enum::case_insensitive)
-               .has_value()) {
-          THROW_SQL_ERROR(ERR_CODE(ERRCODE_INVALID_PARAMETER_VALUE),
-                          ERR_MSG("invalid value for parameter "
-                                  "\"bytea_output\": \"",
-                                  value.ToString(), "\""));
-        }
-      },
+      OneOfEnum<ByteaOutput, "bytea_output">,
     },
     kUserSetting,
   },
@@ -1424,7 +1415,7 @@ constexpr VariableEntry kVariableDescription[] = {
       LogicalTypeId::VARCHAR,
       "Chooses the algorithm for encrypting passwords.",
       [] { return duckdb::Value{"scram-sha-256"}; },
-      OneOf<"password_encryption", "md5", "scram-sha-256">,
+      OneOfEnum<PasswordEncryption, "password_encryption">,
     },
     kUserSetting,
   },
@@ -1596,7 +1587,7 @@ constexpr VariableEntry kVariableDescription[] = {
       LogicalTypeId::VARCHAR,
       "Sets the session's behavior for triggers and rewrite rules.",
       [] { return duckdb::Value{"origin"}; },
-      OneOf<"session_replication_role", "origin", "replica", "local">,
+      OneOfEnum<duckdb::ReplicationRole, "session_replication_role">,
     },
   },
   {
@@ -1608,7 +1599,7 @@ constexpr VariableEntry kVariableDescription[] = {
       SetSessionAuthCallback,
       ResetSessionAuthCallback,
     },
-    kHiddenUserSetting,
+    kSessionIdentitySetting,
   },
   {
     "role",
@@ -1619,7 +1610,7 @@ constexpr VariableEntry kVariableDescription[] = {
       SetRoleCallback,
       ResetRoleCallback,
     },
-    kHiddenUserSetting,
+    kSessionIdentitySetting,
   },
   {
     "is_superuser",
@@ -1728,7 +1719,7 @@ void TryRegister(duckdb::DBConfig& config, const VariableEntry& entry) {
     desc.default_value ? desc.default_value() : duckdb::Value{},
     desc.set_callback, desc.reset_callback, desc.scope,
     entry.access.context == duckdb::SettingContext::INTERNAL ||
-      entry.name == "role" || entry.name == "session_authorization",
+      entry.access.session_identity,
     entry.access);
 }
 

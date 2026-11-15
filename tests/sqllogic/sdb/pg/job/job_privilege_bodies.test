@@ -141,6 +141,34 @@ statement ok
 CREATE JOB jpb_36 AFTER 1 HOUR SUSPENDED AS DROP FUNCTION jpb_f(x integer), jpb_f(IN character varying);
 
 
+statement ok
+CREATE JOB jpb_37 AFTER 1 HOUR SUSPENDED AS GRANT SET ON PARAMETER jpb_ext.a.b TO jpb_r;
+
+
+statement ok
+CREATE JOB jpb_38 AFTER 1 HOUR SUSPENDED AS CREATE DATABASE jpb_db OWNER jpb_r;
+
+
+statement ok
+CREATE JOB jpb_39 AFTER 1 HOUR SUSPENDED AS CREATE DATABASE IF NOT EXISTS jpb_db;
+
+
+statement ok
+CREATE JOB jpb_40 AFTER 1 HOUR SUSPENDED AS CREATE SCHEMA jpb_s AUTHORIZATION jpb_r;
+
+
+statement ok
+CREATE JOB jpb_41 AFTER 1 HOUR SUSPENDED AS ALTER ROLE jpb_r SET search_path = 'a,b', c;
+
+
+statement ok
+CREATE JOB jpb_42 AFTER 1 HOUR SUSPENDED AS ALTER ROLE jpb_r SET standard_conforming_strings = on;
+
+
+statement ok
+CREATE JOB jpb_43 AFTER 1 HOUR SUSPENDED AS ALTER FUNCTION jpb_f(integer) SET search_path = '';
+
+
 query
 SELECT job_name, replace(body, current_database(), 'DB') AS body FROM sdb_jobs() WHERE starts_with(job_name, 'jpb_') ORDER BY job_name;
 ----
@@ -177,9 +205,16 @@ jpb_30	ALTER PROCEDURE jpb_p() OWNER TO jpb_r;
 jpb_31	CREATE ROLE jpb_r4 WITH NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT NOLOGIN NOREPLICATION NOBYPASSRLS VALID UNTIL '2030-01-02 03:04:05+00' PASSWORD 'jpb_pw';
 jpb_32	DROP FUNCTION jpb_f(INTEGER);
 jpb_33	ALTER DATABASE DB OWNER TO jpb_r;
-jpb_34	ALTER FUNCTION jpb_f(INTEGER) SET search_path TO jpb_a, public;
+jpb_34	ALTER FUNCTION jpb_f(INTEGER) SET search_path TO 'jpb_a', 'public';
 jpb_35	COMMENT ON FUNCTION jpb_f(INTEGER) IS 'jpb';
 jpb_36	DROP FUNCTION jpb_f(INTEGER), jpb_f(VARCHAR);
+jpb_37	GRANT SET ON PARAMETER jpb_ext.a.b TO jpb_r;
+jpb_38	CREATE DATABASE jpb_db OWNER jpb_r;
+jpb_39	CREATE DATABASE  IF NOT EXISTS jpb_db;
+jpb_40	CREATE SCHEMA jpb_s AUTHORIZATION jpb_r;
+jpb_41	ALTER ROLE jpb_r SET search_path TO 'a,b', 'c';
+jpb_42	ALTER ROLE jpb_r SET standard_conforming_strings TO 'on';
+jpb_43	ALTER FUNCTION jpb_f(INTEGER) SET search_path TO '';
 
 
 statement ok
@@ -320,3 +355,31 @@ DROP JOB jpb_35;
 
 statement ok
 DROP JOB jpb_36;
+
+
+statement ok
+DROP JOB jpb_37;
+
+
+statement ok
+DROP JOB jpb_38;
+
+
+statement ok
+DROP JOB jpb_39;
+
+
+statement ok
+DROP JOB jpb_40;
+
+
+statement ok
+DROP JOB jpb_41;
+
+
+statement ok
+DROP JOB jpb_42;
+
+
+statement ok
+DROP JOB jpb_43;

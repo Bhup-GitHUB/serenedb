@@ -50,6 +50,11 @@ enum class ByteaOutput : uint8_t {
   Escape,
 };
 
+enum class PasswordEncryption : uint8_t {
+  Md5,
+  ScramSha256,
+};
+
 using IsolationLevel = duckdb::TransactionIsolationLevel;
 
 uint32_t GetIntSetting(duckdb::ClientContext& context, std::string_view name);
@@ -63,6 +68,19 @@ bool GetBoolSetting(duckdb::ClientContext& context, std::string_view name);
 
 uint32_t GetEnumSetting(duckdb::ClientContext& context, std::string_view name,
                         std::span<const std::string_view> options);
+
+template<typename E>
+E GetEnumSetting(duckdb::ClientContext& context, std::string_view name) {
+  return magic_enum::enum_value<E>(
+    GetEnumSetting(context, name, magic_enum::enum_names<E>()));
+}
+
+struct CreateroleSelfGrant {
+  bool inherit = false;
+  bool set = false;
+};
+
+CreateroleSelfGrant GetCreateroleSelfGrant(duckdb::ClientContext& context);
 
 duckdb::Value GetGlobalSetting(const duckdb::DBConfig& config,
                                std::string_view name);
@@ -132,6 +150,19 @@ customize::enum_name<sdb::ByteaOutput>(sdb::ByteaOutput value) noexcept {
       return "hex";
     case sdb::ByteaOutput::Escape:
       return "escape";
+  }
+  return default_tag;
+}
+
+template<>
+[[maybe_unused]] constexpr customize::customize_t
+customize::enum_name<sdb::PasswordEncryption>(
+  sdb::PasswordEncryption value) noexcept {
+  switch (value) {
+    case sdb::PasswordEncryption::Md5:
+      return "md5";
+    case sdb::PasswordEncryption::ScramSha256:
+      return "scram-sha-256";
   }
   return default_tag;
 }

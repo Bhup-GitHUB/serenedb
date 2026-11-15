@@ -138,6 +138,21 @@ GRANT SET ON PARAMETER gsp_no_such_parameter TO gsp_user;
 db error: ERROR: unrecognized configuration parameter "gsp_no_such_parameter"
 
 
+statement ok
+GRANT SET ON PARAMETER gsp_ext.a.b TO gsp_user;
+
+
+query
+SELECT parname FROM pg_parameter_acl WHERE parname LIKE 'gsp_ext.%';
+----
+parname
+gsp_ext.a.b
+
+
+statement ok
+REVOKE SET ON PARAMETER gsp_ext.a.b FROM gsp_user;
+
+
 query
 SELECT count(*) AS grants FROM pg_parameter_acl WHERE parname = 'session_replication_role';
 ----

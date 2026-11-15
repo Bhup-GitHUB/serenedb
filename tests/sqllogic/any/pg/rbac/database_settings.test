@@ -73,6 +73,18 @@ statement ok
 ALTER ROLE dbs_owner SET search_path = owner_s;
 
 
+statement ok
+ALTER ROLE dbs_third SET standard_conforming_strings = on;
+
+
+query
+SELECT s.setconfig FROM pg_db_role_setting s JOIN pg_roles r ON r.oid = s.setrole
+WHERE r.rolname = 'dbs_third' AND s.setdatabase = 0;
+----
+setconfig
+{standard_conforming_strings=on}
+
+
 query
 SELECT coalesce(r.rolname, '-') AS role, s.setconfig
 FROM pg_db_role_setting s

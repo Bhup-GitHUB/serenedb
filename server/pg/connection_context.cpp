@@ -22,7 +22,6 @@
 
 #include <absl/strings/match.h>
 #include <absl/strings/str_cat.h>
-#include <absl/strings/str_split.h>
 
 #include <duckdb/catalog/catalog.hpp>
 #include <duckdb/catalog/catalog_search_path.hpp>
@@ -266,10 +265,9 @@ void ConnectionContext::ApplyRoleSettings() {
   for (const auto* config : {&global_config, &database_config, &role_config,
                              &database_role_config}) {
     for (const std::string_view entry : *config) {
-      const std::pair<std::string_view, std::string_view> setting =
-        absl::StrSplit(entry, absl::MaxSplits('=', 1));
       try {
-        SetSettingChecked(setting.first, std::string{setting.second});
+        SetSettingChecked(duckdb::Settings::ConfigKey(entry),
+                          std::string{duckdb::Settings::ConfigValue(entry)});
       } catch (const std::exception& exception) {
         AddNotice(network::pg::ToSqlError(exception));
       }
@@ -520,14 +518,6 @@ bool ConnectionContext::EmitWarning(const char* message) {
 
 void ConnectionContext::OnSettingChange(const std::string& name,
                                         duckdb::SetScope scope) {
-  const duckdb::Identifier setting{name};
-  if (const auto option = duckdb::DBConfig::GetOptionByName(setting)) {
-    scope = duckdb::PhysicalSet::GetSettingScope(*option, scope);
-  } else if (duckdb::ExtensionOption ext;
-             duckdb::DBConfig::GetConfig(*this).TryGetExtensionOption(setting,
-                                                                      ext)) {
-    scope = duckdb::PhysicalSet::GetSettingScope(ext, scope);
-  }
   if (scope == duckdb::SetScope::GLOBAL) {
     return;
   }
