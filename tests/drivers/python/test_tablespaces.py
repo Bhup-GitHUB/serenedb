@@ -721,6 +721,26 @@ def test_a_flush_opens_the_files_it_wrote_without_a_head(tmp_path: Path) -> None
                 if entry["method"] == "HEAD" and entry["key"] in written], trace
 
 
+def test_a_checkpoint_asks_the_store_for_nothing(tmp_path: Path) -> None:
+    location = f"s3://bucket/checkpoint-{tmp_path.name}"
+    with FakeS3() as fake:
+        server = _Server(tmp_path / "data")
+        try:
+            assert server.wait_ready(), server.output()
+            _create_secret(server, _Store(fake.endpoint, "key", "secret", "bucket"),
+                           location)
+            _create_index(server)
+            with server.connect() as conn:
+                conn.execute("INSERT INTO docs VALUES (3, 'fox again')")
+                fake.reset()
+                conn.execute("CHECKPOINT")
+                requests = fake.stats()["requests"]
+            assert _matches(server) == [1, 3]
+        finally:
+            server.stop()
+    assert not requests, requests
+
+
 def test_reads_refuse_a_blob_replaced_after_its_upload(tmp_path: Path) -> None:
     location = f"az://indexes/replaced-{tmp_path.name}"
     with FakeAzure() as fake:

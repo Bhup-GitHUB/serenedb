@@ -28,13 +28,13 @@ The server reads and writes index files with the credentials of a persistent sec
 
 <SqlLogicTest id="configuration/index_storage/example_secret" />
 
-The secret has to be persistent: the server opens indexes at startup and maintains them in the background, outside any session. See [AWS Credentials](./aws_credentials.md) for the keys to use and for S3-compatible endpoints. For Azure, create a persistent secret of `TYPE azure` whose scope covers the container and prefix, for example with a `CONNECTION_STRING`; the container has to exist.
+The secret has to be persistent: the server opens tables and indexes at startup and maintains them in the background, outside any session. See [AWS Credentials](./aws_credentials.md) for the keys to use and for S3-compatible endpoints. For Azure, create a persistent secret of `TYPE azure` whose scope covers the container and prefix, for example with a `CONNECTION_STRING`; the container has to exist.
 
-Rotate credentials that expire, such as an S3 `SESSION_TOKEN` or an Azure shared access signature, by replacing the secret with `CREATE OR REPLACE PERSISTENT SECRET` before they expire. A request the store refuses with the old credentials is sent again with the replaced secret, for files that are already open and for background refreshes and merges as well. If a refresh cannot write its files, for example because the credentials expired before the secret was replaced, the index stops publishing new rows and its database stops checkpointing until the server restarts; the index then catches up from the write-ahead log.
+Rotate credentials that expire, such as an S3 `SESSION_TOKEN` or an Azure shared access signature, by replacing the secret with `CREATE OR REPLACE PERSISTENT SECRET` before they expire. A request the store refuses with the old credentials is sent again with the replaced secret, for files that are already open and for background flushes and merges as well. A flush that cannot write its files, for example because the credentials expired before the secret was replaced, fails: its rows stay readable and in the log, and the next flush writes them. A server starts with the secret as it was last replaced.
 
 ## Caching
 
-Index files on an object store are read through the external file cache, in blocks of 128 KiB; the last block of a file takes the memory of the bytes it holds. A refresh or a merge keeps the files it writes in the cache, so the first queries over new data read memory. A query that touches a part of an index that is not cached reads it from the store and caches it; later queries read it from memory until the cache evicts it. A read that goes through a file in order fetches up to 8 MiB of blocks ahead of it, never past the end of the list or column it reads, and a large read fetches all of its blocks at once, in concurrent requests. A query reads each block of a request once the block has arrived, without waiting for the rest of the request.
+Index files on an object store are read through the external file cache, in blocks of 128 KiB; the last block of a file takes the memory of the bytes it holds. A flush or a merge keeps the files it writes in the cache, so the first queries over new data read memory. A query that touches a part of an index that is not cached reads it from the store and caches it; later queries read it from memory until the cache evicts it. A read that goes through a file in order fetches up to 8 MiB of blocks ahead of it, never past the end of the list or column it reads, and a large read fetches all of its blocks at once, in concurrent requests. A query reads each block of a request once the block has arrived, without waiting for the rest of the request.
 
 - `external_file_cache_remote_min_block_size` sets the block size, 128 KiB by default: a power of two from 32 KiB to 256 KiB. A file gets the block size in effect when the cache starts holding it; blocks cached before a change keep theirs. Smaller blocks fetch fewer bytes a query does not need, larger ones take fewer requests.
 - `external_file_cache_remote_max_block_size` sets the size of the concurrent requests of a large read, 4 MiB by default, a power of two. The server keeps at most 64 MiB of requests to object stores in flight: a smaller size sends more requests at once, each finishing sooner, a larger one fewer requests for the same bytes. `external_file_cache_local_max_block_size` does the same for local files the cache holds when `cache_local_files` is on.
@@ -47,7 +47,7 @@ When a server opens an index on an object store, it loads the term dictionaries 
 - A query reads data in place from a cached block. Data it needs in one piece that spans two blocks, such as a block of a column, is copied out of them once, and later queries read the same copy: the cache counts it in `external_file_cache_used_bytes` and evicts it, before the blocks, when queries need the memory.
 - An open index also keeps part of the term dictionaries of each segment in memory, and more of them for an index on an object store or in memory. This memory counts against `memory_limit` too: opening an index at the limit evicts other memory or fails with an out-of-memory error.
 - A block of a file on an object store keeps a copy in the temporary directory (`temp_directory`) once it is evicted, so reading it again costs a disk read instead of a request. The copy is written once and stays while the file version is cached. `external_file_cache_spill_size` is the disk space the copies may take, half of `max_temp_directory_size` by default; past it, evicted blocks are dropped and fetched again, and `0` drops them all, as `external_file_cache_spill = false` does. The last block of a file, when it is shorter than the others, may keep no copy and is then fetched again. Blocks of index files on local disk are dropped, and blocks of in-memory indexes are always kept.
-- `enable_external_file_cache = false` drops the cached blocks of files on object stores and the copies made from them, and refreshes and merges stop keeping the files they write in the cache; index files are still read through it.
+- `enable_external_file_cache = false` drops the cached blocks of files on object stores and the copies made from them, and flushes and merges stop keeping the files they write in the cache; index files are still read through it.
 
 The `sdb_metrics` system table reports how the cache and the uploads do, in rows with a `NULL` `relation_id`:
 
@@ -71,24 +71,23 @@ What costs requests to the object store:
 | Operation | Requests |
 | --------- | -------- |
 | A query | reads of the blocks that are not cached |
-| A refresh or a merge | the upload of each new index file: one request for a file up to 5 MiB, parts for a larger one; with the external file cache on, the index opens the files it wrote without a request |
-| Each commit of an index | a copy and a delete of one small file |
-| A checkpoint | a refresh and a commit of each index of the database that has rows not yet refreshed; the indexes are saved in parallel, so a checkpoint waits for the slowest of them rather than for all of them in turn |
-| Opening an index at startup | one check that the index exists, three listings of its files, one of which removes the files an interrupted write left behind, one read of its commit file and one of each segment's metadata, then for each index file a check of its size and a read of its footer; the segments open in parallel. Indexes and search tables open in parallel too, so startup waits for the slowest of them rather than for all of them in turn |
-| Cleanup | one request for up to 1000 files (256 on Azure) that no index reader uses anymore; the first cleanup after an index opens also lists the index's files |
-| Startup | a listing of each tablespace's directory and of each database directory in it, to remove files that belong to no index; a listing returns only the entries one level down, so the files of the indexes cost no listing requests here. The database directories are listed while the indexes open |
+| A flush or a merge | the upload of each new index file: one request for a file up to 5 MiB, parts for a larger one; with the external file cache on, the table or index opens the files it wrote without a request |
+| A checkpoint | none |
+| Opening a table or an index at startup | one check that its directory exists, then for each index file a check of its size and a read of its footer. Tables, indexes and their segments open in parallel, so startup waits for the slowest of them rather than for all of them in turn |
+| Startup after a crash | also a listing of the directory of each tablespace and two listings of the directory of each table and index, to remove the files an interrupted write left behind; a listing returns only the entries one level down |
+| Cleanup | one request for up to 1000 files (256 on Azure) that no query uses anymore |
 
 The parts of a large file upload at the same time, up to `s3_uploader_parts_in_flight` of them on S3 and `azure_write_blocks_in_flight` on Azure, 20 by default; setting it to `1` uploads one part at a time.
 
-The requests themselves, those of queries and those of background refreshes, merges and cleanup alike, are in the `HTTP` [log](./logging/index.md), so they can be counted by kind:
+The requests themselves, those of queries and those of background flushes, merges and cleanup alike, are in the `HTTP` [log](./logging/index.md), so they can be counted by kind:
 
 <SqlLogicTest id="configuration/index_storage_requests/example_001" hideResult />
 
-Reads and listings are `GET`; the check that an index exists and the size check of each index file it opens, other than one it wrote with the external file cache on, `HEAD`; uploads, their parts and copies `PUT`; batched deletes, and on S3 the start and completion of a large upload, `POST`.
+Reads and listings are `GET`; the check that the directory of a table or an index exists and the size check of each index file it opens, other than one it wrote with the external file cache on, `HEAD`; uploads and their parts `PUT`; batched deletes, and on S3 the start and completion of a large upload, `POST`.
 
 ## Integrity
 
-Every upload to S3 carries the CRC32C checksum of the whole file, which the store checks against the bytes it received before it keeps the object; an upload that does not match fails, and the refresh or merge that wrote it fails with it. `SET s3_upload_checksum = false` turns the checksums off for S3-compatible stores that refuse them.
+Every upload to S3 carries the CRC32C checksum of the whole file, which the store checks against the bytes it received before it keeps the object; an upload that does not match fails, and the flush or merge that wrote it fails with it. `SET s3_upload_checksum = false` turns the checksums off for S3-compatible stores that refuse them.
 
 Every read of an index file asks for the version of the object the index found when it opened the file. A file that was replaced in the bucket after that fails the query with an error saying the file changed after it was opened, instead of returning other bytes.
 
