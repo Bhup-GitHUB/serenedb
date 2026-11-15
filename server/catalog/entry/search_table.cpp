@@ -684,29 +684,6 @@ duckdb::unique_ptr<duckdb::CatalogEntry> SearchTableEntry::Copy(
   return Successor(context, *bound);
 }
 
-duckdb::vector<duckdb::IndexCalls> SearchTableEntry::IndexFunctionCalls(
-  duckdb::ClientContext& context) {
-  duckdb::vector<duckdb::IndexCalls> indexes;
-  ParentSchema(context).Scan(
-    context, duckdb::CatalogType::INDEX_ENTRY,
-    [&](duckdb::CatalogEntry& entry) {
-      const auto& index = entry.Cast<duckdb::IndexCatalogEntry>();
-      if (index.table_oid != oid || !IsInvertedIndex(index)) {
-        return;
-      }
-      const auto& config = index.Cast<InvertedIndexEntry>().Config();
-      if (!config || config->calls.empty()) {
-        return;
-      }
-      auto& calls = indexes.emplace_back();
-      for (const auto column : index.column_ids) {
-        calls.columns.emplace_back(column);
-      }
-      calls.calls.assign(config->calls.begin(), config->calls.end());
-    });
-  return indexes;
-}
-
 duckdb::TableStorageInfo SearchTableEntry::GetStorageInfo(
   duckdb::ClientContext&) {
   duckdb::TableStorageInfo result;

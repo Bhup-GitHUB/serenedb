@@ -39,6 +39,7 @@
 #include <limits>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -294,6 +295,13 @@ class InvertedIndexEntry final : public duckdb::IndexCatalogEntry {
 
   duckdb::optional_ptr<duckdb::CatalogEntry> GetRelation(
     duckdb::CatalogTransaction transaction) const final;
+
+  std::span<const duckdb::FunctionCall> GetFunctionCalls() const final {
+    if (!_config) {
+      return {};
+    }
+    return _config->calls;
+  }
 
   duckdb::Identifier GetSchemaName() const final { return ParentSchemaName(); }
 
