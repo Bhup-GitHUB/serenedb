@@ -872,7 +872,7 @@ void SessionTransaction::Release() noexcept {
 }
 
 void SessionTransaction::Commit(duckdb::ClientContext& context) {
-  absl::Cleanup rollback = [this] { Rollback(); };
+  absl::Cleanup rollback = [this, &context] { Rollback(&context); };
   Transactions::Get().Commit(*this, context);
   std::move(rollback).Cancel();
   _state = SessionState::Committed;
@@ -883,21 +883,16 @@ void SessionTransaction::Commit(duckdb::ClientContext& context) {
     attached.swap(_attached);
   }
   for (auto& db : attached) {
-    if (auto replaced = db.get().TakeReplaced()) {
-      auto deleter = replaced->ExtractDeleter();
-      replaced->OnDetach(context);
-      if (deleter) {
-        duckdb::DatabaseManager::Get(replaced->GetDatabase())
-          .AddPendingTeardown(std::move(deleter));
-      }
-    }
+    duckdb::DatabaseManager::Get(db.get().GetDatabase())
+      .CommitAttach(&context, db.get());
   }
   for (auto& action : _on_commit) {
     action();
   }
 }
 
-void SessionTransaction::Rollback() noexcept {
+void SessionTransaction::Rollback(
+  duckdb::optional_ptr<duckdb::ClientContext> context) noexcept {
   for (auto it = _changes.rbegin(); it != _changes.rend(); ++it) {
     it->set->Undo(*it->version, it->kind);
   }
@@ -911,12 +906,8 @@ void SessionTransaction::Rollback() noexcept {
     attached.swap(_attached);
   }
   for (auto& db : attached) {
-    auto& manager = duckdb::DatabaseManager::Get(db.get().GetDatabase());
-    if (auto detached = manager.RevertAttach(db.get())) {
-      if (auto deleter = detached->ExtractDeleter()) {
-        manager.AddPendingTeardown(std::move(deleter));
-      }
-    }
+    duckdb::DatabaseManager::Get(db.get().GetDatabase())
+      .RollbackAttach(context, db.get());
   }
   _state = SessionState::RolledBack;
 }
@@ -971,11 +962,11 @@ void TransactionManager::RollbackTransaction(duckdb::Transaction& transaction) {
   if (session.State() != SessionState::Active) {
     return;
   }
-  if (auto context = transaction.context.lock();
-      context && context->transaction.HasActiveTransaction()) {
+  const auto context = transaction.context.lock();
+  if (context && context->transaction.HasActiveTransaction()) {
     return;
   }
-  session.Rollback();
+  session.Rollback(context.get());
 }
 
 void TransactionManager::PushAttach(duckdb::Transaction& transaction,

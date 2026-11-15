@@ -75,3 +75,56 @@ DETACH aort_kept_${__DATABASE__};
 
 statement ok
 DETACH aort_${__DATABASE__};
+
+
+statement ok
+ATTACH '${__TEST_DIR__}/aort_held_kept.db' AS aort_held_${__DATABASE__};
+
+
+connection a
+statement ok
+BEGIN;
+
+
+connection a
+statement ok
+ATTACH OR REPLACE '${__TEST_DIR__}/aort_held_new.db' AS aort_held_${__DATABASE__};
+
+
+connection b
+statement ok
+BEGIN;
+
+
+connection b
+query
+SELECT count(*) AS tables FROM duckdb_tables() WHERE database_name = 'aort_held_${__DATABASE__}';
+----
+tables
+0
+
+
+connection a
+statement ok
+ROLLBACK;
+
+
+connection a
+statement ok
+ATTACH OR REPLACE '${__TEST_DIR__}/aort_held_new.db' AS aort_held_${__DATABASE__};
+
+
+connection b
+statement ok
+COMMIT;
+
+
+query
+SELECT count(*) AS tables FROM duckdb_tables() WHERE database_name = 'aort_held_${__DATABASE__}';
+----
+tables
+0
+
+
+statement ok
+DETACH aort_held_${__DATABASE__};

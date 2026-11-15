@@ -133,6 +133,14 @@ statement ok
 CREATE JOB jpb_34 AFTER 1 HOUR SUSPENDED AS ALTER FUNCTION jpb_f(integer) SET search_path = jpb_a, public;
 
 
+statement ok
+CREATE JOB jpb_35 AFTER 1 HOUR SUSPENDED AS COMMENT ON FUNCTION jpb_f(x integer) IS 'jpb';
+
+
+statement ok
+CREATE JOB jpb_36 AFTER 1 HOUR SUSPENDED AS DROP FUNCTION jpb_f(x integer), jpb_f(IN character varying);
+
+
 query
 SELECT job_name, replace(body, current_database(), 'DB') AS body FROM sdb_jobs() WHERE starts_with(job_name, 'jpb_') ORDER BY job_name;
 ----
@@ -170,6 +178,8 @@ jpb_31	CREATE ROLE jpb_r4 WITH NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT NOLOG
 jpb_32	DROP FUNCTION jpb_f(INTEGER);
 jpb_33	ALTER DATABASE DB OWNER TO jpb_r;
 jpb_34	ALTER FUNCTION jpb_f(INTEGER) SET search_path TO jpb_a, public;
+jpb_35	COMMENT ON FUNCTION jpb_f(INTEGER) IS 'jpb';
+jpb_36	DROP FUNCTION jpb_f(INTEGER), jpb_f(VARCHAR);
 
 
 statement ok
@@ -302,3 +312,11 @@ DROP JOB jpb_33;
 
 statement ok
 DROP JOB jpb_34;
+
+
+statement ok
+DROP JOB jpb_35;
+
+
+statement ok
+DROP JOB jpb_36;
