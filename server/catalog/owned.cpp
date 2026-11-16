@@ -108,7 +108,7 @@ duckdb::AlterPermissionsInfo& AddRevoke(std::vector<OwnedAlter>& alters,
   alter.privileges = duckdb::ObjectKindOf(acl_class).privileges;
   alter.revoke = true;
   alter.cascade = true;
-  alter.grantee_id = role;
+  alter.grantee_ids = {role};
   alter.grantors = info.grantors;
   return alter;
 }

@@ -660,7 +660,7 @@ void ConnectionContext::OnBoundPlan(duckdb::Binder& binder,
         root->Cast<duckdb::LogicalCreate>().info->GetQualifiedName().Name());
       break;
     case duckdb::LogicalOperatorType::LOGICAL_DROP:
-      if (discard_all(*root->Cast<duckdb::LogicalDrop>().info)) {
+      if (discard_all(*root->Cast<duckdb::LogicalDrop>().infos[0])) {
         PreventInTransactionBlock("DISCARD ALL");
       }
       break;
@@ -675,7 +675,7 @@ void ConnectionContext::OnBoundPlan(duckdb::Binder& binder,
       const auto& unbound =
         root->Cast<duckdb::LogicalExecute>().prepared->unbound_statement;
       if (unbound && unbound->type == duckdb::StatementType::DROP_STATEMENT &&
-          discard_all(*unbound->Cast<duckdb::DropStatement>().info)) {
+          discard_all(*unbound->Cast<duckdb::DropStatement>().infos[0])) {
         PreventInTransactionBlock("DISCARD ALL");
       }
       break;

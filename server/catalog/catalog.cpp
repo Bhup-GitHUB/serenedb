@@ -571,8 +571,9 @@ duckdb::unique_ptr<duckdb::LogicalOperator> SereneDBCatalog::BindAlterAddIndex(
   duckdb::unique_ptr<duckdb::LogicalOperator>,
   duckdb::unique_ptr<duckdb::CreateIndexInfo>,
   duckdb::unique_ptr<duckdb::AlterTableInfo> alter_info) {
-  return duckdb::make_uniq<duckdb::LogicalAlter>(
-    duckdb::unique_ptr<duckdb::AlterInfo>{std::move(alter_info)});
+  duckdb::vector<duckdb::unique_ptr<duckdb::AlterInfo>> infos;
+  infos.push_back(std::move(alter_info));
+  return duckdb::make_uniq<duckdb::LogicalAlter>(std::move(infos));
 }
 
 duckdb::ErrorData SereneDBCatalog::SupportsCreateTable(
