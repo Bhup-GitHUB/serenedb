@@ -95,7 +95,10 @@ def generate(gen):
         '#include "duckdb/common/constants.hpp"',
         '#include "duckdb/common/enums/catalog_type.hpp"',
         '',
+        '#include <array>',
+        '#include <limits>',
         '#include <string_view>',
+        '#include <type_traits>',
         '',
         'namespace duckdb {',
         '',
@@ -154,7 +157,7 @@ def generate(gen):
         '\tbool shared;',
         '};',
         '',
-        'constexpr ObjectKind ObjectKindOf(CatalogType type) {',
+        'constexpr ObjectKind MakeObjectKind(CatalogType type) {',
         '\tswitch (type) {',
     ]
     for objtype, container, kinds in named_kinds():
@@ -172,6 +175,20 @@ def generate(gen):
         '\t}',
         '\treturn {type, ObjectContainer::NONE, AclMode::NoRights, '
         'AclMode::NoRights, 0, false};',
+        '}',
+        '',
+        'inline constexpr auto OBJECT_KINDS = [] {',
+        '\tstd::array<ObjectKind, std::numeric_limits<std::underlying_type_t'
+        '<CatalogType>>::max() + 1> kinds {};',
+        '\tfor (idx_t type = 0; type < kinds.size(); type++) {',
+        '\t\tkinds[type] = MakeObjectKind(static_cast<CatalogType>(type));',
+        '\t}',
+        '\treturn kinds;',
+        '}();',
+        '',
+        'constexpr const ObjectKind &ObjectKindOf(CatalogType type) {',
+        '\treturn OBJECT_KINDS[static_cast<std::underlying_type_t<CatalogType>>'
+        '(type)];',
         '}',
         '',
         'constexpr std::string_view ObjectNoun(CatalogType type) {',
