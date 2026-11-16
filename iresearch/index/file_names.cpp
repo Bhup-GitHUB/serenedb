@@ -53,23 +53,6 @@ constexpr std::array kSegmentFileKinds{
 
 }  // namespace
 
-uint8_t SegmentFileKinds(std::span<const std::string> files) noexcept {
-  uint8_t kinds = 0;
-  for (std::string_view file : files) {
-    const auto dot = file.rfind('.');
-    if (dot == std::string_view::npos) {
-      continue;
-    }
-    const auto ext = file.substr(dot + 1);
-    for (const auto& [kind, known] : kSegmentFileKinds) {
-      if (ext == known) {
-        kinds |= kind;
-      }
-    }
-  }
-  return kinds;
-}
-
 std::vector<std::string> SegmentFiles(std::string_view segment, uint8_t kinds) {
   std::vector<std::string> files;
   for (const auto& [kind, ext] : kSegmentFileKinds) {

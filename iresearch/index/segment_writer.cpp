@@ -27,6 +27,7 @@
 #include <absl/cleanup/cleanup.h>
 
 #include <duckdb/storage/buffer_manager.hpp>
+#include <utility>
 
 #include "index_meta.hpp"
 #include "iresearch/analysis/token_attributes.hpp"
@@ -39,7 +40,9 @@
 #include "iresearch/formats/column/read_context.hpp"
 #include "iresearch/formats/flush_state.hpp"
 #include "iresearch/formats/index/idx_writer.hpp"
+#include "iresearch/index/file_names.hpp"
 #include "iresearch/index/inverter/columnar_flush.hpp"
+#include "iresearch/store/storage.hpp"
 #include "iresearch/utils/async.hpp"
 #include "iresearch/utils/down_cast.hpp"
 #include "iresearch/utils/index_utils.hpp"
@@ -168,9 +171,9 @@ void SegmentWriter::flush(SegmentMeta& meta, DocumentMaskBuilder& docs_mask) {
   meta.docs_count = state.doc_count;
   meta.live_docs_count =
     meta.docs_count - static_cast<doc_id_t>(docs_mask.Count());
-  const auto flushed = _tracker.Flush();
+  const auto flushed = std::exchange(_tracker, {});
   meta.byte_size = flushed.bytes;
-  meta.kinds = SegmentFileKinds(flushed.files);
+  meta.kinds = flushed.kinds;
 }
 
 void SegmentWriter::CopyRows(const ColReader& source,
@@ -249,9 +252,9 @@ std::shared_ptr<const SegmentReaderImpl> SegmentWriter::SealPiece(uint64_t id) {
       DocumentMaskBuilder{_docs_mask}.Finish());
   }
   meta.live_docs_count = meta.docs_count - RemovalCount(meta);
-  const auto flushed = _tracker.Flush();
+  const auto flushed = std::exchange(_tracker, {});
   const absl::Cleanup remove = [&] {
-    RemoveIndexFiles(_fs, _root, flushed.files);
+    RemoveIndexFiles(_fs, _root, SegmentFiles(_seg_name, flushed.kinds));
   };
   duckdb::shared_ptr<duckdb::InputFile> norms_file;
   if (!norms.empty()) {
@@ -299,7 +302,8 @@ void SegmentWriter::ResetState() noexcept {
   }
   _copied_columns.clear();
   _copied_rows.clear();
-  _tracker.Remove(_fs, _root);
+  RemoveIndexFiles(_fs, _root,
+                   SegmentFiles(_seg_name, std::exchange(_tracker, {}).kinds));
 }
 
 void SegmentWriter::reset() noexcept {

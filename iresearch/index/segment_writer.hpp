@@ -30,13 +30,13 @@
 
 #include "iresearch/formats/column/col_reader.hpp"
 #include "iresearch/formats/column/col_writer.hpp"
+#include "iresearch/formats/flush_state.hpp"
 #include "iresearch/formats/index/field_writer.hpp"
 #include "iresearch/formats/norm_reader_impl.hpp"
 #include "iresearch/index/index_reader.hpp"
 #include "iresearch/index/inverter/fields_inverter.hpp"
 #include "iresearch/index/segment_reader_impl.hpp"
 #include "iresearch/index/segment_writer_options.hpp"
-#include "iresearch/store/index_files.hpp"
 #include "iresearch/utils/noncopyable.hpp"
 #include "iresearch/utils/type_limits.hpp"
 

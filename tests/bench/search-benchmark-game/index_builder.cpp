@@ -33,7 +33,6 @@
 #include <iresearch/index/segment_list.hpp>
 #include <iresearch/index/segment_reader_impl.hpp>
 #include <iresearch/search/scorers/bm25.hpp>
-#include <iresearch/store/index_files.hpp>
 #include <iresearch/store/storage.hpp>
 #include <iresearch/utils/async.hpp>
 #include <iresearch/utils/duckdb_engine.hpp>

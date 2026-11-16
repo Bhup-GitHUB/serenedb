@@ -45,7 +45,6 @@
 #include <iresearch/index/index_meta.hpp>
 #include <iresearch/index/norm.hpp>
 #include <iresearch/search/filters/term_filter.hpp>
-#include <iresearch/store/index_files.hpp>
 #include <iresearch/utils/duckdb_engine.hpp>
 #include <iresearch/utils/serialization.hpp>
 #include <iresearch/utils/type_limits.hpp>

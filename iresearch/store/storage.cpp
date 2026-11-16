@@ -31,7 +31,9 @@
 #include <duckdb/parallel/task_scheduler.hpp>
 #include <exception>
 #include <utility>
+#include <vector>
 
+#include "iresearch/index/file_names.hpp"
 #include "iresearch/utils/log.hpp"
 
 namespace irs {
@@ -94,6 +96,40 @@ void ForEach(duckdb::DatabaseInstance& db, bool remote, size_t count,
     executor.ScheduleTask([visit, i] { visit(i); }, "StorageForEach");
   }
   executor.WorkOnTasks();
+}
+
+bool RemoveIndexFiles(duckdb::FileSystem& fs, std::string_view root,
+                      std::span<const std::string> names) {
+  if (names.empty()) {
+    return true;
+  }
+  try {
+    duckdb::vector<std::string> paths;
+    paths.reserve(names.size());
+    for (const auto& name : names) {
+      paths.push_back(fs.JoinPath(root, name));
+    }
+    fs.RemoveFiles(paths);
+    return true;
+  } catch (const std::exception& e) {
+    SDB_WARN(IRESEARCH, "Failed to remove index files of '", root,
+             "': ", duckdb::ErrorData{e}.RawMessage());
+    return false;
+  }
+}
+
+void RemoveReleased(duckdb::FileSystem& fs, std::string_view root,
+                    ReleasedSegments& released) {
+  auto segments = released.Take();
+  std::vector<std::string> names;
+  for (const auto& segment : segments) {
+    for (auto& name : SegmentFiles(segment.name, segment.kinds)) {
+      names.push_back(std::move(name));
+    }
+  }
+  if (!RemoveIndexFiles(fs, root, names)) {
+    released.Return(std::move(segments));
+  }
 }
 
 }  // namespace irs

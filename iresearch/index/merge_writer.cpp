@@ -56,7 +56,7 @@
 #include "iresearch/index/file_names.hpp"
 #include "iresearch/index/index_features.hpp"
 #include "iresearch/index/index_meta.hpp"
-#include "iresearch/store/index_files.hpp"
+#include "iresearch/store/storage.hpp"
 #include "iresearch/utils/assert.hpp"
 #include "iresearch/utils/down_cast.hpp"
 #include "iresearch/utils/memory.hpp"
@@ -879,7 +879,7 @@ auto MergeWriter::Flush(SegmentMeta& segment,
   FileTracker tracker;
   Finally segment_invalidator = [&]() noexcept {
     if (!result) [[unlikely]] {
-      tracker.Remove(_fs, _root);
+      RemoveIndexFiles(_fs, _root, SegmentFiles(segment.name, tracker.kinds));
       segment.kinds = 0;
       static_cast<SegmentInfo&>(segment) = SegmentInfo{};
     }
@@ -985,9 +985,8 @@ auto MergeWriter::Flush(SegmentMeta& segment,
   if (segment.live_docs_count == 0) {
     co_return false;
   }
-  const auto flushed = tracker.Flush();
-  segment.byte_size = flushed.bytes;
-  segment.kinds = SegmentFileKinds(flushed.files);
+  segment.byte_size = tracker.bytes;
+  segment.kinds = tracker.kinds;
   SDB_ASSERT(segment.kinds != 0);
   result = true;
   co_return true;
@@ -996,10 +995,8 @@ auto MergeWriter::Flush(SegmentMeta& segment,
 std::shared_ptr<const SegmentReaderImpl> MergeWriter::FlushPiece(
   SegmentMeta& segment, uint64_t id) {
   FileTracker tracker;
-  TrackedFiles flushed;
   const absl::Cleanup remove = [&] {
-    tracker.Remove(_fs, _root);
-    RemoveIndexFiles(_fs, _root, flushed.files);
+    RemoveIndexFiles(_fs, _root, SegmentFiles(segment.name, tracker.kinds));
   };
   FieldMetaMapT field_meta_map;
   CompoundFieldIterator fields_itr{_readers.size(), kProgressNoop,
@@ -1042,8 +1039,7 @@ std::shared_ptr<const SegmentReaderImpl> MergeWriter::FlushPiece(
   }
   col_writer.reset();
 
-  flushed = tracker.Flush();
-  segment.byte_size = flushed.bytes + (norms_file ? norms_file->GetSize() : 0);
+  segment.byte_size = tracker.bytes + (norms_file ? norms_file->GetSize() : 0);
   for (const auto& column : columns) {
     segment.byte_size += utils::downCast<HotColumnReader>(*column).Bytes();
   }

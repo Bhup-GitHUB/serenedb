@@ -24,6 +24,7 @@
 
 #include <duckdb/common/memory_file_system.hpp>
 #include <duckdb/main/database_file_opener.hpp>
+#include <iresearch/formats/format_utils.hpp>
 #include <iresearch/index/file_names.hpp>
 #include <iterator>
 
@@ -60,11 +61,7 @@ IndexDir::IndexDir(duckdb::DatabaseInstance& db, duckdb::FileSystem& fs,
 
 std::unique_ptr<duckdb::BufferedFileWriter> IndexDir::Create(
   std::string_view name) const {
-  return irs::OpenOutput(Fs(), Root(), name, Tracker(), true);
-}
-
-void IndexDir::Close(duckdb::BufferedFileWriter& out) const {
-  irs::CloseOutput(out, Tracker());
+  return irs::format_utils::OpenOutput(Fs(), Root(), name);
 }
 
 duckdb::shared_ptr<duckdb::InputFile> IndexDir::Open(
@@ -176,12 +173,6 @@ void IndexDir::RaiseTopSegmentId(uint64_t id) const {
   absl::MutexLock lock{&_state->segments->mutex};
   auto& top = _state->segments->top_segment_id;
   top = std::max(top, id);
-}
-
-IndexDir IndexDir::Tracked(irs::FileTracker& tracker) const {
-  auto result = *this;
-  result._tracker = &tracker;
-  return result;
 }
 
 IndexDir IndexDir::Over(duckdb::FileSystem& fs) const {

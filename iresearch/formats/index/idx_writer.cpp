@@ -45,7 +45,8 @@ void IdxWriter::EnsureOut() {
   if (_out) {
     return;
   }
-  _out = OpenOutput(_fs, _root, _filename, _tracker, true);
+  _out = format_utils::OpenOutput(_fs, _root, _filename);
+  _tracker.kinds |= kIdxFile;
 }
 
 duckdb::WriteStream& IdxWriter::BlocksOut() {
@@ -127,7 +128,8 @@ void IdxWriter::Commit() {
                          });
     }
   });
-  CloseOutput(*_out, _tracker);
+  _tracker.bytes += _out->Position();
+  _out->Close();
   _out.reset();
 }
 

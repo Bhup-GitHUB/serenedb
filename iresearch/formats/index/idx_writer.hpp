@@ -22,16 +22,17 @@
 
 #include <cstdint>
 #include <duckdb/common/file_system.hpp>
+#include <duckdb/common/serializer/buffered_file_writer.hpp>
 #include <duckdb/common/serializer/write_stream.hpp>
 #include <memory>
 #include <string>
 #include <string_view>
 #include <vector>
 
+#include "iresearch/formats/flush_state.hpp"
 #include "iresearch/formats/index/idx_reader.hpp"
 #include "iresearch/formats/index/term_dict_meta.hpp"
 #include "iresearch/index/column_info.hpp"
-#include "iresearch/store/index_files.hpp"
 #include "iresearch/types.hpp"
 
 namespace irs {

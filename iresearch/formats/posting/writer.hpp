@@ -32,9 +32,9 @@
 #include "iresearch/formats/posting/common.hpp"
 #include "iresearch/formats/posting_meta.hpp"
 #include "iresearch/index/field_meta.hpp"
+#include "iresearch/index/file_names.hpp"
 #include "iresearch/index/iterators.hpp"
 #include "iresearch/search/scorers/scorer.hpp"
-#include "iresearch/store/index_files.hpp"
 #include "iresearch/utils/containers/bitset.hpp"
 #include "iresearch/utils/pg/sql_exception_macro.hpp"
 
@@ -260,6 +260,7 @@ class PostingsWriter final {
   void FlushDocBlock(const PostingMeta& meta);
   void BeginDocInTerm(doc_id_t doc, uint32_t freq, PostingMeta& meta,
                       bool has_freq);
+  void CloseOutput(std::unique_ptr<duckdb::BufferedFileWriter>& out);
 
   uint32_t PosIndex() const noexcept {
     const auto index = _pos_group.Blocks() * pos_limits::kBlockSize + _pos.size;
@@ -365,14 +366,14 @@ inline void PostingsWriter::Prepare(const FlushState& state) {
 
   // Prepare document stream
   SDB_ASSERT(!_doc_out);
-  _doc_out = format_utils::PrepareOutput(state, kDocExt);
+  _doc_out = format_utils::PrepareOutput(state, kDocExt, kDocFile);
 
   if (IndexFeatures::None != (state.index_features & IndexFeatures::Pos)) {
     // Prepare proximity stream
     _pos.Reset();
     _pos_group.Reset();
     SDB_ASSERT(!_pos_out);
-    _pos_out = format_utils::PrepareOutput(state, kPosExt);
+    _pos_out = format_utils::PrepareOutput(state, kPosExt, kPosFile);
   }
 
   // The ".pay" stream holds position-level offsets (IndexFeatures::Offs) and/or
@@ -387,7 +388,7 @@ inline void PostingsWriter::Prepare(const FlushState& state) {
   }
   if (has_offs || has_vec) {
     SDB_ASSERT(!_pay_out);
-    _pay_out = format_utils::PrepareOutput(state, kPayExt);
+    _pay_out = format_utils::PrepareOutput(state, kPayExt, kPayFile);
   }
 
   _writer = PrepareScoreBoundWriter(state.scorer);
@@ -769,11 +770,17 @@ inline void PostingsWriter::FlushDocBlock(const PostingMeta& meta) {
   AddBlock(meta, _doc.block_last);
 }
 
+inline void PostingsWriter::CloseOutput(
+  std::unique_ptr<duckdb::BufferedFileWriter>& out) {
+  block_io::WriteSlack(*out);
+  format_utils::WriteFooter(*out);
+  _tracker->bytes += out->Position();
+  out->Close();
+  out.reset();
+}
+
 inline void PostingsWriter::End() {
-  block_io::WriteSlack(*_doc_out);
-  format_utils::WriteFooter(*_doc_out);
-  CloseOutput(*_doc_out, *_tracker);
-  _doc_out.reset();
+  CloseOutput(_doc_out);
 
   if (_pos_out) {
     if (_pos.size != 0) {
@@ -782,10 +789,7 @@ inline void PostingsWriter::End() {
     if (!_pos_group.Empty()) {
       _pos_group.Flush(*_pos_out);
     }
-    block_io::WriteSlack(*_pos_out);
-    format_utils::WriteFooter(*_pos_out);
-    CloseOutput(*_pos_out, *_tracker);
-    _pos_out.reset();
+    CloseOutput(_pos_out);
   } else {
     SDB_ASSERT(_pos.size == 0);
   }
@@ -799,10 +803,7 @@ inline void PostingsWriter::End() {
     if (!_pay_group.Empty()) {
       _pay_group.Flush(*_pay_out);
     }
-    block_io::WriteSlack(*_pay_out);
-    format_utils::WriteFooter(*_pay_out);
-    CloseOutput(*_pay_out, *_tracker);
-    _pay_out.reset();
+    CloseOutput(_pay_out);
   } else {
     SDB_ASSERT(_pay.size == 0);
   }

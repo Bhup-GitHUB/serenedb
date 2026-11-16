@@ -24,7 +24,6 @@
 #pragma once
 
 #include <cstdint>
-#include <span>
 #include <string>
 #include <vector>
 
@@ -37,8 +36,6 @@ inline constexpr uint8_t kIdxFile = 1 << 1;
 inline constexpr uint8_t kDocFile = 1 << 2;
 inline constexpr uint8_t kPosFile = 1 << 3;
 inline constexpr uint8_t kPayFile = 1 << 4;
-
-uint8_t SegmentFileKinds(std::span<const std::string> files) noexcept;
 
 std::vector<std::string> SegmentFiles(std::string_view segment, uint8_t kinds);
 

@@ -26,8 +26,11 @@
 #include <duckdb/common/numeric_utils.hpp>
 #include <duckdb/common/query_context.hpp>
 #include <duckdb/main/database.hpp>
+#include <span>
 #include <string>
 #include <string_view>
+
+#include "iresearch/index/segment_hold.hpp"
 
 namespace irs {
 
@@ -56,5 +59,11 @@ void WriteWhole(duckdb::FileSystem& fs, const std::string& path,
 
 void ForEach(duckdb::DatabaseInstance& db, bool remote, size_t count,
              absl::FunctionRef<void(size_t)> visit);
+
+bool RemoveIndexFiles(duckdb::FileSystem& fs, std::string_view root,
+                      std::span<const std::string> names);
+
+void RemoveReleased(duckdb::FileSystem& fs, std::string_view root,
+                    ReleasedSegments& released);
 
 }  // namespace irs

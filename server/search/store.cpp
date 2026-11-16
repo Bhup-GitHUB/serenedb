@@ -44,7 +44,6 @@
 #include <iresearch/index/file_names.hpp>
 #include <iresearch/index/segment_reader.hpp>
 #include <iresearch/index/segment_reader_impl.hpp>
-#include <iresearch/store/index_files.hpp>
 #include <iresearch/store/storage.hpp>
 #include <iresearch/utils/async.hpp>
 #include <iresearch/utils/containers/flat_hash_map.hpp>

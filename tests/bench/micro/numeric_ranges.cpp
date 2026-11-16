@@ -31,6 +31,7 @@
 #include <cstring>
 #include <duckdb/common/file_system.hpp>
 #include <filesystem>
+#include <iresearch/formats/flush_state.hpp>
 #include <iresearch/formats/index/field_reader.hpp>
 #include <iresearch/formats/index/field_writer.hpp>
 #include <iresearch/formats/index/idx_reader.hpp>
@@ -38,7 +39,6 @@
 #include <iresearch/index/index_meta.hpp>
 #include <iresearch/search/detail/bitset_of.hpp>
 #include <iresearch/search/queries/multiterm_state.hpp>
-#include <iresearch/store/index_files.hpp>
 #include <iresearch/store/storage.hpp>
 #include <iresearch/utils/duckdb_engine.hpp>
 #include <iresearch/utils/numeric_utils.hpp>

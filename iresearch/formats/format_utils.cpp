@@ -34,7 +34,6 @@
 #include <limits>
 
 #include "iresearch/index/file_names.hpp"
-#include "iresearch/store/index_files.hpp"
 #include "iresearch/utils/pg/sql_exception_macro.hpp"
 
 namespace irs::format_utils {
@@ -141,10 +140,20 @@ Footer ReadFooter(const duckdb::InputFile& file, std::string_view name,
   return ReadFooterImpl(file, name, &read);
 }
 
+std::unique_ptr<duckdb::BufferedFileWriter> OpenOutput(duckdb::FileSystem& fs,
+                                                       std::string_view root,
+                                                       std::string_view name) {
+  auto path = fs.JoinPath(root, name);
+  auto writer = fs.OpenFileWriter(path, true);
+  return std::make_unique<duckdb::BufferedFileWriter>(fs, std::move(path),
+                                                      std::move(writer));
+}
+
 std::unique_ptr<duckdb::BufferedFileWriter> PrepareOutput(
-  const FlushState& state, std::string_view ext) {
-  return OpenOutput(state.fs, state.root, FileName(state.name, ext),
-                    state.tracker, true);
+  const FlushState& state, std::string_view ext, uint8_t kind) {
+  auto out = OpenOutput(state.fs, state.root, FileName(state.name, ext));
+  state.tracker.kinds |= kind;
+  return out;
 }
 
 }  // namespace irs::format_utils

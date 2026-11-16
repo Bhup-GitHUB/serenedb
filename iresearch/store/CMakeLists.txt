@@ -1,1 +1,1 @@
-target_sources(iresearch PRIVATE index_files.cpp storage.cpp)
+target_sources(iresearch PRIVATE storage.cpp)

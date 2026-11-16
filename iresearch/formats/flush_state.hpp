@@ -23,16 +23,21 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <duckdb/common/file_system.hpp>
 #include <string_view>
 
 #include "iresearch/index/index_features.hpp"
 #include "iresearch/index/index_reader_options.hpp"
-#include "iresearch/store/index_files.hpp"
 
 namespace irs {
 
 struct NormProvider;
+
+struct FileTracker {
+  uint8_t kinds = 0;
+  uint64_t bytes = 0;
+};
 
 struct FlushState {
   duckdb::FileSystem& fs;

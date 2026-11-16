@@ -32,11 +32,11 @@
 #include <duckdb/common/memory_file_system.hpp>
 #include <duckdb/main/database.hpp>
 #include <duckdb/storage/external_file_cache/external_file_cache.hpp>
+#include <iresearch/formats/index/idx_writer.hpp>
 #include <iresearch/index/file_names.hpp>
 #include <iresearch/index/index_writer.hpp>
 #include <iresearch/index/segment_hold.hpp>
 #include <iresearch/search/filters/term_filter.hpp>
-#include <iresearch/store/index_files.hpp>
 #include <iresearch/store/storage.hpp>
 #include <iresearch/utils/duckdb_engine.hpp>
 #include <iresearch/utils/index_utils.hpp>
@@ -4658,78 +4658,34 @@ TEST_P(DirectoryTestCase, remove_released_keeps_open_segments) {
 TEST_P(DirectoryTestCase, file_tracker) {
   auto& dir = this->dir();
 
-  // a tracking copy shares the root and the released segments
   {
     irs::FileTracker tracker;
-    auto track_dir = dir.Tracked(tracker);
-
-    ASSERT_EQ(dir.Root(), track_dir.Root());
-    ASSERT_EQ(&dir.Released(), &track_dir.Released());
+    irs::IdxWriter idx{dir.Fs(), dir.Root(), tracker, "empty"};
+    idx.Commit();
+    ASSERT_EQ(0, tracker.kinds);
+    ASSERT_EQ(0, tracker.bytes);
+    ASSERT_TRUE(dir.Files().empty());
   }
 
-  // files reached through a tracking copy that it did not create stay untracked
+  irs::FileTracker tracker;
   {
-    irs::FileTracker tracker;
-    auto track_dir = dir.Tracked(tracker);
-    const std::string_view file{"abc"};
-    auto file1 = dir.Create(file);
-    ASSERT_FALSE(!file1);
-    file1->Write<irs::byte_type>(42);
-    file1->Close();
-    file1.reset();
-
-    auto file2 = track_dir.Open(file, duckdb::MappedFileAccess::NORMAL);
-    ASSERT_FALSE(!file2);
-    track_dir.Sync({&file, 1});
-    ASSERT_EQ(1, file2->GetSize());
-    track_dir.Rename(file, "def");
-    file2 = {};
-    ASSERT_FALSE(track_dir.Remove(file));
-    ASSERT_FALSE(dir.Has(file));
-    ASSERT_TRUE(dir.Has("def"));
-    ASSERT_TRUE(track_dir.Remove("def"));
-    ASSERT_FALSE(dir.Has("def"));
-    ASSERT_TRUE(tracker.Flush().files.empty());
+    irs::IdxWriter idx{dir.Fs(), dir.Root(), tracker, "seg"};
+    idx.BlocksOut().Write<irs::byte_type>(42);
+    ASSERT_EQ(irs::kIdxFile, tracker.kinds);
+    ASSERT_EQ(0, tracker.bytes);
+    idx.Commit();
   }
+  const auto files = irs::SegmentFiles("seg", tracker.kinds);
+  ASSERT_EQ(std::vector<std::string>{irs::FileName("seg", irs::kIdxFormatExt)},
+            files);
+  ASSERT_EQ(dir.Files(), files);
+  ASSERT_EQ(
+    dir.Open(files.front(), duckdb::MappedFileAccess::NORMAL)->GetSize(),
+    tracker.bytes);
+  ASSERT_GT(tracker.bytes, 1);
 
-  // files created through the tracking copy are tracked
-  {
-    irs::FileTracker tracker;
-    auto track_dir = dir.Tracked(tracker);
-    auto file1 = track_dir.Create("abc");
-    ASSERT_FALSE(!file1);
-    auto file2 = track_dir.Create("def");
-    ASSERT_FALSE(!file2);
-
-    ASSERT_EQ(2, tracker.Flush().files.size());
-  }
-
-  // test create
-  {
-    irs::FileTracker tracker;
-    auto track_dir = dir.Tracked(tracker);
-    const std::string_view file{"abc"};
-    {
-      auto file1 = track_dir.Create(file);
-      ASSERT_FALSE(!file1);
-      file1->Write<irs::byte_type>(42);
-      track_dir.Close(*file1);
-    }
-    track_dir.Sync({&file, 1});
-    ASSERT_EQ(
-      1, track_dir.Open(file, duckdb::MappedFileAccess::NORMAL)->GetSize());
-    ASSERT_TRUE(dir.Has(file));
-
-    auto flushed = tracker.Flush();
-    ASSERT_EQ(1, flushed.files.size());
-    ASSERT_EQ(file, flushed.files.front());
-    ASSERT_EQ(1, flushed.bytes);
-
-    // Tracked files are cleared
-    flushed = tracker.Flush();
-    ASSERT_EQ(0, flushed.files.size());
-    ASSERT_EQ(0, flushed.bytes);
-  }
+  ASSERT_TRUE(irs::RemoveIndexFiles(dir.Fs(), dir.Root(), files));
+  ASSERT_TRUE(dir.Files().empty());
 }
 
 INSTANTIATE_TEST_SUITE_P(
@@ -5030,14 +4986,11 @@ TEST_F(DirectoryHookTest, file_tracker_failures) {
   ASSERT_NE(nullptr, local);
   auto hooked = local->Over(fs);
 
-  // test create failure
-  {
-    irs::FileTracker tracker;
-
-    ASSERT_THROW(hooked.Tracked(tracker).Create("abc"), duckdb::IOException);
-
-    ASSERT_TRUE(tracker.Flush().files.empty());
-  }
+  irs::FileTracker tracker;
+  irs::IdxWriter idx{hooked.Fs(), hooked.Root(), tracker, "seg"};
+  ASSERT_THROW(idx.BlocksOut(), duckdb::IOException);
+  ASSERT_EQ(0, tracker.kinds);
+  ASSERT_EQ(0, tracker.bytes);
 }
 
 TEST_F(DirectoryHookTest, remove_failures) {

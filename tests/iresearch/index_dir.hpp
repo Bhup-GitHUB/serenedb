@@ -26,12 +26,13 @@
 
 #include <duckdb/common/file_system.hpp>
 #include <duckdb/common/memory_mapped_file.hpp>
+#include <duckdb/common/serializer/buffered_file_writer.hpp>
 #include <duckdb/main/database.hpp>
 #include <duckdb/storage/external_file_cache/input_file_reader.hpp>
 #include <iresearch/index/index_meta.hpp>
 #include <iresearch/index/index_reader_options.hpp>
+#include <iresearch/formats/flush_state.hpp>
 #include <iresearch/index/segment_hold.hpp>
-#include <iresearch/store/index_files.hpp>
 #include <iresearch/store/storage.hpp>
 #include <iresearch/utils/string.hpp>
 #include <memory>
@@ -56,7 +57,6 @@ class IndexDir {
 
   std::unique_ptr<duckdb::BufferedFileWriter> Create(
     std::string_view name) const;
-  void Close(duckdb::BufferedFileWriter& out) const;
   duckdb::shared_ptr<duckdb::InputFile> Open(
     std::string_view name, duckdb::MappedFileAccess access) const;
   irs::bstring ReadWhole(std::string_view name) const;
@@ -75,9 +75,7 @@ class IndexDir {
   irs::ReleasedSegments& Released() const noexcept {
     return *_state->segments->released;
   }
-  irs::FileTracker& Tracker() const noexcept {
-    return _tracker ? *_tracker : _state->untracked;
-  }
+  irs::FileTracker& Tracker() const noexcept { return _state->tracker; }
 
   irs::IndexReaderOptions ReaderOptions(
     irs::IndexReaderOptions options = {}) const;
@@ -89,7 +87,6 @@ class IndexDir {
   uint64_t TopSegmentId() const;
   void RaiseTopSegmentId(uint64_t id) const;
 
-  IndexDir Tracked(irs::FileTracker& tracker) const;
   IndexDir Over(duckdb::FileSystem& fs) const;
   IndexDir Reopened() const;
 
@@ -124,11 +121,10 @@ class IndexDir {
     std::string root;
     StorageKind kind;
     std::shared_ptr<Segments> segments;
-    irs::FileTracker untracked;
+    irs::FileTracker tracker;
   };
 
   std::shared_ptr<State> _state;
-  irs::FileTracker* _tracker = nullptr;
 };
 
 }  // namespace tests

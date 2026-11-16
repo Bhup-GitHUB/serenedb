@@ -34,6 +34,7 @@
 #include "iresearch/formats/ann_writer.hpp"
 #include "iresearch/formats/format_utils.hpp"
 #include "iresearch/formats/index/idx_writer.hpp"
+#include "iresearch/index/file_names.hpp"
 #include "iresearch/utils/assert.hpp"
 #include "iresearch/utils/pg/sql_exception_macro.hpp"
 
@@ -102,7 +103,8 @@ void ColWriter::EnsureOut() {
   if (_out) {
     return;
   }
-  _out = OpenOutput(_fs, _root, _filename, _tracker, true);
+  _out = format_utils::OpenOutput(_fs, _root, _filename);
+  _tracker.kinds |= kColFile;
   _write_ctx = std::make_unique<WriteContext>(
     *_db, *_out,
     _field_options ? _field_options->block_size : DEFAULT_BLOCK_ALLOC_SIZE);
@@ -361,7 +363,8 @@ bool ColWriter::Commit(uint64_t target_row,
                                               _write_ctx->GetBlockAllocSize(),
                                               DEFAULT_BLOCK_ALLOC_SIZE);
   });
-  CloseOutput(*_out, _tracker);
+  _tracker.bytes += _out->Position();
+  _out->Close();
   _out.reset();
   _committed = true;
   return true;

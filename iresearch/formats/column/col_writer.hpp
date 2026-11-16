@@ -24,6 +24,7 @@
 
 #include <cstdint>
 #include <duckdb/common/file_system.hpp>
+#include <duckdb/common/serializer/buffered_file_writer.hpp>
 #include <duckdb/common/types/vector.hpp>
 #include <memory>
 #include <string>
@@ -36,9 +37,9 @@
 #include "iresearch/formats/column/internal/write_context.hpp"
 #include "iresearch/formats/column/norm_writer.hpp"
 #include "iresearch/formats/column/read_context.hpp"
+#include "iresearch/formats/flush_state.hpp"
 #include "iresearch/formats/hnsw/hnsw_bases.hpp"
 #include "iresearch/index/column_info.hpp"
-#include "iresearch/store/index_files.hpp"
 #include "iresearch/utils/assert.hpp"
 #include "iresearch/utils/containers/flat_hash_map.hpp"
 
