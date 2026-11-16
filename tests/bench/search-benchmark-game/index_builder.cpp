@@ -100,7 +100,7 @@ irs::CompositeReader IndexBuilder::GetReader() {
       irs::SegmentReaderImpl::Open(::irs::DuckDBEngine::Instance().instance(),
                                    _fs, _root, meta, _reader_options));
   }
-  return {_reader_options, std::move(readers), /*stats=*/true};
+  return {std::move(readers), /*stats=*/true};
 }
 
 void IndexBuilder::Remove(const irs::DocRemoval& removal) {

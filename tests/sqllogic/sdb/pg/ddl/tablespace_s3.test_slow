@@ -66,6 +66,13 @@ statement ok
 CREATE INDEX docs_idx ON docs USING inverted(body ts_s3_english);
 
 
+query
+SELECT count(*) AS n FROM docs_idx WHERE body @@ ts_phrase('fox');
+----
+n
+0
+
+
 statement ok
 INSERT INTO docs VALUES
   (1, 'the quick brown fox jumps over the lazy dog'),
@@ -75,6 +82,13 @@ INSERT INTO docs VALUES
 
 statement ok
 VACUUM (FLUSH_TABLE) docs;
+
+
+query
+SELECT count(*) AS n FROM docs;
+----
+n
+3
 
 
 statement ok

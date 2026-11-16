@@ -20,10 +20,7 @@
 
 #include "catalog/database_directory.h"
 
-#include <absl/algorithm/container.h>
 #include <absl/functional/any_invocable.h>
-#include <absl/strings/ascii.h>
-#include <absl/strings/numbers.h>
 #include <absl/strings/str_cat.h>
 #include <absl/synchronization/mutex.h>
 
@@ -162,15 +159,6 @@ bool RemoveTree(const std::string& path) noexcept {
 
 duckdb::FileSystem& StorageFileSystem() {
   return irs::DuckDBEngine::Instance().instance().GetInternalFileSystem();
-}
-
-std::optional<duckdb::idx_t> OidFromName(std::string_view name) {
-  duckdb::idx_t oid = 0;
-  if (!absl::c_all_of(name, absl::ascii_isdigit) ||
-      !absl::SimpleAtoi(name, &oid)) {
-    return std::nullopt;
-  }
-  return oid;
 }
 
 uint64_t StorageBytes(const std::string& directory) {

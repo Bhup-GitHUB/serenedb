@@ -51,7 +51,7 @@ irs::CompositeReader Open(const IndexDir& dir,
     readers.emplace_back(irs::SegmentReaderImpl::Open(
       dir.Db(), dir.Fs(), dir.Root(), meta, reader_options));
   }
-  return {reader_options, std::move(readers), /*stats=*/true};
+  return {std::move(readers), /*stats=*/true};
 }
 
 void RemoveUnheld(const IndexDir& dir) {
@@ -366,7 +366,7 @@ std::vector<irs::SegmentMeta> IndexWriter::Apply(
         readers.emplace_back(irs::SegmentReaderImpl::Open(
           _dir.Db(), _dir.Fs(), _dir.Root(), unit.meta, _reader_options));
       }
-      current.emplace(_reader_options, std::move(readers), /*stats=*/false);
+      current.emplace(std::move(readers), /*stats=*/false);
     }
     return *current;
   };

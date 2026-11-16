@@ -4200,29 +4200,6 @@ TEST_P(DirectoryTestCase, checksum_covers_bytes_since_previous_call) {
   EXPECT_EQ(uint32_t{0}, out->Checksum());
 }
 
-TEST_P(DirectoryTestCase, a_new_output_reserves_its_first_bytes_in_place) {
-  auto out = _dir->Create("reserved");
-  ASSERT_FALSE(!out);
-
-  constexpr size_t kSize = 4096;
-  auto* reserved = out->Reserve(kSize);
-  ASSERT_NE(nullptr, reserved);
-  std::memset(reserved, 7, kSize);
-  EXPECT_EQ(kSize, out->Position());
-  absl::crc32c_t crc{0};
-  crc =
-    absl::ExtendCrc32c(crc, {reinterpret_cast<const char*>(reserved), kSize});
-  EXPECT_EQ(static_cast<uint32_t>(crc), out->Checksum());
-  out->Close();
-
-  const auto file = _dir->Open("reserved", duckdb::MappedFileAccess::NORMAL);
-  ASSERT_EQ(kSize, file->GetSize());
-  duckdb::InputFileReader in{*file};
-  irs::bstring bytes(kSize, irs::byte_type{0});
-  in.ReadData(bytes.data(), bytes.size());
-  EXPECT_EQ(irs::bstring(kSize, irs::byte_type{7}), bytes);
-}
-
 TEST_P(DirectoryTestCase, read_once_reads_range_and_advances) {
   std::vector<irs::byte_type> data(3 * 1024 * 1024 + 123);
   for (size_t i = 0; i < data.size(); ++i) {

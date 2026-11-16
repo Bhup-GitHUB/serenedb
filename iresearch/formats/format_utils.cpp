@@ -62,15 +62,16 @@ void WriteFooterImpl(duckdb::BufferedFileWriter& out,
   out.Write<uint32_t>(static_cast<uint32_t>(size));
 }
 
-Footer ReadFooterImpl(const duckdb::InputFileReader& in, uint64_t length,
-                      std::string_view name, const FooterReader* read) {
+Footer ReadFooterImpl(const duckdb::InputFile& file, std::string_view name,
+                      const FooterReader* read) {
+  const auto length = file.GetSize();
   if (length < kTrailerLen) {
     THROW_SQL_ERROR(ERR_CODE(ERRCODE_INDEX_CORRUPTED),
                     ERR_MSG("footer: '", name, "' of ", length,
                             " bytes is too short for a trailer"));
   }
   const uint64_t trailer_offset = length - kTrailerLen;
-  const auto trailer = in.Pin(trailer_offset, kTrailerLen);
+  const auto trailer = file.Pin(trailer_offset, kTrailerLen);
   const auto footer_expected_crc32c =
     absl::little_endian::Load32(trailer.Ptr());
   const auto footer_len =
@@ -82,14 +83,13 @@ Footer ReadFooterImpl(const duckdb::InputFileReader& in, uint64_t length,
               footer_len, " bytes"));
   }
   Footer footer{.data_len = trailer_offset - footer_len};
-  const auto file = in.File();
   const bool in_trailer_page =
     footer.data_len / duckdb::PageResidency::PAGE_SIZE ==
     trailer_offset / duckdb::PageResidency::PAGE_SIZE;
-  if (file && !in_trailer_page) {
-    file->Prefetch(footer.data_len, footer_len);
+  if (!in_trailer_page) {
+    file.Prefetch(footer.data_len, footer_len);
   }
-  const auto footer_bytes = in.Pin(footer.data_len, footer_len);
+  const auto footer_bytes = file.Pin(footer.data_len, footer_len);
   const auto* footer_data = footer_bytes.Ptr();
   if (static_cast<uint32_t>(absl::ComputeCrc32c(
         {reinterpret_cast<const char*>(footer_data), footer_len})) !=
@@ -118,9 +118,7 @@ Footer ReadFooterImpl(const duckdb::InputFileReader& in, uint64_t length,
                             duckdb::ErrorData{e}.RawMessage(),
                             "; it was written by a newer release of SereneDB"));
   }
-  if (file) {
-    file->Evict(footer.data_len, footer_len);
-  }
+  file.Evict(footer.data_len, footer_len);
   return footer;
 }
 
@@ -135,19 +133,12 @@ void WriteFooter(duckdb::BufferedFileWriter& out, FooterWriter write) {
 }
 
 Footer ReadFooter(const duckdb::InputFile& file, std::string_view name) {
-  return ReadFooterImpl(duckdb::InputFileReader{file}, file.GetSize(), name,
-                        nullptr);
+  return ReadFooterImpl(file, name, nullptr);
 }
 
 Footer ReadFooter(const duckdb::InputFile& file, std::string_view name,
                   FooterReader read) {
-  return ReadFooterImpl(duckdb::InputFileReader{file}, file.GetSize(), name,
-                        &read);
-}
-
-Footer ReadFooter(bytes_view file, std::string_view name, FooterReader read) {
-  return ReadFooterImpl(duckdb::InputFileReader{file}, file.size(), name,
-                        &read);
+  return ReadFooterImpl(file, name, &read);
 }
 
 std::unique_ptr<duckdb::BufferedFileWriter> PrepareOutput(

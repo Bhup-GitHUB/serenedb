@@ -384,6 +384,7 @@ void Store::Pack() {
     }
   }
   if (!laid_out.empty()) {
+    SDB_PARK_ONCE_ON_FAILURE("pause_pack_before_reopen");
     CommitUnlogged([&](Tick tick) { _table->Reopen(tick, laid_out); });
   }
 }

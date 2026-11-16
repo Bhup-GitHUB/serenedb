@@ -20,6 +20,8 @@
 
 #include "replication/functions.h"
 
+#include <absl/algorithm/container.h>
+#include <absl/strings/numbers.h>
 #include <absl/strings/str_cat.h>
 #include <absl/synchronization/mutex.h>
 
@@ -40,7 +42,6 @@
 #include "auth/enforce.h"
 #include "catalog/catalog.h"
 #include "catalog/cluster.h"
-#include "catalog/database_directory.h"
 #include "catalog/entry/replication_lsn.h"
 #include "pg/commands/create_subscription.h"
 #include "pg/connection_context.h"
@@ -131,7 +132,13 @@ std::optional<idx_t> SubscriptionOriginOid(std::string_view name) {
   if (!name.starts_with("pg_")) {
     return std::nullopt;
   }
-  return catalog::OidFromName(name.substr(3));
+  const auto digits = name.substr(3);
+  idx_t oid = 0;
+  if (digits.empty() || !absl::c_all_of(digits, absl::ascii_isdigit) ||
+      !absl::SimpleAtoi(digits, &oid)) {
+    return std::nullopt;
+  }
+  return oid;
 }
 
 std::optional<Origin> FindOrigin(duckdb::ClientContext& context,

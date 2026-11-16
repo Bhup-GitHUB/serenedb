@@ -833,6 +833,54 @@ def test_a_failed_flush_keeps_its_rows_and_is_retried(tmp_path: Path) -> None:
             again.stop()
 
 
+def test_a_view_index_its_store_refuses_fails_and_can_be_created_again(
+        tmp_path: Path) -> None:
+    location = f"s3://bucket/refused-{tmp_path.name}"
+    with FakeS3() as fake:
+        server = _Server(tmp_path / "data")
+        try:
+            assert server.wait_ready(), server.output()
+            _create_secret(server, _Store(fake.endpoint, "key", "secret", "bucket"),
+                           location)
+            fake.put_error = "AccessDenied"
+            with server.connect() as conn:
+                with pytest.raises(psycopg.Error,
+                                   match="failed to flush index 'notes'"):
+                    _create_view_index(conn, tmp_path / "notes.parquet")
+            fake.put_error = None
+            with server.connect() as conn:
+                conn.execute("CREATE INDEX notes ON notes_view "
+                             "USING inverted(id, body) TABLESPACE idx")
+                assert conn.execute(
+                    "SELECT id, body FROM notes ORDER BY id").fetchall() == [
+                        (1, "quick brown fox"), (2, "lazy dog")]
+        finally:
+            server.stop()
+
+
+def test_a_failed_copy_to_s3_leaves_no_object(tmp_path: Path) -> None:
+    with FakeS3() as fake:
+        server = _Server(tmp_path / "data")
+        try:
+            assert server.wait_ready(), server.output()
+            with server.connect() as conn:
+                conn.execute(
+                    "CREATE SECRET copies (TYPE s3, KEY_ID 'key', SECRET 'secret', "
+                    f"ENDPOINT '{fake.endpoint}', URL_STYLE 'path', USE_SSL false, "
+                    "SCOPE 's3://bucket/copies')")
+                with pytest.raises(psycopg.Error, match="boom"):
+                    conn.execute(
+                        "COPY (SELECT CASE WHEN i = 30000 THEN error('boom') "
+                        "ELSE repeat('x', 1000) END AS v FROM range(40000) t(i)) "
+                        "TO 's3://bucket/copies/failed.csv' (FORMAT csv)")
+                assert conn.execute(
+                    "SELECT count(*) FROM glob('s3://bucket/copies/*')"
+                ).fetchone() == (0,), dict(fake.requests)
+            assert fake.keys("bucket", "copies/") == [], dict(fake.requests)
+        finally:
+            server.stop()
+
+
 def test_throttled_requests_are_retried(tmp_path: Path) -> None:
     location = f"s3://bucket/throttled-{tmp_path.name}"
     with FakeS3() as fake:

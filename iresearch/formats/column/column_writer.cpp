@@ -60,11 +60,6 @@ void WriteBytes(ReadContext& source, uint64_t offset, uint64_t size,
   }
   const auto* file = source.File();
   SDB_ASSERT(file != nullptr);
-  if (file->IsMapped()) {
-    const auto pin = file->Pin(offset, size);
-    out.WriteData(pin.Ptr(), size);
-    return;
-  }
   const auto& blocks = file->Blocks();
   for (const auto end = offset + size; offset != end;) {
     const auto piece =

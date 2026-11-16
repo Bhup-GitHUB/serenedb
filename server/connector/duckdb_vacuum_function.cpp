@@ -402,7 +402,7 @@ void DispatchStores(duckdb::ClientContext& context, ConnectionContext& conn_ctx,
 
   const std::string_view verb = action == Action::Flush     ? "flush"
                                 : action == Action::Compact ? "compact"
-                                                            : "optimize";
+                                                            : "pack";
   if (scope == Scope::Index) {
     auto entry = FindEntry(context, duckdb::CatalogType::INDEX_ENTRY, target);
     duckdb::optional_ptr<duckdb::IndexCatalogEntry> index;

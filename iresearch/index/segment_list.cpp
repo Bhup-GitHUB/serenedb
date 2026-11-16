@@ -68,7 +68,7 @@ CompositeReader OpenSegmentList(duckdb::DatabaseInstance& db,
   for (const auto& meta : ReadSegmentList(text)) {
     readers.emplace_back(SegmentReaderImpl::Open(db, fs, root, meta, options));
   }
-  return {options, std::move(readers), /*stats=*/true};
+  return {std::move(readers), /*stats=*/true};
 }
 
 }  // namespace irs

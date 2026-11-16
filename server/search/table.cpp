@@ -645,7 +645,7 @@ irs::CompositeReader Table::BuildReader(const TableState& prev,
     readers.emplace_back(unit->reader);
   }
   if (prev.units.empty()) {
-    return {_options, std::move(readers), /*stats=*/true};
+    return {std::move(readers), /*stats=*/true};
   }
   irs::containers::FlatHashMap<uint64_t, const TableUnit*> before;
   before.reserve(prev.units.size());
@@ -807,10 +807,10 @@ irs::CompositeReader Table::Build(const TableState& state, const OwnWrites& own,
     add(std::move(reader));
   }
   if (scope == Scope::Cold) {
-    return {_options, std::move(readers), /*stats=*/false};
+    return {std::move(readers), /*stats=*/false};
   }
   if (state.units.empty()) {
-    return {_options, std::move(readers), /*stats=*/true};
+    return {std::move(readers), /*stats=*/true};
   }
   return {state.reader, std::move(readers), added, patched, {}};
 }
@@ -855,7 +855,7 @@ irs::CompositeReader Table::PieceView(
                            ? piece->reader->WithDocsMask(nullptr)
                            : piece->reader);
   }
-  return {_options, std::move(readers), /*stats=*/false};
+  return {std::move(readers), /*stats=*/false};
 }
 
 Table::Memory Table::InMemory() const {

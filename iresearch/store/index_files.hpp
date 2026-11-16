@@ -41,7 +41,6 @@ class FileObserver {
   virtual void Created(std::string_view name) = 0;
   virtual void Written(uint64_t bytes) = 0;
   virtual void Removed(std::string_view name) = 0;
-  virtual void Renamed(std::string_view src, std::string_view dst) = 0;
 
  protected:
   ~FileObserver() = default;
@@ -59,7 +58,6 @@ class FileTracker final : public FileObserver {
   void Created(std::string_view name) final;
   void Written(uint64_t bytes) final;
   void Removed(std::string_view name) final;
-  void Renamed(std::string_view src, std::string_view dst) final;
 
   TrackedFiles Flush();
   void Remove(duckdb::FileSystem& fs, std::string_view root) noexcept;

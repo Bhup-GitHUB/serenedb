@@ -93,9 +93,6 @@ bool IndexDir::Remove(std::string_view name) const {
 
 void IndexDir::Rename(std::string_view src, std::string_view dst) const {
   Fs().MoveFile(Fs().JoinPath(Root(), src), Fs().JoinPath(Root(), dst));
-  for (auto* observer : _observers) {
-    observer->Renamed(src, dst);
-  }
 }
 
 void IndexDir::Sync(std::span<const std::string_view> names) const {

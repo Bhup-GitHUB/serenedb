@@ -30,7 +30,6 @@
 
 #include "iresearch/formats/column/col_reader.hpp"
 #include "iresearch/formats/column/column_reader.hpp"
-#include "iresearch/index/segment_reader_impl.hpp"
 
 namespace irs {
 namespace {
@@ -59,9 +58,8 @@ uint64_t DistinctOfOverlapping(uint64_t terms, uint64_t docs, uint64_t sum) {
 
 }  // namespace
 
-CompositeReader::CompositeReader(const IndexReaderOptions& opts,
-                                 std::vector<SegmentReader> readers, bool stats)
-  : _opts{opts}, _readers{std::move(readers)}, _stats{stats} {
+CompositeReader::CompositeReader(std::vector<SegmentReader> readers, bool stats)
+  : _readers{std::move(readers)}, _stats{stats} {
   Count();
   if (_stats) {
     Build();
@@ -73,7 +71,7 @@ CompositeReader::CompositeReader(const CompositeReader& base,
                                  std::span<const SegmentReader> added,
                                  std::span<const SegmentReader> patched,
                                  std::span<const SegmentReader> removed)
-  : _opts{base._opts}, _readers{std::move(readers)}, _stats{base._stats} {
+  : _readers{std::move(readers)}, _stats{base._stats} {
   Count();
   if (!_stats) {
     return;

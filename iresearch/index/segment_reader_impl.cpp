@@ -150,10 +150,7 @@ std::shared_ptr<const SegmentReaderImpl> SegmentReaderImpl::WithPatches(
   reader->_field_reader = _field_reader;
   reader->_pieces = _pieces;
   const auto& root = _readers->base ? _readers->base : _readers;
-  if (patches.empty()) {
-    reader->_readers = root;
-    return reader;
-  }
+  SDB_ASSERT(!patches.empty());
   std::vector<std::shared_ptr<const ColumnReader>> replaced;
   replaced.reserve(patches.size());
   for (const auto& [field, patch] : patches) {

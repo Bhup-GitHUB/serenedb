@@ -36,12 +36,6 @@ void FileTracker::Written(uint64_t bytes) { _files_size += bytes; }
 
 void FileTracker::Removed(std::string_view name) { _files.erase(name); }
 
-void FileTracker::Renamed(std::string_view src, std::string_view dst) {
-  if (_files.erase(src) != 0) {
-    _files.emplace(dst);
-  }
-}
-
 TrackedFiles FileTracker::Flush() {
   TrackedFiles flushed;
   flushed.files.reserve(_files.size());

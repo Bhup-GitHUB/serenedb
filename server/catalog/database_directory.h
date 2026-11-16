@@ -24,9 +24,7 @@
 
 #include <atomic>
 #include <duckdb/common/file_system.hpp>
-#include <duckdb/common/typedefs.hpp>
 #include <memory>
-#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -45,8 +43,6 @@ void ResumeRemovals();
 void BeginStorageWork() noexcept;
 void EndStorageWork(bool tidy) noexcept;
 bool StorageTidy() noexcept;
-
-std::optional<duckdb::idx_t> OidFromName(std::string_view name);
 
 uint64_t StorageBytes(const std::string& directory);
 

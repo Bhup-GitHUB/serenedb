@@ -52,8 +52,6 @@ Footer ReadFooter(const duckdb::InputFile& file, std::string_view name);
 Footer ReadFooter(const duckdb::InputFile& file, std::string_view name,
                   FooterReader read);
 
-Footer ReadFooter(bytes_view file, std::string_view name, FooterReader read);
-
 std::unique_ptr<duckdb::BufferedFileWriter> PrepareOutput(
   const FlushState& state, std::string_view ext);
 

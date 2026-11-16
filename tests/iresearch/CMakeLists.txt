@@ -193,6 +193,7 @@ add_executable(
     utils/ngram_match_utils_tests.cpp
     utils/numeric_utils_test.cpp
     utils/object_pool_tests.cpp
+    utils/pg_errcodes_test.cpp
     utils/re2_literal_finder_test.cpp
     utils/re2_owned_dfa_test.cpp
     utils/re2_required_literal_test.cpp

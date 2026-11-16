@@ -96,7 +96,8 @@ void DeclareRowGroups(ScanGlobalState& g, const AheadScratch& scratch,
   const auto& sub = (*g.reader)[seg];
   const auto* col_reader = sub.GetColReader();
   const uint64_t docs = sub.Meta().docs_count;
-  if (!col_reader || docs == 0 || from >= to) {
+  SDB_ASSERT(col_reader && docs != 0);
+  if (from >= to) {
     return;
   }
   const auto& work = g.segments[seg];
@@ -291,9 +292,7 @@ void PlanReadAhead(ScanGlobalState& g, duckdb::ClientContext& context) {
     const auto& sub = (*g.reader)[seg];
     const auto* col_reader = sub.GetColReader();
     const uint64_t docs = sub.Meta().docs_count;
-    if (!col_reader || docs == 0) {
-      continue;
-    }
+    SDB_ASSERT(col_reader && docs != 0);
     const auto rgs =
       std::min<uint64_t>(g.segments[seg].rg_count, kSampleRowGroups);
     extents.clear();

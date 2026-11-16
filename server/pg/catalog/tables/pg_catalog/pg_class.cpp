@@ -261,14 +261,11 @@ class PgClass final : public SystemTableScan<kPgClassSql> {
                : std::nullopt;
     }),
     Col<"reltablespace">([](const auto& row, SystemScan& scan) {
-      const auto* inverted =
-        dynamic_cast<const catalog::InvertedIndexEntry*>(&row.index);
-      if (!inverted) {
-        return duckdb::idx_t{0};
-      }
       const auto* search =
         dynamic_cast<const catalog::SearchTableEntry*>(TableOf(row, scan));
-      return search ? search->Tablespace() : inverted->Tablespace();
+      return search ? search->Tablespace()
+                    : row.index.template Cast<catalog::InvertedIndexEntry>()
+                        .Tablespace();
     }),
     Col<"relowner">([](const auto& row, SystemScan& scan) {
       const auto* table = TableOf(row, scan);

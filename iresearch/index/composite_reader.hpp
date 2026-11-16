@@ -49,8 +49,7 @@ struct FieldTermRange {
 class CompositeReader final : public IndexReader {
  public:
   CompositeReader() = default;
-  CompositeReader(const IndexReaderOptions& opts,
-                  std::vector<SegmentReader> readers, bool stats);
+  CompositeReader(std::vector<SegmentReader> readers, bool stats);
   CompositeReader(const CompositeReader& base,
                   std::vector<SegmentReader> readers,
                   std::span<const SegmentReader> added,
@@ -66,12 +65,6 @@ class CompositeReader final : public IndexReader {
   uint64_t docs_count() const noexcept final { return _docs; }
 
   uint64_t live_docs_count() const noexcept final { return _live; }
-
-  std::span<const SegmentReader> GetReaders() const noexcept {
-    return _readers;
-  }
-
-  const IndexReaderOptions& Options() const noexcept { return _opts; }
 
   uint64_t PatchedDocs() const noexcept { return _patched; }
 
@@ -107,7 +100,6 @@ class CompositeReader final : public IndexReader {
   void AddColumns(const SubReader& reader, bool new_docs);
   void Publish();
 
-  IndexReaderOptions _opts;
   std::vector<SegmentReader> _readers;
   uint64_t _docs = 0;
   uint64_t _live = 0;
