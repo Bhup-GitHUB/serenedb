@@ -11,7 +11,7 @@ PRIVILEGES = os.path.join(DUCKDB_INCLUDE, 'catalog', 'privileges.hpp')
 CONTAINERS = ('NONE', 'CLUSTER', 'DATABASE', 'SCHEMA', 'RELATION', 'REGISTRY')
 
 KINDS = (
-    ('OBJECT_TABLE', 'SCHEMA', ('TABLE_ENTRY', 'VIEW_ENTRY')),
+    ('OBJECT_TABLE', 'SCHEMA', ('TABLE_ENTRY', ('VIEW_ENTRY', 'OBJECT_VIEW'))),
     ('OBJECT_SEQUENCE', 'SCHEMA', ('SEQUENCE_ENTRY',)),
     ('OBJECT_INDEX', 'RELATION', ('INDEX_ENTRY',)),
     ('OBJECT_TYPE', 'SCHEMA', ('TYPE_ENTRY',)),
@@ -28,13 +28,24 @@ KINDS = (
     (None, 'SCHEMA', ('JOB_ENTRY',)),
     (None, 'NONE', ('INVALID', 'PREPARED_STATEMENT', 'COLLATION_ENTRY',
                     'COORDINATE_SYSTEM_ENTRY', 'TRIGGER_ENTRY',
-                    'REPLICATION_ORIGIN_ENTRY', 'TABLE_FUNCTION_ENTRY',
-                    'SCALAR_FUNCTION_ENTRY', 'AGGREGATE_FUNCTION_ENTRY',
-                    'PRAGMA_FUNCTION_ENTRY', 'COPY_FUNCTION_ENTRY',
-                    'WINDOW_FUNCTION_ENTRY', 'DELETED_ENTRY', 'RENAMED_ENTRY',
-                    'SECRET_ENTRY', 'SECRET_TYPE_ENTRY',
-                    'SECRET_FUNCTION_ENTRY', 'DEPENDENCY_ENTRY')),
+                    'REPLICATION_ORIGIN_ENTRY',
+                    ('TABLE_FUNCTION_ENTRY', 'OBJECT_FUNCTION'),
+                    ('SCALAR_FUNCTION_ENTRY', 'OBJECT_FUNCTION'),
+                    ('AGGREGATE_FUNCTION_ENTRY', 'OBJECT_AGGREGATE'),
+                    ('PRAGMA_FUNCTION_ENTRY', 'OBJECT_FUNCTION'),
+                    'COPY_FUNCTION_ENTRY',
+                    ('WINDOW_FUNCTION_ENTRY', 'OBJECT_FUNCTION'),
+                    'DELETED_ENTRY', 'RENAMED_ENTRY', 'SECRET_ENTRY',
+                    'SECRET_TYPE_ENTRY', 'SECRET_FUNCTION_ENTRY',
+                    'DEPENDENCY_ENTRY')),
 )
+
+
+def named_kinds():
+    for objtype, container, kinds in KINDS:
+        named = [(kind, objtype) if isinstance(kind, str) else kind
+                 for kind in kinds]
+        yield objtype, container, named
 
 
 def catalog_types():
@@ -44,14 +55,15 @@ def catalog_types():
     return re.findall(r'^\s*(\w+) = \d+', body[:body.index('};')], re.M)
 
 
-def check(classes, defaults):
+def check(classes, defaults, nouns):
     declared = catalog_types()
-    listed = [kind for _, _, kinds in KINDS for kind in kinds]
+    listed = [kind for _, _, kinds in named_kinds() for kind, _ in kinds]
     missing = [kind for kind in declared if kind not in listed]
     unknown = sorted({kind for kind in listed if kind not in declared} |
                      {kind for kind in listed if listed.count(kind) > 1})
-    unmatched = [objtype for objtype, _, _ in KINDS
-                 if objtype and objtype not in classes.keys() | defaults.keys()]
+    known = classes.keys() | defaults.keys() | nouns.keys()
+    unmatched = sorted({name for _, _, kinds in named_kinds()
+                        for _, name in kinds if name and name not in known})
     if missing or unknown or unmatched:
         raise SystemExit(
             'scripts/pg_catalog/privileges.py: KINDS must name every '
@@ -64,9 +76,10 @@ def generate(gen):
     order = [name for name, _ in bits]
     defaults = source.default_privileges()
     classes = source.object_type_classes()
+    nouns = source.object_nouns()
     shared = {relation.oid for relation in gen.relations.values()
               if relation.shared}
-    check(classes, defaults)
+    check(classes, defaults, nouns)
 
     def mode(names, prefix=''):
         return ' | '.join(
@@ -144,14 +157,14 @@ def generate(gen):
         'constexpr ObjectKind ObjectKindOf(CatalogType type) {',
         '\tswitch (type) {',
     ]
-    for objtype, container, kinds in KINDS:
-        lines += [f'\tcase CatalogType::{kind}:' for kind in kinds]
+    for objtype, container, kinds in named_kinds():
+        lines += [f'\tcase CatalogType::{kind}:' for kind, _ in kinds]
         if container == 'NONE':
             lines.append('\t\tbreak;')
             continue
         public, owner = defaults.get(objtype, ([], []))
         pg_class = classes.get(objtype, 0)
-        lines.append(f'\t\treturn {{CatalogType::{kinds[0]}, '
+        lines.append(f'\t\treturn {{CatalogType::{kinds[0][0]}, '
                      f'ObjectContainer::{container}, {mode(owner)}, '
                      f'{mode(public)}, {pg_class}, '
                      f'{cpp_bool(pg_class in shared)}}};')
@@ -160,6 +173,30 @@ def generate(gen):
         '\treturn {type, ObjectContainer::NONE, AclMode::NoRights, '
         'AclMode::NoRights, 0, false};',
         '}',
+        '',
+        'constexpr std::string_view ObjectNoun(CatalogType type) {',
+        '\tswitch (type) {',
+    ]
+    named = {}
+    unnamed = []
+    for _, _, kinds in named_kinds():
+        for kind, name in kinds:
+            if name in nouns:
+                named.setdefault(nouns[name], []).append(kind)
+            else:
+                unnamed.append(kind)
+    for noun, kinds in named.items():
+        lines += [f'\tcase CatalogType::{kind}:' for kind in kinds]
+        lines.append(f'\t\treturn {cpp_str(noun)};')
+    lines += [f'\tcase CatalogType::{kind}:' for kind in unnamed]
+    lines += [
+        '\t\tbreak;',
+        '\t}',
+        '\treturn {};',
+        '}',
+        '',
+        'inline constexpr std::string_view PROCEDURE_NOUN = '
+        f'{cpp_str(nouns["OBJECT_PROCEDURE"])};',
         '',
         '} // namespace duckdb',
     ]

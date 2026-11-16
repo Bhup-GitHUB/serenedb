@@ -111,7 +111,7 @@ skipif postgres
 statement error
 DROP FUNCTION dbso_s.f(INTEGER);
 ----
-db error: ERROR: must be owner of macro function f
+db error: ERROR: must be owner of function f
 
 
 statement ok

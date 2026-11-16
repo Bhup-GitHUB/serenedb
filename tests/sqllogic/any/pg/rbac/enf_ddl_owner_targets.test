@@ -142,20 +142,11 @@ COMMENT ON TABLE edo_theirs IS 'mine now';
 db error: ERROR: must be owner of table edo_theirs
 
 
-onlyif postgres
 connection c_edo user=edo_vedernikoff password=edo_pw
 statement error
 ALTER FUNCTION public.edo_tf RENAME TO edo_tf_mine;
 ----
 db error: ERROR: must be owner of function edo_tf
-
-
-skipif postgres
-connection c_edo user=edo_vedernikoff password=edo_pw
-statement error
-ALTER FUNCTION public.edo_tf RENAME TO edo_tf_mine;
-----
-db error: ERROR: must be owner of table macro function edo_tf
 
 
 connection c_edo user=edo_vedernikoff password=edo_pw

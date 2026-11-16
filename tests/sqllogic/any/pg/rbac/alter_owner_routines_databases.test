@@ -112,7 +112,6 @@ aord_f	aord_bob
 aord_p	aord_bob
 
 
-onlyif postgres
 connection c_carol user=aord_carol password=aord_pw
 statement error
 ALTER FUNCTION aord_s.aord_f(int) OWNER TO aord_carol;
@@ -120,28 +119,11 @@ ALTER FUNCTION aord_s.aord_f(int) OWNER TO aord_carol;
 db error: ERROR: must be owner of function aord_f
 
 
-skipif postgres
-connection c_carol user=aord_carol password=aord_pw
-statement error
-ALTER FUNCTION aord_s.aord_f(int) OWNER TO aord_carol;
-----
-db error: ERROR: must be owner of macro function aord_f
-
-
-onlyif postgres
 connection c_carol user=aord_carol password=aord_pw
 statement error
 ALTER PROCEDURE aord_s.aord_p() OWNER TO aord_carol;
 ----
 db error: ERROR: must be owner of function aord_p
-
-
-skipif postgres
-connection c_carol user=aord_carol password=aord_pw
-statement error
-ALTER PROCEDURE aord_s.aord_p() OWNER TO aord_carol;
-----
-db error: ERROR: must be owner of table macro function aord_p
 
 
 statement ok

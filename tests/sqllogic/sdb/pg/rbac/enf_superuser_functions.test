@@ -48,28 +48,28 @@ connection c_ved user=esf_vedernikoff password=esf_pw
 statement error
 SELECT json_serialize_plan('SELECT * FROM esf_vault');
 ----
-db error: ERROR: permission denied for scalar function json_serialize_plan
+db error: ERROR: permission denied for function json_serialize_plan
 
 
 connection c_ved user=esf_vedernikoff password=esf_pw
 statement error
 SELECT column_name FROM pragma_storage_info('esf_vault');
 ----
-db error: ERROR: permission denied for table function pragma_storage_info
+db error: ERROR: permission denied for function pragma_storage_info
 
 
 connection c_ved user=esf_vedernikoff password=esf_pw
 statement error
 SELECT count(*) FROM duckdb_table_sample('esf_vault');
 ----
-db error: ERROR: permission denied for table function duckdb_table_sample
+db error: ERROR: permission denied for function duckdb_table_sample
 
 
 connection c_ved user=esf_vedernikoff password=esf_pw
 statement error
 SELECT * FROM postgres_query('esf_no_such_server', 'SELECT 1');
 ----
-db error: ERROR: permission denied for table function postgres_query
+db error: ERROR: permission denied for function postgres_query
 
 
 connection c_ved user=esf_vedernikoff password=esf_pw
@@ -91,98 +91,98 @@ connection c_ved user=esf_vedernikoff password=esf_pw
 statement error
 SELECT count(*) FROM duckdb_secrets();
 ----
-db error: ERROR: permission denied for table function duckdb_secrets
+db error: ERROR: permission denied for function duckdb_secrets
 
 
 connection c_ved user=esf_vedernikoff password=esf_pw
 statement error
 SELECT count(*) FROM sdb_secrets();
 ----
-db error: ERROR: permission denied for table function sdb_secrets
+db error: ERROR: permission denied for function sdb_secrets
 
 
 connection c_ved user=esf_vedernikoff password=esf_pw
 statement error
 SELECT count(*) FROM which_secret('s3://esf-bucket/file.csv', 's3');
 ----
-db error: ERROR: permission denied for table function which_secret
+db error: ERROR: permission denied for function which_secret
 
 
 connection c_ved user=esf_vedernikoff password=esf_pw
 statement error
 SELECT count(*) FROM duckdb_databases();
 ----
-db error: ERROR: permission denied for table function duckdb_databases
+db error: ERROR: permission denied for function duckdb_databases
 
 
 connection c_ved user=esf_vedernikoff password=esf_pw
 statement error
 SELECT count(*) FROM sdb_databases();
 ----
-db error: ERROR: permission denied for table function sdb_databases
+db error: ERROR: permission denied for function sdb_databases
 
 
 connection c_ved user=esf_vedernikoff password=esf_pw
 statement error
 SELECT count(*) FROM duckdb_logs();
 ----
-db error: ERROR: permission denied for table function duckdb_logs
+db error: ERROR: permission denied for function duckdb_logs
 
 
 connection c_ved user=esf_vedernikoff password=esf_pw
 statement error
 SELECT count(*) FROM sdb_logs();
 ----
-db error: ERROR: permission denied for table function sdb_logs
+db error: ERROR: permission denied for function sdb_logs
 
 
 connection c_ved user=esf_vedernikoff password=esf_pw
 statement error
 SELECT count(*) FROM duckdb_temporary_files();
 ----
-db error: ERROR: permission denied for table function duckdb_temporary_files
+db error: ERROR: permission denied for function duckdb_temporary_files
 
 
 connection c_ved user=esf_vedernikoff password=esf_pw
 statement error
 SELECT count(*) FROM duckdb_extensions();
 ----
-db error: ERROR: permission denied for table function duckdb_extensions
+db error: ERROR: permission denied for function duckdb_extensions
 
 
 connection c_ved user=esf_vedernikoff password=esf_pw
 statement error
 SELECT count(*) FROM sdb_extensions();
 ----
-db error: ERROR: permission denied for table function sdb_extensions
+db error: ERROR: permission denied for function sdb_extensions
 
 
 connection c_ved user=esf_vedernikoff password=esf_pw
 statement error
 SELECT count(*) FROM duckdb_external_file_cache();
 ----
-db error: ERROR: permission denied for table function duckdb_external_file_cache
+db error: ERROR: permission denied for function duckdb_external_file_cache
 
 
 connection c_ved user=esf_vedernikoff password=esf_pw
 statement error
 SELECT count(*) FROM pragma_metadata_info();
 ----
-db error: ERROR: permission denied for table function pragma_metadata_info
+db error: ERROR: permission denied for function pragma_metadata_info
 
 
 connection c_ved user=esf_vedernikoff password=esf_pw
 statement error
 SELECT count(*) FROM pragma_database_size();
 ----
-db error: ERROR: permission denied for table function pragma_database_size
+db error: ERROR: permission denied for function pragma_database_size
 
 
 connection c_ved user=esf_vedernikoff password=esf_pw
 statement error
 SELECT count(*) FROM pg_show_replication_origin_status();
 ----
-db error: ERROR: permission denied for table function pg_show_replication_origin_status
+db error: ERROR: permission denied for function pg_show_replication_origin_status
 
 
 connection c_ved user=esf_vedernikoff password=esf_pw
@@ -196,7 +196,7 @@ connection c_ved user=esf_vedernikoff password=esf_pw
 statement error
 SELECT count(*) FROM pg_hba_file_rules();
 ----
-db error: ERROR: permission denied for table function pg_hba_file_rules
+db error: ERROR: permission denied for function pg_hba_file_rules
 
 
 connection c_ved user=esf_vedernikoff password=esf_pw
@@ -217,28 +217,28 @@ connection c_ved user=esf_vedernikoff password=esf_pw
 statement error
 CALL enable_logging();
 ----
-db error: ERROR: permission denied for table function enable_logging
+db error: ERROR: permission denied for function enable_logging
 
 
 connection c_ved user=esf_vedernikoff password=esf_pw
 statement error
 CALL dbgen(sf = 0);
 ----
-db error: ERROR: permission denied for table function dbgen
+db error: ERROR: permission denied for function dbgen
 
 
 connection c_ved user=esf_vedernikoff password=esf_pw
 statement error
 CHECKPOINT;
 ----
-db error: ERROR: permission denied for table function checkpoint
+db error: ERROR: permission denied for function checkpoint
 
 
 connection c_ved user=esf_vedernikoff password=esf_pw
 statement error
 FORCE CHECKPOINT;
 ----
-db error: ERROR: permission denied for table function force_checkpoint
+db error: ERROR: permission denied for function force_checkpoint
 
 
 statement ok
@@ -253,7 +253,7 @@ connection c_ved user=esf_vedernikoff password=esf_pw
 statement error
 SELECT * FROM esf_peek;
 ----
-db error: ERROR: permission denied for table function duckdb_secrets
+db error: ERROR: permission denied for function duckdb_secrets
 
 
 connection c_ved user=esf_vedernikoff password=esf_pw

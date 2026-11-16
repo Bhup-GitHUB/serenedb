@@ -59,20 +59,11 @@ DROP FUNCTION xao_ofn_mop.clickclack(int);
 
 
 # (b) non-owner cannot replace an overload's body.
-onlyif postgres
 connection cbabsky2 user=xao_ofn_babsky password=xao_ofn_babsky_pw
 statement error
 CREATE OR REPLACE FUNCTION xao_ofn_mop.clickclack(int) RETURNS int LANGUAGE sql AS 'SELECT $1 + 99';
 ----
 db error: ERROR: must be owner of function clickclack<slt:ignore>
-
-
-skipif postgres
-connection cbabsky2 user=xao_ofn_babsky password=xao_ofn_babsky_pw
-statement error
-CREATE OR REPLACE FUNCTION xao_ofn_mop.clickclack(int) RETURNS int LANGUAGE sql AS 'SELECT $1 + 99';
-----
-db error: ERROR: must be owner of macro function clickclack<slt:ignore>
 
 
 # Both overloads survive after the denied attempts.

@@ -85,7 +85,7 @@ connection c_alice user=aod_alice password=aod_pw
 statement error
 ALTER TEXT SEARCH DICTIONARY aod_s.aod_dict OWNER TO aod_alice;
 ----
-db error: ERROR: must be owner of tokenizer aod_dict
+db error: ERROR: must be owner of text search dictionary aod_dict
 
 
 statement error

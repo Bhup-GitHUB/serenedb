@@ -58,50 +58,26 @@ statement ok
 SET ROLE iee_vedernikoff;
 
 
-onlyif postgres
 statement error
 INSERT INTO iee_items VALUES (2, 2);
 ----
 db error: ERROR: permission denied for function iee_double
 
 
-skipif postgres
-statement error
-INSERT INTO iee_items VALUES (2, 2);
-----
-db error: ERROR: permission denied for macro function iee_double
-
-
-onlyif postgres
 statement error
 UPDATE iee_items SET a = 3;
 ----
 db error: ERROR: permission denied for function iee_double
-
-
-skipif postgres
-statement error
-UPDATE iee_items SET a = 3;
-----
-db error: ERROR: permission denied for macro function iee_double
 
 
 statement ok
 UPDATE iee_items SET b = 4;
 
 
-onlyif postgres
 statement error
 INSERT INTO iee_amounts VALUES (-5);
 ----
 db error: ERROR: permission denied for function abs
-
-
-skipif postgres
-statement error
-INSERT INTO iee_amounts VALUES (-5);
-----
-db error: ERROR: permission denied for scalar function abs
 
 
 statement ok
@@ -136,18 +112,10 @@ statement ok
 SET ROLE iee_vedernikoff;
 
 
-onlyif postgres
 statement error
 EXECUTE iee_insert(6);
 ----
 db error: ERROR: permission denied for function iee_double
-
-
-skipif postgres
-statement error
-EXECUTE iee_insert(6);
-----
-db error: ERROR: permission denied for macro function iee_double
 
 
 statement ok

@@ -58,7 +58,6 @@ statement ok
 INSERT INTO see_checked VALUES (1);
 
 
-onlyif postgres
 connection c_user user=see_user password=see_pw
 statement error
 INSERT INTO see_checked VALUES (2);
@@ -66,28 +65,11 @@ INSERT INTO see_checked VALUES (2);
 db error: ERROR: permission denied for function see_positive
 
 
-skipif postgres
-connection c_user user=see_user password=see_pw
-statement error
-INSERT INTO see_checked VALUES (2);
-----
-db error: ERROR: permission denied for macro function see_positive
-
-
-onlyif postgres
 connection c_user user=see_user password=see_pw
 statement error
 INSERT INTO see_defaulted (b) VALUES (1);
 ----
 db error: ERROR: permission denied for function see_seven
-
-
-skipif postgres
-connection c_user user=see_user password=see_pw
-statement error
-INSERT INTO see_defaulted (b) VALUES (1);
-----
-db error: ERROR: permission denied for macro function see_seven
 
 
 connection c_user user=see_user password=see_pw

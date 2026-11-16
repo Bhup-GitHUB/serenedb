@@ -44,7 +44,7 @@ id
 statement error
 SELECT id FROM esa_idx WHERE (body @@ to_tsquery('quick'))::score('constant(length(json_serialize_plan(''SELECT 1'')))') ORDER BY id;
 ----
-db error: ERROR: permission denied for scalar function json_serialize_plan
+db error: ERROR: permission denied for function json_serialize_plan
 
 
 statement ok

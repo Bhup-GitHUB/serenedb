@@ -337,14 +337,14 @@ connection plain user=rorg_plain password=rorg_pw
 statement error
 SELECT pg_replication_origin_create('rorg_b');
 ----
-db error: ERROR: permission denied for scalar function pg_replication_origin_create
+db error: ERROR: permission denied for function pg_replication_origin_create
 
 
 connection plain user=rorg_plain password=rorg_pw
 statement error
 SELECT pg_replication_origin_progress('rorg_a', true);
 ----
-db error: ERROR: permission denied for scalar function pg_replication_origin_progress
+db error: ERROR: permission denied for function pg_replication_origin_progress
 
 
 connection default

@@ -79,18 +79,10 @@ statement ok
 SET ROLE rtea_other;
 
 
-onlyif postgres
 statement error
 SELECT rtea_f();
 ----
 db error: ERROR: permission denied for function rtea_f
-
-
-skipif postgres
-statement error
-SELECT rtea_f();
-----
-db error: ERROR: permission denied for macro function rtea_f
 
 
 statement ok

@@ -493,20 +493,11 @@ m
 47
 
 
-onlyif postgres
 connection c_user user=efs_user password=efs_pw
 statement error
 SELECT efs_private();
 ----
 db error: ERROR: permission denied for function efs_private
-
-
-skipif postgres
-connection c_user user=efs_user password=efs_pw
-statement error
-SELECT efs_private();
-----
-db error: ERROR: permission denied for macro function efs_private
 
 
 connection c_user user=efs_user password=efs_pw
@@ -554,20 +545,11 @@ statement ok
 REVOKE EXECUTE ON FUNCTION efs_definer() FROM PUBLIC;
 
 
-onlyif postgres
 connection c_user user=efs_user password=efs_pw
 statement error
 SELECT m FROM efs_definer_view;
 ----
 db error: ERROR: permission denied for function efs_definer
-
-
-skipif postgres
-connection c_user user=efs_user password=efs_pw
-statement error
-SELECT m FROM efs_definer_view;
-----
-db error: ERROR: permission denied for macro function efs_definer
 
 
 statement ok

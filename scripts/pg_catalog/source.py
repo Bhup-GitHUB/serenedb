@@ -230,6 +230,14 @@ def default_privileges():
     return defaults
 
 
+def object_nouns():
+    body = function_body(read('src', 'backend', 'catalog', 'aclchk.c'),
+                         'aclcheck_error(AclResult aclerr, ObjectType objtype,')
+    return dict(re.findall(
+        r'case (OBJECT_\w+):\s*msg = gettext_noop\('
+        r'"(?:permission denied for|must be owner of) ([^"%]+) %s"\);', body))
+
+
 def default_privilege_letters():
     return re.findall(r"case '(.)':\s*objtype = (OBJECT_\w+);", function_body(
         read('src', 'backend', 'utils', 'adt', 'acl.c'),

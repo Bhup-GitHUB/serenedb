@@ -199,7 +199,7 @@ connection plain user=rcon_plain password=rcon_pw
 statement error
 SELECT pg_stat_reset_subscription_stats(NULL);
 ----
-db error: ERROR: permission denied for scalar function pg_stat_reset_subscription_stats
+db error: ERROR: permission denied for function pg_stat_reset_subscription_stats
 
 
 connection default

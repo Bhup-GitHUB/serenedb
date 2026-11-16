@@ -40,20 +40,11 @@ statement ok
 CREATE PROCEDURE arr_s.arr_p() LANGUAGE sql AS 'SELECT 1';
 
 
-onlyif postgres
 connection c_other user=arr_other password=arr_pw
 statement error
 ALTER FUNCTION arr_s.arr_f(int) RENAME TO arr_g;
 ----
 db error: ERROR: must be owner of function arr_f
-
-
-skipif postgres
-connection c_other user=arr_other password=arr_pw
-statement error
-ALTER FUNCTION arr_s.arr_f(int) RENAME TO arr_g;
-----
-db error: ERROR: must be owner of macro function arr_f
 
 
 connection c_owner user=arr_owner password=arr_pw

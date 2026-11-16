@@ -1300,20 +1300,11 @@ statement ok
 CREATE OR REPLACE FUNCTION corpg_acl() RETURNS TEXT AS $$ SELECT 'acl1' $$ LANGUAGE sql;
 
 
-onlyif postgres
 connection reader user=corpg_reader password=corpg_reader_pw
 statement error
 SELECT corpg_acl();
 ----
 db error: ERROR: permission denied for function corpg_acl
-
-
-skipif postgres
-connection reader user=corpg_reader password=corpg_reader_pw
-statement error
-SELECT corpg_acl();
-----
-db error: ERROR: permission denied for macro function corpg_acl
 
 
 statement ok
@@ -1572,20 +1563,11 @@ s	p
 s3	p1
 
 
-onlyif postgres
 connection reader user=corpg_reader password=corpg_reader_pw
 statement error
 CREATE OR REPLACE FUNCTION corpg_s.corpg_sf() RETURNS TEXT AS $$ SELECT 'intruder' $$ LANGUAGE sql;
 ----
 db error: ERROR: must be owner of function corpg_sf
-
-
-skipif postgres
-connection reader user=corpg_reader password=corpg_reader_pw
-statement error
-CREATE OR REPLACE FUNCTION corpg_s.corpg_sf() RETURNS TEXT AS $$ SELECT 'intruder' $$ LANGUAGE sql;
-----
-db error: ERROR: must be owner of macro function corpg_sf
 
 
 query

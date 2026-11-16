@@ -282,7 +282,7 @@ GRANT USAGE ON FOREIGN DATA WRAPPER clickhouse_fdw TO etl;
 REVOKE USAGE ON FOREIGN DATA WRAPPER clickhouse_fdw FROM etl;
 ```
 
-Without the grant, `CREATE SERVER` fails with `permission denied for foreign data wrapper clickhouse_fdw`. A role holding a wrapper grant can create servers that connect to any host its options name, so grant it only to roles trusted with that.
+Without the grant, `CREATE SERVER` fails with `permission denied for foreign-data wrapper clickhouse_fdw`. A role holding a wrapper grant can create servers that connect to any host its options name, so grant it only to roles trusted with that.
 
 ### Servers owned by roles without `SUPERUSER`
 

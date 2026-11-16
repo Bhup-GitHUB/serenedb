@@ -61,18 +61,10 @@ statement ok
 COMMENT ON FUNCTION cof_f(text) IS 'mine';
 
 
-onlyif postgres
 statement error
 COMMENT ON FUNCTION cof_f(integer) IS 'not mine';
 ----
 db error: ERROR: must be owner of function cof_f
-
-
-skipif postgres
-statement error
-COMMENT ON FUNCTION cof_f(integer) IS 'not mine';
-----
-db error: ERROR: must be owner of macro function cof_f
 
 
 statement ok

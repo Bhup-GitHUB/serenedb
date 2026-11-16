@@ -23,7 +23,7 @@ SET ROLE bfgs_admin;
 statement error
 SELECT count(*) >= 0 AS listed FROM duckdb_secrets();
 ----
-db error: ERROR: permission denied for table function duckdb_secrets
+db error: ERROR: permission denied for function duckdb_secrets
 
 
 statement ok
@@ -74,7 +74,7 @@ SET ROLE bfgs_admin;
 statement error
 SELECT count(*) >= 0 AS listed FROM duckdb_secrets();
 ----
-db error: ERROR: permission denied for table function duckdb_secrets
+db error: ERROR: permission denied for function duckdb_secrets
 
 
 statement ok
@@ -150,7 +150,7 @@ SET ROLE bfgs_pragma;
 statement error
 PRAGMA table_info('bfgs_t');
 ----
-db error: ERROR: permission denied for pragma function table_info
+db error: ERROR: permission denied for function table_info
 
 
 statement ok

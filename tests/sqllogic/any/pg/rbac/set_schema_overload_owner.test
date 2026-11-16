@@ -101,18 +101,10 @@ statement ok
 SET ROLE ssoo_bob;
 
 
-onlyif postgres
 statement error
 ALTER FUNCTION f(int) SET SCHEMA ssoo_dst;
 ----
 db error: ERROR: must be owner of function f
-
-
-skipif postgres
-statement error
-ALTER FUNCTION f(int) SET SCHEMA ssoo_dst;
-----
-db error: ERROR: must be owner of macro function f
 
 
 statement ok
