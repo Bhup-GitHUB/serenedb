@@ -101,10 +101,7 @@ LoginCheck RequireLoginRole(std::string_view user, std::string_view dbname) {
               ERR_MSG("too many connections for role \"", role.name, "\""))};
   }
   const auto roles = catalog::RolesOf(nullptr);
-  duckdb::RoleAccess missing;
-  missing.role = role.oid;
-  const auto access = roles->Access(role.oid);
-  const auto& principal = access ? *access : missing;
+  const auto principal = roles->AccessOf(role.oid);
   struct {
     duckdb::idx_t oid = 0;
     bool connect = false;

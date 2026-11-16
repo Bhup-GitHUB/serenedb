@@ -1257,8 +1257,7 @@ class PrivilegeCheck final : public duckdb::FunctionLocalState {
 
   const duckdb::RoleAccess& Closure(duckdb::idx_t role) {
     if (!_closure || role != _closure->role) {
-      const auto access = _scope.roles->Access(role);
-      _closure = access ? *access : duckdb::RoleAccess{.role = role};
+      _closure = _scope.roles->AccessOf(role);
     }
     return *_closure;
   }

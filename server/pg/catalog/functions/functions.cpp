@@ -96,18 +96,18 @@ duckdb::unique_ptr<duckdb::Expression> BindNull(
 
 duckdb::unique_ptr<duckdb::FunctionData> BindCallerRole(
   duckdb::BindScalarFunctionInput& input) {
-  if (!input.HasBinder() || !input.GetBinder().current_role) {
-    return nullptr;
-  }
-  return duckdb::make_uniq<CallerRole>(input.GetBinder().current_role->role);
+  const auto caller =
+    input.HasBinder() ? input.GetBinder().CallerRole() : duckdb::optional_idx{};
+  return caller.IsValid() ? duckdb::make_uniq<CallerRole>(caller.GetIndex())
+                          : nullptr;
 }
 
 duckdb::RoleAccess CallerAccess(duckdb::ExpressionState& state) {
-  auto& context = state.GetContext();
   const auto& caller =
     state.expr.Cast<duckdb::BoundFunctionExpression>().BindInfo();
-  return caller ? context.AccessOf(caller->Cast<CallerRole>().role)
-                : context.CurrentRole();
+  return state.GetContext().CallerAccess(
+    caller ? duckdb::optional_idx{caller->Cast<CallerRole>().role}
+           : duckdb::optional_idx{});
 }
 
 void RegisterFunctions(duckdb::DatabaseInstance& db) {
