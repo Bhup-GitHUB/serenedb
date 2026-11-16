@@ -547,6 +547,41 @@ void Schema::CheckRelationName(duckdb::CatalogTransaction transaction,
   }
 }
 
+void Schema::CheckRoutineName(
+  duckdb::CatalogTransaction transaction, duckdb::CatalogType type,
+  const duckdb::Identifier& name,
+  const duckdb::vector<duckdb::unique_ptr<duckdb::MacroFunction>>& overloads) {
+  using enum duckdb::CatalogType;
+  if (!catalog.IsCaseSensitive() ||
+      (type != MACRO_ENTRY && type != TABLE_MACRO_ENTRY)) {
+    return;
+  }
+  auto& sibling = Set(type == MACRO_ENTRY ? TABLE_MACRO_ENTRY : MACRO_ENTRY);
+  sibling.CheckNameWritable(transaction, name);
+  const auto taken = sibling.Get(transaction, name);
+  if (!taken) {
+    return;
+  }
+  const auto& routine = taken->Cast<duckdb::MacroCatalogEntry>();
+  for (const auto& overload : overloads) {
+    const auto types = overload->ParameterTypes();
+    if (absl::c_any_of(routine.macros, [&](const auto& other) {
+          return other->HasParameterTypes(types);
+        })) {
+      ThrowFunctionExists(*this, name, *overload);
+    }
+  }
+}
+
+void Schema::CheckRoutineName(duckdb::CatalogTransaction transaction,
+                              const duckdb::CatalogEntry& entry,
+                              const duckdb::Identifier& name) {
+  if (IsMacro(entry)) {
+    CheckRoutineName(transaction, entry.type, name,
+                     entry.Cast<duckdb::MacroCatalogEntry>().macros);
+  }
+}
+
 duckdb::optional_ptr<duckdb::CatalogEntry> Schema::Add(
   duckdb::CatalogTransaction transaction,
   duckdb::unique_ptr<duckdb::CatalogEntry> entry,
@@ -585,6 +620,7 @@ duckdb::optional_ptr<duckdb::CatalogEntry> Schema::Add(
     }
   }
   CheckRelationName(transaction, type, entry_name);
+  CheckRoutineName(transaction, *entry, entry_name);
   ResolveDependencyOids(transaction, catalog, *entry);
   auto* result = entry.get();
   if (!set.Create(transaction, std::move(entry))) {
@@ -623,6 +659,10 @@ bool Schema::AlterExisting(duckdb::CatalogTransaction transaction,
       transaction, *current, [](const duckdb::CatalogEntry& dependent) {
         return dependent.type == duckdb::CatalogType::INDEX_ENTRY;
       });
+  }
+  if (IsMacro(*current)) {
+    CheckRoutineName(transaction, info.type, entry_name,
+                     info.Cast<duckdb::CreateMacroInfo>().macros);
   }
   auto alter = info.GetAlterInfo();
   Alter(transaction, *alter);
@@ -1095,6 +1135,7 @@ void Schema::Alter(duckdb::CatalogTransaction transaction,
     }
     if (!set.SameName(*new_name, entry->name)) {
       CheckRelationName(transaction, type, *new_name);
+      CheckRoutineName(transaction, *entry, *new_name);
       if (!replay) {
         FollowRename(transaction, *entry, *new_name, defaults);
       }
@@ -1170,6 +1211,7 @@ void Schema::Move(duckdb::CatalogTransaction transaction, EntrySet& set,
   std::vector<duckdb::idx_t> oids;
   for (const auto& item : std::views::reverse(moving)) {
     target.CheckRelationName(transaction, item.type, item.entry.name);
+    target.CheckRoutineName(transaction, item.entry, item.entry.name);
     oids.push_back(item.entry.oid);
   }
   std::vector<PendingDefault> defaults;

@@ -138,3 +138,81 @@ DROP FUNCTION rof_u(text);
 
 statement ok
 DROP TABLE rof_oids;
+
+
+statement ok
+CREATE FUNCTION rof_kind() RETURNS INT LANGUAGE SQL AS 'SELECT 1';
+
+
+statement ok
+CREATE PROCEDURE rof_proc() LANGUAGE SQL AS 'SELECT 1';
+
+
+statement error
+ALTER PROCEDURE rof_proc() RENAME TO rof_kind;
+----
+db error: ERROR: function rof_kind() already exists in schema "public"
+
+
+onlyif postgres
+statement error
+CREATE PROCEDURE rof_kind() LANGUAGE SQL AS 'SELECT 1';
+----
+db error: ERROR: function "rof_kind" already exists with same argument types
+
+
+skipif postgres
+statement error
+CREATE PROCEDURE rof_kind() LANGUAGE SQL AS 'SELECT 1';
+----
+db error: ERROR: function rof_kind() already exists in schema "public"
+
+
+onlyif postgres
+statement error
+CREATE OR REPLACE PROCEDURE rof_kind() LANGUAGE SQL AS 'SELECT 1';
+----
+db error: ERROR: cannot change routine kind
+DETAIL: "rof_kind" is a function.
+
+
+skipif postgres
+statement error
+CREATE OR REPLACE PROCEDURE rof_kind() LANGUAGE SQL AS 'SELECT 1';
+----
+db error: ERROR: function rof_kind() already exists in schema "public"
+
+
+statement ok
+CREATE SCHEMA rof_s;
+
+
+statement ok
+CREATE PROCEDURE rof_s.rof_kind() LANGUAGE SQL AS 'SELECT 1';
+
+
+statement error
+ALTER FUNCTION rof_kind SET SCHEMA rof_s;
+----
+db error: ERROR: function rof_kind() already exists in schema "rof_s"
+
+
+query
+SELECT p.oid::regprocedure::text AS f, p.prokind FROM pg_proc p WHERE p.proname IN ('rof_kind', 'rof_proc') ORDER BY 1;
+----
+f	prokind
+rof_kind()	f
+rof_proc()	p
+rof_s.rof_kind()	p
+
+
+statement ok
+DROP SCHEMA rof_s CASCADE;
+
+
+statement ok
+DROP PROCEDURE rof_proc();
+
+
+statement ok
+DROP FUNCTION rof_kind();
