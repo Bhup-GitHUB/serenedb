@@ -21,13 +21,12 @@
 #include "catalog/cluster.h"
 
 #include <absl/algorithm/container.h>
+#include <absl/functional/function_ref.h>
 #include <absl/strings/str_cat.h>
 #include <absl/strings/str_join.h>
 #include <absl/time/time.h>
 
 #include <cstdlib>
-#include <duckdb/catalog/catalog_entry/macro_catalog_entry.hpp>
-#include <duckdb/catalog/catalog_entry/table_catalog_entry.hpp>
 #include <duckdb/catalog/default/default_coordinate_systems.hpp>
 #include <duckdb/catalog/default/default_functions.hpp>
 #include <duckdb/catalog/default/default_table_functions.hpp>
@@ -53,10 +52,10 @@
 #include <iresearch/utils/pg/errcodes.hpp>
 #include <iresearch/utils/pg/sql_exception_macro.hpp>
 #include <iresearch/utils/static_strings.hpp>
-#include <iterator>
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "catalog/boot.h"
@@ -65,7 +64,6 @@
 #include "catalog/entry/foreign_server.h"
 #include "catalog/entry/replication_lsn.h"
 #include "catalog/schema.h"
-#include "pg/catalog/functions/pg_catalog/objectaddress.h"
 #include "pg/catalog/oids.h"
 #include "pg/catalog/utils/acl.h"
 #include "pg/connection_context.h"
@@ -84,181 +82,36 @@ struct PredefinedRole {
 
 #include "pg/catalog/generated/predefined_roles.gen.inc"
 
-enum class RoleUse : uint8_t {
-  None,
-  Owner,
-  Privileges,
-};
-
-bool Names(std::span<const duckdb::AclItem> acl, duckdb::idx_t role) {
-  return absl::c_any_of(acl, [&](const duckdb::AclItem& item) {
-    return item.grantee == role || item.grantor == role;
-  });
-}
-
-RoleUse UseOf(const duckdb::Permissions& permissions, duckdb::idx_t role) {
-  if (permissions.owner == role) {
-    return RoleUse::Owner;
-  }
-  return Names(permissions.acl, role) ? RoleUse::Privileges : RoleUse::None;
-}
-
-RoleUse UseOf(const duckdb::CatalogEntry& entry, duckdb::idx_t role) {
-  if (entry.permissions.owner == role) {
-    return RoleUse::Owner;
-  }
-  return duckdb::ReferencesRole(entry, role) ? RoleUse::Privileges
-                                             : RoleUse::None;
-}
-
-RoleUse UseOf(const duckdb::DefaultAcl& row, duckdb::idx_t role) {
-  if (row.role == role) {
-    return RoleUse::Owner;
-  }
-  return Names(row.acl, role) ? RoleUse::Privileges : RoleUse::None;
-}
-
-std::string Describe(RoleUse use, std::string_view object) {
-  return absl::StrCat(use == RoleUse::Owner ? "owner of " : "privileges for ",
-                      object);
-}
-
-std::string_view DefaultAclObjects(duckdb::CatalogType type) {
-  switch (type) {
-    case duckdb::CatalogType::SEQUENCE_ENTRY:
-      return "sequences";
-    case duckdb::CatalogType::MACRO_ENTRY:
-      return "functions";
-    case duckdb::CatalogType::TYPE_ENTRY:
-      return "types";
-    case duckdb::CatalogType::SCHEMA_ENTRY:
-      return "schemas";
-    default:
-      return "relations";
-  }
-}
-
-std::string DescribeDefaultAcl(SereneDBCatalog& database,
-                               duckdb::CatalogTransaction transaction,
-                               const duckdb::SecuritySnapshot& roles,
-                               const duckdb::DefaultAcl& row) {
-  auto object =
-    absl::StrCat("default privileges on new ", DefaultAclObjects(row.objtype),
-                 " belonging to role ", roles.NameOf(row.role));
-  if (row.scope != pg::kInvalidOid) {
-    absl::StrAppend(
-      &object, " in schema ",
-      database.LookupOid(transaction, row.scope)->name.GetIdentifierName());
-  }
-  return object;
-}
-
-void RefuseDependents(duckdb::ClientContext& context, ClusterCatalog& cluster,
+void RefuseDependents(duckdb::ClientContext& context,
                       const duckdb::CatalogEntry& role) {
   std::vector<std::string> lines;
-  std::vector<std::string> remote;
+  std::vector<std::pair<duckdb::idx_t, size_t>> remote;
   const auto current = DefaultSereneDBCatalog(context);
-  const auto roles = RolesOf(&context);
-  const auto cluster_transaction = cluster.GetCatalogTransaction(context);
-  for (const auto& db :
-       SereneDBDatabases(duckdb::DatabaseManager::Get(context))) {
-    auto& database = db->GetCatalog().Cast<SereneDBCatalog>();
-    const bool local = current.get() == &database;
-    size_t count = 0;
-    const auto visit = [&](duckdb::CatalogEntry& entry) {
-      if (entry.type == duckdb::CatalogType::INDEX_ENTRY) {
-        return;
-      }
-      if (entry.type == duckdb::CatalogType::MACRO_ENTRY ||
-          entry.type == duckdb::CatalogType::TABLE_MACRO_ENTRY) {
-        const auto& macro = entry.Cast<duckdb::MacroCatalogEntry>();
-        for (const auto& overload : macro.macros) {
-          const auto use =
-            UseOf(macro.OverloadPermissions(*overload), role.oid);
-          if (use == RoleUse::None) {
-            continue;
-          }
-          ++count;
-          if (local) {
-            lines.push_back(Describe(
-              use, pg::DescribeObject(context, pg::kPgProcTable,
-                                      macro.OverloadOid(*overload), 0)));
-          }
+  const auto local = current ? current->GetAttached().oid : pg::kInvalidOid;
+  pg::VisitRoleReferences(
+    context, role.oid,
+    [&](const pg::RoleReference& reference,
+        absl::FunctionRef<std::string()> describe) {
+      if (reference.dbid != pg::kInvalidOid && reference.dbid != local) {
+        if (remote.empty() || remote.back().first != reference.dbid) {
+          remote.emplace_back(reference.dbid, 0);
         }
+        ++remote.back().second;
         return;
       }
-      const auto use = UseOf(entry, role.oid);
-      if (use == RoleUse::None) {
-        return;
-      }
-      ++count;
-      if (local) {
-        lines.push_back(Describe(use, pg::DescribeObject(context, entry)));
-      }
-    };
-    const auto transaction = database.GetCatalogTransaction(context);
-    database.Set(duckdb::CatalogType::SCHEMA_ENTRY)
-      .Scan(transaction, [&](duckdb::CatalogEntry& schema) {
-        visit(schema);
-        schema.Cast<Schema>().ScanTree(transaction, visit);
-      });
-    database.Servers().Scan(transaction, visit);
-    database.Subscriptions().Scan(transaction, visit);
-    if (const auto entry = cluster.Set(duckdb::CatalogType::DATABASE_ENTRY)
-                             .Get(cluster_transaction, db->GetName())) {
-      pg::VisitDefaultAcls(
-        context, *entry, [&](duckdb::idx_t, const duckdb::DefaultAcl& row) {
-          const auto use = UseOf(row, role.oid);
-          if (use == RoleUse::None) {
-            return;
-          }
-          ++count;
-          if (local) {
-            lines.push_back(Describe(
-              use, DescribeDefaultAcl(database, transaction, *roles, row)));
-          }
-        });
-      pg::VisitDatabaseGrants(
-        context, *entry, role.oid, [&](const pg::ObjectGrant& grant) {
-          ++count;
-          if (local) {
-            lines.push_back(
-              Describe(RoleUse::Privileges,
-                       pg::DescribeObject(context, grant.classid, grant.objid,
-                                          grant.objsubid)));
-          }
-        });
-    }
-    if (!local && count != 0) {
-      remote.push_back(absl::StrCat(count, count == 1 ? " object" : " objects",
-                                    " in database ",
-                                    db->GetName().GetIdentifierName()));
-    }
+      lines.push_back(
+        absl::StrCat(reference.deptype == 'o' ? "owner of " : "privileges for ",
+                     describe()));
+    });
+  const auto databases =
+    SereneDBDatabases(duckdb::DatabaseManager::Get(context));
+  for (const auto& [dbid, count] : remote) {
+    const auto database = absl::c_find_if(
+      databases, [&](const auto& db) { return db->oid == dbid; });
+    lines.push_back(absl::StrCat(count, count == 1 ? " object" : " objects",
+                                 " in database ",
+                                 (*database)->GetName().GetIdentifierName()));
   }
-  cluster.Set(duckdb::CatalogType::DATABASE_ENTRY)
-    .Scan(cluster_transaction, [&](duckdb::CatalogEntry& entry) {
-      if (const auto use = UseOf(entry.permissions, role.oid);
-          use != RoleUse::None) {
-        lines.push_back(Describe(
-          use, absl::StrCat("database ", entry.name.GetIdentifierName())));
-      }
-    });
-  cluster.Set(duckdb::CatalogType::ROLE_ENTRY)
-    .Scan(cluster_transaction, [&](duckdb::CatalogEntry& entry) {
-      for (const auto& edge : entry.Cast<RoleCatalogEntry>().MemberOf()) {
-        if (edge.grantor == role.oid) {
-          lines.push_back(absl::StrCat("privileges for membership of role ",
-                                       entry.name.GetIdentifierName(),
-                                       " in role ", roles->NameOf(edge.role)));
-        }
-      }
-      for (const auto& row : entry.permissions.Rows().parameters) {
-        if (Names(row.acl, role.oid)) {
-          lines.push_back(absl::StrCat("privileges for parameter ", row.name));
-        }
-      }
-    });
-  absl::c_move(remote, std::back_inserter(lines));
   if (lines.empty()) {
     return;
   }
@@ -744,7 +597,7 @@ void ClusterCatalog::DropRole(duckdb::CatalogTransaction transaction,
     ApplyAlter(transaction, alter);
   }
   for (const auto& name : names) {
-    RefuseDependents(context, *this, *_roles.Get(transaction, name));
+    RefuseDependents(context, *_roles.Get(transaction, name));
   }
   for (const auto& name : names) {
     _roles.Drop(transaction, name);

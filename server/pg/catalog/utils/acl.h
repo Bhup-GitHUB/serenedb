@@ -57,4 +57,18 @@ void VisitDatabaseGrants(duckdb::ClientContext& context,
                          duckdb::idx_t role,
                          absl::FunctionRef<void(const ObjectGrant&)> visitor);
 
+struct RoleReference {
+  duckdb::idx_t dbid;
+  duckdb::idx_t classid;
+  duckdb::idx_t objid;
+  int32_t objsubid;
+  char deptype;
+};
+
+void VisitRoleReferences(
+  duckdb::ClientContext& context, duckdb::idx_t role,
+  absl::FunctionRef<void(const RoleReference& reference,
+                         absl::FunctionRef<std::string()> describe)>
+    visitor);
+
 }  // namespace sdb::pg
