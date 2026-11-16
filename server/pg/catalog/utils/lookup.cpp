@@ -224,21 +224,15 @@ std::optional<RelationAccess> RelationByOid(
     return std::nullopt;
   }
   if (relation->system) {
-    const auto* permissions =
-      &SystemPermissions(relation->system->SuperuserOnly());
-    const duckdb::vector<duckdb::ColumnAcl>* column_acls = nullptr;
-    if (session.context && session.context->security && session.database) {
-      const auto& security = session.context->security;
-      const auto& database = session.database->GetName().GetIdentifierName();
-      if (const auto overridden =
-            security->RelationPermissions(database, oid)) {
-        permissions = overridden.get();
-      }
-      if (const auto columns = security->RelationColumns(database, oid)) {
-        column_acls = columns.get();
-      }
+    const auto& stored = SystemPermissions(relation->system->SuperuserOnly());
+    if (!session.context || !session.database) {
+      return RelationAccess{{*relation}, &stored};
     }
-    return RelationAccess{{*relation}, permissions, column_acls};
+    const auto& database = session.database->GetName().GetIdentifierName();
+    return RelationAccess{
+      {*relation},
+      &duckdb::EffectivePermissions(*session.context, database, oid, stored),
+      duckdb::EffectiveColumnAcls(*session.context, database, oid).get()};
   }
   if (relation->view) {
     auto schema =

@@ -36,7 +36,7 @@ ALLOWED = {
     f"{FUNCTIONS}/aggregate/distributive/minmax.cpp": 1,
     f"{FUNCTIONS}/scalar/sequence/nextval.cpp": 1,
     f"{FUNCTIONS}/table/table_scan.cpp": 3,
-    f"{EXTENSIONS}/core_functions/scalar/generic/system_functions.cpp": 3,
+    f"{EXTENSIONS}/core_functions/scalar/generic/system_functions.cpp": 2,
     f"{SERVER}/catalog/catalog_subscription.cpp": 1,
     f"{SERVER}/connector/copy_from_batches.cpp": 1,
     f"{SERVER}/connector/functions/jobs.cpp": 1,
