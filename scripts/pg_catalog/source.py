@@ -12,11 +12,10 @@ COLUMN = re.compile(r'^\s*(\w+) = (\w+)( FORCE NOT NULL| FORCE NULL)?\s*,?$')
 INDEX = re.compile(
     r'^declare (unique )?index \w+ \d+ on (\w+) using \w+\((.*)\)$')
 KEYWORD = re.compile(r'^PG_KEYWORD\("(\w+)", \w+, (\w+), \w+\)', re.M)
-CATALOG_MACRO = re.compile(r'^CATALOG\((\w+),\d+,(\w+)\)', re.M)
+CATALOG_MACRO = re.compile(r'^CATALOG\((\w+),(\d+),(\w+)\)', re.M)
 CLASS_CASE = re.compile(r'^\t\tcase (\w+RelationId):', re.M)
 PROPERTY_CLASS = re.compile(r'\{\s*"[^"]*",\s*(\w+RelationId),')
 ACL_CLASS_ALIAS = re.compile(r'\(classId == (\w+RelationId)\) \?')
-CATALOG_OID = re.compile(r'^CATALOG\(\w+,(\d+),(\w+)\)', re.M)
 PROPERTY_TYPE = re.compile(
     r'\{\s*"[^"]*",\s*(\w+RelationId),[^{}]*?,\s*(OBJECT_\w+|-1),'
     r'\s*(?:true|false)\s*,?\s*\}')
@@ -152,10 +151,14 @@ def function_body(text, signature):
     return text[start:text.index('\n}\n', start)]
 
 
+def catalogs():
+    return [(name, int(oid), macro) for header in catalog_headers()
+            for name, oid, macro in CATALOG_MACRO.findall(
+                read('src', 'include', 'catalog', header))]
+
+
 def object_classes():
-    relations = {macro: name for header in catalog_headers()
-                 for name, macro in CATALOG_MACRO.findall(
-                     read('src', 'include', 'catalog', header))}
+    relations = {macro: name for name, _, macro in catalogs()}
     text = read('src', 'backend', 'catalog', 'objectaddress.c')
     described = CLASS_CASE.findall(function_body(
         text, 'getObjectDescription(const ObjectAddress *object, bool missing_ok)'))
@@ -167,9 +170,7 @@ def object_classes():
 
 
 def object_type_classes():
-    oids = {macro: int(oid) for header in catalog_headers()
-            for oid, macro in CATALOG_OID.findall(
-                read('src', 'include', 'catalog', header))}
+    oids = {macro: oid for _, oid, macro in catalogs()}
     text = read('src', 'backend', 'catalog', 'objectaddress.c')
     properties = text[text.index('ObjectProperty[] =\n'):]
     classes = {objtype: oids[macro] for macro, objtype in PROPERTY_TYPE.findall(
