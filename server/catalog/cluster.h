@@ -20,8 +20,6 @@
 
 #pragma once
 
-#include <absl/functional/function_ref.h>
-
 #include <duckdb/catalog/catalog_transaction.hpp>
 #include <duckdb/common/constants.hpp>
 #include <duckdb/parser/parsed_data/create_replication_origin_info.hpp>

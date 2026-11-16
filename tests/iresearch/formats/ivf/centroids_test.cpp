@@ -152,18 +152,17 @@ std::vector<float> MakeRowMajor(uint32_t d, uint64_t n) {
 }
 
 size_t BuiltRootSize(const CentroidsBuilder& builder) {
-  MemoryFile file;
+  duckdb::MemoryStream file;
   uint64_t offset;
   uint64_t byte_size;
   {
-    MemoryFileOutput out{file};
+    auto& out = file;
     const auto span = builder.Serialize(out);
     offset = span.offset;
     byte_size = span.root_byte_size;
-    out.Flush();
   }
-  const auto file_bytes = tests::Bytes(file);
-  duckdb::InputFileReader in{file_bytes};
+  const auto input = tests::OpenBytes({file.GetData(), file.GetPosition()});
+  duckdb::InputFileReader in{*input};
   in.Seek(offset);
   return CentroidsTree::Deserialize(in, byte_size).RootSize();
 }
@@ -182,18 +181,17 @@ void ExpectQueriesRouteToTrueNn(const CentroidsBuilder& builder,
     row_cluster[assigned.perm[j]] = assigned.ids[j];
   }
 
-  MemoryFile file;
+  duckdb::MemoryStream file;
   uint64_t offset;
   uint64_t byte_size;
   {
-    MemoryFileOutput out{file};
+    auto& out = file;
     const auto span = builder.Serialize(out);
     offset = span.offset;
     byte_size = span.root_byte_size;
-    out.Flush();
   }
-  const auto file_bytes = tests::Bytes(file);
-  duckdb::InputFileReader in{file_bytes};
+  const auto input = tests::OpenBytes({file.GetData(), file.GetPosition()});
+  duckdb::InputFileReader in{*input};
   in.Seek(offset);
   auto tree = CentroidsTree::Deserialize(in, byte_size);
 
@@ -264,19 +262,18 @@ TEST(centroids_builder_test, multilevel_build_search_id_consistency) {
     build_id[assigned.perm[j]] = assigned.ids[j];
   }
 
-  MemoryFile file;
+  duckdb::MemoryStream file;
   uint64_t offset;
   uint64_t byte_size;
   {
-    MemoryFileOutput out{file};
+    auto& out = file;
     const auto span = builder.Serialize(out);
     offset = span.offset;
     byte_size = span.root_byte_size;
-    out.Flush();
   }
 
-  const auto file_bytes = tests::Bytes(file);
-  duckdb::InputFileReader in{file_bytes};
+  const auto input = tests::OpenBytes({file.GetData(), file.GetPosition()});
+  duckdb::InputFileReader in{*input};
   in.Seek(offset);
   auto tree = CentroidsTree::Deserialize(in, byte_size);
 
@@ -304,18 +301,17 @@ TEST(centroids_builder_test, gathered_centroid_matches_search) {
   auto assigned =
     builder.AssignCentroids({reordered.data(), reordered.size()}, d, gathered);
 
-  MemoryFile file;
+  duckdb::MemoryStream file;
   uint64_t offset;
   uint64_t byte_size;
   {
-    MemoryFileOutput out{file};
+    auto& out = file;
     const auto span = builder.Serialize(out);
     offset = span.offset;
     byte_size = span.root_byte_size;
-    out.Flush();
   }
-  const auto file_bytes = tests::Bytes(file);
-  duckdb::InputFileReader in{file_bytes};
+  const auto input = tests::OpenBytes({file.GetData(), file.GetPosition()});
+  duckdb::InputFileReader in{*input};
   in.Seek(offset);
   auto tree = CentroidsTree::Deserialize(in, byte_size);
 
@@ -336,7 +332,7 @@ TEST(centroids_builder_test, gathered_centroid_matches_search) {
 // window (child_offsets[i+1] == child_offsets[i]); Search must emit it as a
 // leaf candidate with the correct global id instead of descending.
 TEST(centroids_node_test, zero_size_window_emits_early_leaf) {
-  MemoryFile file;
+  duckdb::MemoryStream file;
 
   constexpr uint32_t d = 1;
   // Root row 0 is a leaf (window [0,0)); row 1 has two children in the leaf
@@ -356,14 +352,13 @@ TEST(centroids_node_test, zero_size_window_emits_early_leaf) {
   uint64_t offset;
   uint64_t byte_size;
   {
-    MemoryFileOutput out{file};
+    auto& out = file;
     offset = WriteTree(out, VectorMetric::L2Sqr, d, nodes);
     byte_size = out.Position() - offset;
-    out.Flush();
   }
 
-  const auto file_bytes = tests::Bytes(file);
-  duckdb::InputFileReader in{file_bytes};
+  const auto input = tests::OpenBytes({file.GetData(), file.GetPosition()});
+  duckdb::InputFileReader in{*input};
   in.Seek(offset);
   auto tree = CentroidsTree::Deserialize(in, byte_size);
 
@@ -440,18 +435,17 @@ TEST(centroids_builder_test, single_cluster_has_mean_centroid) {
     }
   }
 
-  MemoryFile file;
+  duckdb::MemoryStream file;
   uint64_t offset;
   uint64_t byte_size;
   {
-    MemoryFileOutput out{file};
+    auto& out = file;
     const auto span = builder.Serialize(out);
     offset = span.offset;
     byte_size = span.root_byte_size;
-    out.Flush();
   }
-  const auto file_bytes = tests::Bytes(file);
-  duckdb::InputFileReader in{file_bytes};
+  const auto input = tests::OpenBytes({file.GetData(), file.GetPosition()});
+  duckdb::InputFileReader in{*input};
   in.Seek(offset);
   auto tree = CentroidsTree::Deserialize(in, byte_size);
   const std::span<const float> q{data.data(), d};
@@ -530,18 +524,17 @@ TEST(centroids_builder_test, cosine_multilevel_build_search_id_consistency) {
     build_id[assigned.perm[j]] = assigned.ids[j];
   }
 
-  MemoryFile file;
+  duckdb::MemoryStream file;
   uint64_t offset;
   uint64_t byte_size;
   {
-    MemoryFileOutput out{file};
+    auto& out = file;
     const auto span = builder.Serialize(out);
     offset = span.offset;
     byte_size = span.root_byte_size;
-    out.Flush();
   }
-  const auto file_bytes = tests::Bytes(file);
-  duckdb::InputFileReader in{file_bytes};
+  const auto input = tests::OpenBytes({file.GetData(), file.GetPosition()});
+  duckdb::InputFileReader in{*input};
   in.Seek(offset);
   auto tree = CentroidsTree::Deserialize(in, byte_size);
 
@@ -613,18 +606,17 @@ TEST(centroids_builder_test, three_level_build_search_id_consistency) {
     build_id[assigned.perm[j]] = assigned.ids[j];
   }
 
-  MemoryFile file;
+  duckdb::MemoryStream file;
   uint64_t offset;
   uint64_t byte_size;
   {
-    MemoryFileOutput out{file};
+    auto& out = file;
     const auto span = builder.Serialize(out);
     offset = span.offset;
     byte_size = span.root_byte_size;
-    out.Flush();
   }
-  const auto file_bytes = tests::Bytes(file);
-  duckdb::InputFileReader in{file_bytes};
+  const auto input = tests::OpenBytes({file.GetData(), file.GetPosition()});
+  duckdb::InputFileReader in{*input};
   in.Seek(offset);
   auto tree = CentroidsTree::Deserialize(in, byte_size);
   EXPECT_GE(tree.Levels(), 3u);
@@ -648,19 +640,18 @@ TEST(centroids_builder_test, open_reads_exactly_the_root_level) {
                          const CentroidsBuildParams& params) {
     const auto builder = CentroidsBuilder::CreateFromSample(
       sample, d, VectorMetric::L2Sqr, params);
-    MemoryFile file;
+    duckdb::MemoryStream file;
     CentroidsSpan span;
     uint64_t tree_end = 0;
     {
-      MemoryFileOutput out{file};
+      auto& out = file;
       out.Write<uint64_t>(0);
       span = builder.Serialize(out);
       tree_end = out.Position();
       out.Write<uint64_t>(0);
-      out.Flush();
     }
-    const auto file_bytes = tests::Bytes(file);
-    duckdb::InputFileReader in{file_bytes};
+    const auto input = tests::OpenBytes({file.GetData(), file.GetPosition()});
+    duckdb::InputFileReader in{*input};
     in.Seek(span.offset);
     const auto tree = CentroidsTree::Deserialize(in, span.root_byte_size);
     levels = tree.Levels();
@@ -692,18 +683,17 @@ TEST(centroids_builder_test, multilevel_search_recall_matches_bruteforce) {
   auto builder =
     CentroidsBuilder::CreateFromSample(data, d, VectorMetric::L2Sqr, params);
 
-  MemoryFile file;
+  duckdb::MemoryStream file;
   uint64_t offset;
   uint64_t byte_size;
   {
-    MemoryFileOutput out{file};
+    auto& out = file;
     const auto span = builder.Serialize(out);
     offset = span.offset;
     byte_size = span.root_byte_size;
-    out.Flush();
   }
-  const auto file_bytes = tests::Bytes(file);
-  duckdb::InputFileReader in{file_bytes};
+  const auto input = tests::OpenBytes({file.GetData(), file.GetPosition()});
+  duckdb::InputFileReader in{*input};
   in.Seek(offset);
   auto tree = CentroidsTree::Deserialize(in, byte_size);
 
@@ -895,7 +885,7 @@ std::vector<CentroidsNode> MakeGreedyTrapTree(uint32_t d) {
 }  // namespace
 
 TEST(centroids_node_test, beam_escapes_greedy_trap) {
-  MemoryFile file;
+  duckdb::MemoryStream file;
 
   constexpr uint32_t d = 1;
   const auto nodes = MakeGreedyTrapTree(d);
@@ -903,13 +893,12 @@ TEST(centroids_node_test, beam_escapes_greedy_trap) {
   uint64_t offset;
   uint64_t byte_size;
   {
-    MemoryFileOutput out{file};
+    auto& out = file;
     offset = WriteTree(out, VectorMetric::L2Sqr, d, nodes);
     byte_size = out.Position() - offset;
-    out.Flush();
   }
-  const auto file_bytes = tests::Bytes(file);
-  duckdb::InputFileReader in{file_bytes};
+  const auto input = tests::OpenBytes({file.GetData(), file.GetPosition()});
+  duckdb::InputFileReader in{*input};
   in.Seek(offset);
   auto tree = CentroidsTree::Deserialize(in, byte_size);
   ASSERT_EQ(tree.Levels(), 3u);
@@ -938,7 +927,7 @@ TEST(centroids_node_test, beam_escapes_greedy_trap) {
 }
 
 TEST(centroids_node_test, full_nprobe_reaches_every_leaf_under_wide_root) {
-  MemoryFile file;
+  duckdb::MemoryStream file;
 
   constexpr uint32_t d = 1;
   constexpr size_t kRows = 32;
@@ -968,13 +957,12 @@ TEST(centroids_node_test, full_nprobe_reaches_every_leaf_under_wide_root) {
   uint64_t offset;
   uint64_t byte_size;
   {
-    MemoryFileOutput out{file};
+    auto& out = file;
     offset = WriteTree(out, VectorMetric::L2Sqr, d, nodes);
     byte_size = out.Position() - offset;
-    out.Flush();
   }
-  const auto file_bytes = tests::Bytes(file);
-  duckdb::InputFileReader in{file_bytes};
+  const auto input = tests::OpenBytes({file.GetData(), file.GetPosition()});
+  duckdb::InputFileReader in{*input};
   in.Seek(offset);
   auto tree = CentroidsTree::Deserialize(in, byte_size);
   ASSERT_EQ(tree.Levels(), 3u);
@@ -1004,18 +992,17 @@ TEST(centroids_builder_test, beam_recall_on_boundary_queries) {
   auto builder =
     CentroidsBuilder::CreateFromSample(data, d, VectorMetric::L2Sqr, params);
 
-  MemoryFile file;
+  duckdb::MemoryStream file;
   uint64_t offset;
   uint64_t byte_size;
   {
-    MemoryFileOutput out{file};
+    auto& out = file;
     const auto span = builder.Serialize(out);
     offset = span.offset;
     byte_size = span.root_byte_size;
-    out.Flush();
   }
-  const auto file_bytes = tests::Bytes(file);
-  duckdb::InputFileReader in{file_bytes};
+  const auto input = tests::OpenBytes({file.GetData(), file.GetPosition()});
+  duckdb::InputFileReader in{*input};
   in.Seek(offset);
   auto tree = CentroidsTree::Deserialize(in, byte_size);
   ASSERT_GE(tree.Levels(), 3u);
@@ -1230,18 +1217,17 @@ TEST(centroids_builder_test,
     build_id[assigned.perm[j]] = assigned.ids[j];
   }
 
-  MemoryFile file;
+  duckdb::MemoryStream file;
   uint64_t offset;
   uint64_t byte_size;
   {
-    MemoryFileOutput out{file};
+    auto& out = file;
     const auto span = builder.Serialize(out);
     offset = span.offset;
     byte_size = span.root_byte_size;
-    out.Flush();
   }
-  const auto file_bytes = tests::Bytes(file);
-  duckdb::InputFileReader in{file_bytes};
+  const auto input = tests::OpenBytes({file.GetData(), file.GetPosition()});
+  duckdb::InputFileReader in{*input};
   in.Seek(offset);
   auto tree = CentroidsTree::Deserialize(in, byte_size);
 
@@ -1292,18 +1278,17 @@ TEST(centroids_builder_test, root_fanout_capped_at_max_fanout) {
                                       .max_fanout = max_fanout};
     auto builder =
       CentroidsBuilder::CreateFromSample(data, d, VectorMetric::L2Sqr, params);
-    MemoryFile file;
+    duckdb::MemoryStream file;
     uint64_t offset;
     uint64_t byte_size;
     {
-      MemoryFileOutput out{file};
+      auto& out = file;
       const auto span = builder.Serialize(out);
       offset = span.offset;
       byte_size = span.root_byte_size;
-      out.Flush();
     }
-    const auto file_bytes = tests::Bytes(file);
-    duckdb::InputFileReader in{file_bytes};
+    const auto input = tests::OpenBytes({file.GetData(), file.GetPosition()});
+    duckdb::InputFileReader in{*input};
     in.Seek(offset);
     auto tree = CentroidsTree::Deserialize(in, byte_size);
     return std::pair{tree.Levels(), tree.RootSize()};

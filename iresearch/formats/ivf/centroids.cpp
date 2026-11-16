@@ -357,24 +357,23 @@ std::vector<CentroidsNodeView> CentroidsNode::ReadLayer(
   n_total = layout.n_total;
   std::vector<CentroidsNodeView> nodes;
   nodes.reserve(starts.size());
-  if (const auto file = in.File()) {
-    if (!file->IsMapped()) {
-      bufs.centroids.reserve(starts.size());
-    }
-    containers::SmallVector<duckdb::FileRange, kLayerRanges> ranges;
-    for (auto&& [start, size] : std::views::zip(starts, sizes)) {
-      if (size == 0) {
-        continue;
-      }
-      ranges.push_back({.offset = layout.CentroidPos(start, d),
-                        .size = size * d * sizeof(float)});
-      if (level > 0) {
-        ranges.push_back({.offset = layout.OffsetsPos(start),
-                          .size = (size + 1) * sizeof(size_t)});
-      }
-    }
-    file->Prefetch(ranges);
+  const auto& file = *in.File();
+  if (!file.IsMapped()) {
+    bufs.centroids.reserve(starts.size());
   }
+  containers::SmallVector<duckdb::FileRange, kLayerRanges> ranges;
+  for (auto&& [start, size] : std::views::zip(starts, sizes)) {
+    if (size == 0) {
+      continue;
+    }
+    ranges.push_back({.offset = layout.CentroidPos(start, d),
+                      .size = size * d * sizeof(float)});
+    if (level > 0) {
+      ranges.push_back({.offset = layout.OffsetsPos(start),
+                        .size = (size + 1) * sizeof(size_t)});
+    }
+  }
+  file.Prefetch(ranges);
   bufs.child_offsets.reserve(starts.size());
   for (auto&& [start, size] : std::views::zip(starts, sizes)) {
     CentroidsNodeView node;
@@ -437,10 +436,8 @@ void IVFHeader::Serialize(duckdb::WriteStream& out) const {
 CentroidsTree CentroidsTree::Deserialize(duckdb::InputFileReader& in,
                                          uint64_t root_byte_size) {
   const uint64_t start = in.Position();
-  const auto file = in.File();
-  if (file) {
-    file->Prefetch(start, root_byte_size);
-  }
+  const auto& file = *in.File();
+  file.Prefetch(start, root_byte_size);
   auto head = IVFHeader::Deserialize(in);
   const size_t level = in.Read<uint64_t>();
   const size_t n_total_pos = static_cast<size_t>(in.Position());
@@ -449,9 +446,7 @@ CentroidsTree CentroidsTree::Deserialize(duckdb::InputFileReader& in,
   auto nodes = CentroidsNode::Deserialize(in, level, head.d, {0}, {n_total});
   auto node = std::move(nodes.front());
   const size_t next_level_offset = static_cast<size_t>(in.Position());
-  if (file) {
-    file->Evict(start, root_byte_size);
-  }
+  file.Evict(start, root_byte_size);
   return {std::move(head), std::move(node), next_level_offset};
 }
 

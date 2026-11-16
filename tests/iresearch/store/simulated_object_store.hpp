@@ -44,7 +44,6 @@ struct ObjectStoreRequests {
   uint64_t copy = 0;
   uint64_t bytes_read = 0;
   uint64_t bytes_written = 0;
-  uint64_t max_in_flight = 0;
 };
 
 class SimulatedObjectStore final : public duckdb::FileSystem {
@@ -67,8 +66,7 @@ class SimulatedObjectStore final : public duckdb::FileSystem {
   }
 
   std::shared_ptr<const Object> Find(std::string_view path) const;
-  uint64_t Publish(const std::string& path, std::string bytes,
-                   bool exclusive = false);
+  uint64_t Publish(const std::string& path, std::string bytes);
 
   void Read(duckdb::FileHandle& handle, void* buffer, int64_t nr_bytes,
             duckdb::idx_t location) final;
@@ -84,7 +82,6 @@ class SimulatedObjectStore final : public duckdb::FileSystem {
   duckdb::FileType GetFileType(duckdb::FileHandle& handle) final {
     return duckdb::FileType::FILE_TYPE_REGULAR;
   }
-  void Truncate(duckdb::FileHandle& handle, int64_t new_size) final;
   void FileSync(duckdb::FileHandle& handle) final;
   void AbortFileWrite(duckdb::FileHandle& handle) final;
 
@@ -126,7 +123,6 @@ class SimulatedObjectStore final : public duckdb::FileSystem {
   bool OnDiskFile(duckdb::FileHandle& handle) final { return false; }
   bool CanHandleFile(const std::string& fpath) final;
   std::string GetName() const final { return "SimulatedObjectStore"; }
-  std::string PathSeparator(const std::string& path) final { return "/"; }
 
  protected:
   duckdb::unique_ptr<duckdb::FileHandle> OpenFileExtended(
@@ -157,8 +153,6 @@ class SimulatedObjectStore final : public duckdb::FileSystem {
   mutable std::atomic<uint64_t> _copy{0};
   mutable std::atomic<uint64_t> _bytes_read{0};
   mutable std::atomic<uint64_t> _bytes_written{0};
-  mutable std::atomic<uint64_t> _in_flight{0};
-  mutable std::atomic<uint64_t> _max_in_flight{0};
 };
 
 }  // namespace irs

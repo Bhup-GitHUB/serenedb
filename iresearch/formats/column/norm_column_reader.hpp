@@ -24,7 +24,6 @@
 
 #include <cstdint>
 #include <duckdb/storage/external_file_cache/external_file_cache.hpp>
-#include <memory>
 #include <span>
 #include <vector>
 

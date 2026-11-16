@@ -252,7 +252,7 @@ struct MainColumn {
 };
 
 struct PackedColumn {
-  irs::MemoryFile file;
+  duckdb::MemoryStream file;
   irs::bstring data;
   duckdb::shared_ptr<duckdb::InputFile> in;
   std::unique_ptr<irs::NormColumnReader> column;
@@ -260,14 +260,12 @@ struct PackedColumn {
   size_t bytes = 0;
 
   void Build(const std::vector<uint32_t>& values) {
-    irs::MemoryFileOutput out{file};
-    irs::NormColumnWriter writer{1, kRgRows,
-                                 [&]() -> duckdb::WriteStream& { return out; }};
+    irs::NormColumnWriter writer{
+      1, kRgRows, [&]() -> duckdb::WriteStream& { return file; }};
     for (size_t i = 0; i != values.size(); ++i) {
       writer.Append(i, values[i]);
     }
     writer.Finalize();
-    out.Flush();
     for (const auto& region : writer.Meta().regions) {
       bytes += irs::NormSlotsSize(region) +
                (region.exceptions == 0 ? 0 : irs::NormTableSize(region));

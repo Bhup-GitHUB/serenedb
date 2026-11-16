@@ -19,7 +19,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 
 #include <absl/algorithm/container.h>
-#include <absl/container/inlined_vector.h>
 
 #include <algorithm>
 #include <array>

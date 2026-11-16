@@ -29,7 +29,6 @@
 #include "iresearch/index/column_info.hpp"
 #include "iresearch/index/file_names.hpp"
 #include "iresearch/search/detail/ann_index.hpp"
-#include "iresearch/utils/containers/flat_hash_map.hpp"
 
 #ifndef IRESEARCH_NO_VECTOR
 #include "iresearch/formats/hnsw/hnsw_reader.hpp"

@@ -65,10 +65,8 @@ std::vector<std::string> SegmentFiles(std::string_view segment, uint8_t kinds) {
 
 std::string FileName(uint64_t id) { return absl::StrFormat("%016x", id); }
 
-void FileName(std::string& result, std::string_view name,
-              std::string_view ext) {
-  result.clear();
-  absl::StrAppend(&result, name, ".", ext);
+std::string FileName(std::string_view name, std::string_view ext) {
+  return absl::StrCat(name, ".", ext);
 }
 
 bool ParseSegmentId(std::string_view name, uint64_t& id) noexcept {

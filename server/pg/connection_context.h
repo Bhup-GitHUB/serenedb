@@ -313,8 +313,7 @@ class ConnectionContext final : public duckdb::ClientContext {
 };
 
 duckdb::shared_ptr<duckdb::ClientContext> CreateClientContext(
-  duckdb::DatabaseInstance& db,
-  duckdb::shared_ptr<duckdb::AttachedDatabase> temporary);
+  duckdb::DatabaseInstance& db);
 
 duckdb::unique_ptr<duckdb::Connection> MakeConnection(
   duckdb::DatabaseInstance& db, const SessionIdentity& identity);

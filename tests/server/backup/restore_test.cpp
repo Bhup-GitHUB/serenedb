@@ -87,7 +87,6 @@ class RestoreTest : public ::testing::Test {
     WriteFile(StoreDir() / kSegmentFile, 4, 'S');
     WriteFile(_root / "recovery.signal", 0, ' ');
     WriteFile(_root / "standby.signal", 0, ' ');
-    _cut.log_link = (std::filesystem::path{"engine_v1"} / kBackupDir).string();
     _cut.log_size = _ends[2];
   }
 

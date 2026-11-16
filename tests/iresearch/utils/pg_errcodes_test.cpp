@@ -19,7 +19,11 @@
 ////////////////////////////////////////////////////////////////////////////////
 
 #include <cerrno>
+#include <duckdb/common/error_data.hpp>
+#include <duckdb/common/exception.hpp>
 #include <iresearch/utils/pg/errcodes.hpp>
+#include <iresearch/utils/pg/error_mapping.hpp>
+#include <string>
 #include <utility>
 
 #include "tests_shared.hpp"
@@ -45,4 +49,22 @@ TEST(pg_errcodes_test, file_access_errors_map_as_postgres_maps_them) {
   for (const auto [error, code] : expected) {
     EXPECT_EQ(code, irs::pg::ErrcodeForFileAccess(error)) << error;
   }
+}
+
+TEST(pg_errcodes_test, duckdb_file_and_corruption_errors_keep_their_sqlstate) {
+  const auto code = [](const duckdb::Exception& error) {
+    return irs::pg::ToSqlError(duckdb::ErrorData{error}).errcode;
+  };
+  EXPECT_EQ(
+    ERRCODE_UNDEFINED_FILE,
+    code(duckdb::IOException{{{"errno", std::to_string(ENOENT)}}, "missing"}));
+  EXPECT_EQ(ERRCODE_DISK_FULL, code(duckdb::IOException{
+                                 {{"errno", std::to_string(ENOSPC)}}, "full"}));
+  EXPECT_EQ(ERRCODE_IO_ERROR,
+            code(duckdb::IOException{{{"errno", "not a number"}}, "garbled"}));
+  EXPECT_EQ(ERRCODE_IO_ERROR, code(duckdb::IOException{"no errno"}));
+  const auto corrupted = irs::pg::ToSqlError(
+    duckdb::ErrorData{duckdb::DataCorruptionException{"truncated"}});
+  EXPECT_EQ(ERRCODE_DATA_CORRUPTED, corrupted.errcode);
+  EXPECT_EQ("truncated", corrupted.errmsg);
 }

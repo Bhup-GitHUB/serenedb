@@ -40,7 +40,6 @@ constexpr uint64_t kStartLsn = (uint64_t{0x65DD1} << 32) | 0xB480E1C3;
 
 Cut MakeCut() {
   Cut cut;
-  cut.log_link = "engine_v1/backup/log";
   cut.log_size = 2876;
   return cut;
 }
@@ -66,9 +65,7 @@ TEST(BackupLabelTest, RoundTripKeepsEveryField) {
   ASSERT_TRUE(parsed.ok()) << parsed.status();
   EXPECT_EQ(parsed->system_identifier, kSystemIdentifier);
   EXPECT_EQ(parsed->start_lsn, kStartLsn);
-  const auto expected = MakeCut();
-  EXPECT_EQ(parsed->cut.log_link, expected.log_link);
-  EXPECT_EQ(parsed->cut.log_size, expected.log_size);
+  EXPECT_EQ(parsed->cut.log_size, MakeCut().log_size);
 }
 
 TEST(BackupLabelTest, StartsWithThePostgresHeader) {
@@ -83,8 +80,7 @@ TEST(BackupLabelTest, StartsWithThePostgresHeader) {
     "LABEL: nightly\n"
     "START TIMELINE: 1\n"))
     << text;
-  EXPECT_TRUE(
-    absl::StrContains(text, "SERENEDB LOG: engine_v1/backup/log 2876\n"));
+  EXPECT_TRUE(absl::StrContains(text, "SERENEDB LOG: 2876\n"));
 }
 
 TEST(BackupLabelTest, LabelLineBreaksBecomeSpaces) {
@@ -170,11 +166,9 @@ TEST(BackupLabelTest, RejectsMalformedLines) {
     {"SERENEDB BACKUP FORMAT: 2\n", "SERENEDB BACKUP FORMAT: x\n"},
     {"SERENEDB SYSTEM IDENTIFIER: 7696604830604944365\n",
      "SERENEDB SYSTEM IDENTIFIER: x7696604830604944365\n"},
-    {"SERENEDB LOG: engine_v1/backup/log 2876\n",
-     "SERENEDB LOG: engine_v1/backup/log\n"},
-    {"SERENEDB LOG: engine_v1/backup/log 2876\n", "SERENEDB LOG:  2876\n"},
-    {"SERENEDB LOG: engine_v1/backup/log 2876\n",
-     "SERENEDB LOG: engine_v1/backup/log 28x6\n"},
+    {"SERENEDB LOG: 2876\n", "SERENEDB LOG: \n"},
+    {"SERENEDB LOG: 2876\n", "SERENEDB LOG: 2876 12\n"},
+    {"SERENEDB LOG: 2876\n", "SERENEDB LOG: 28x6\n"},
   };
   for (const auto& c : kCases) {
     const auto body = absl::StrReplaceAll(Body(Build()), {{c.from, c.to}});

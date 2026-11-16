@@ -3767,22 +3767,17 @@ TEST_P(DirectoryTestCase, smoke_index_io) {
     EXPECT_LT(in.Position(), in.File()->GetSize());
 
     // check short
-    EXPECT_EQ(std::numeric_limits<int16_t>::min(),
-              static_cast<int16_t>(::tests::ReadU16(in)));
+    EXPECT_EQ(std::numeric_limits<int16_t>::min(), in.Read<int16_t>());
     EXPECT_LT(in.Position(), in.File()->GetSize());
-    EXPECT_EQ(std::numeric_limits<uint16_t>::min(),
-              static_cast<int16_t>(::tests::ReadU16(in)));
+    EXPECT_EQ(std::numeric_limits<uint16_t>::min(), in.Read<int16_t>());
     EXPECT_LT(in.Position(), in.File()->GetSize());
-    EXPECT_EQ(0, static_cast<int16_t>(::tests::ReadU16(in)));
+    EXPECT_EQ(0, in.Read<int16_t>());
     EXPECT_LT(in.Position(), in.File()->GetSize());
-    EXPECT_EQ(8712, static_cast<int16_t>(::tests::ReadU16(in)));
+    EXPECT_EQ(8712, in.Read<int16_t>());
     EXPECT_LT(in.Position(), in.File()->GetSize());
-    EXPECT_EQ(std::numeric_limits<int16_t>::max(),
-              static_cast<int16_t>(::tests::ReadU16(in)));
+    EXPECT_EQ(std::numeric_limits<int16_t>::max(), in.Read<int16_t>());
     EXPECT_LT(in.Position(), in.File()->GetSize());
-    EXPECT_EQ(
-      std::numeric_limits<uint16_t>::max(),
-      static_cast<uint16_t>(static_cast<int16_t>(::tests::ReadU16(in))));
+    EXPECT_EQ(std::numeric_limits<uint16_t>::max(), in.Read<uint16_t>());
     EXPECT_LT(in.Position(), in.File()->GetSize());
 
     // check int
@@ -3923,7 +3918,7 @@ TEST_P(DirectoryTestCase, smoke_store) {
     [[maybe_unused]] auto [it, inserted] = files.emplace(std::move(name));
     files_to_sync.emplace_back(*it);
   };
-  dir.Visit(list_files);
+  absl::c_for_each(dir.Files(), list_files);
   ASSERT_EQ((std::set<std::string>{std::begin(kNames), std::end(kNames)}),
             files);
   dir.Sync(files_to_sync);
@@ -4070,10 +4065,7 @@ TEST_P(DirectoryTestCase, smoke_store) {
     ASSERT_FALSE(dir.Has(name));
   }
 
-  // Check files count
-  files.clear();
-  dir.Visit(list_files);
-  EXPECT_EQ(0, files.size());
+  EXPECT_TRUE(dir.Files().empty());
 
   // Try to open non existing input
   try {
@@ -4710,9 +4702,7 @@ TEST(DirectoryTest, memory_reader_reads_removed_files) {
     ::tests::OpenReader(files, irs::tests::DefaultReaderOptions());
 
   files.Fs().RemoveDirectory(files.Root());
-  size_t listed = 0;
-  files.Visit([&](std::string_view) { ++listed; });
-  ASSERT_EQ(0, listed);
+  ASSERT_TRUE(files.Files().empty());
 
   irs::ByTerm query;
   *query.mutable_field_id() = ::tests::FieldIdFor("name");
@@ -4728,7 +4718,6 @@ TEST(DirectoryTest, memory_reader_reads_removed_files) {
 TEST(DirectoryTest, compacted_memory_files_map_in_place) {
   constexpr uint64_t kBlock = duckdb::ExternalFileCache::DEFAULT_BLOCK_SIZE;
   auto& db = irs::DuckDBEngine::Instance().instance();
-  auto& memory = db.GetMemoryFileSystem();
   const ::tests::IndexDir files{db, TestEnv::MemoryRoot()};
   std::vector<irs::byte_type> data(2 * kBlock + 17);
   for (uint64_t i = 0; i != data.size(); ++i) {
@@ -4745,7 +4734,8 @@ TEST(DirectoryTest, compacted_memory_files_map_in_place) {
   duckdb::InputFileReader blocks{*blocks_file};
 
   files.Compact("file");
-  EXPECT_FALSE(memory.OpenBlockFile(files.Fs().JoinPath(files.Root(), "file")));
+  EXPECT_FALSE(
+    files.Fs().OpenBlockFile(files.Fs().JoinPath(files.Root(), "file")));
   const auto mapped_file = files.Open("file", duckdb::MappedFileAccess::NORMAL);
   ASSERT_TRUE(mapped_file->IsMapped());
   duckdb::InputFileReader mapped{*mapped_file};
@@ -4763,11 +4753,10 @@ TEST(DirectoryTest, compacted_memory_files_map_in_place) {
 }
 
 size_t MemoryFilesInBlocks(const ::tests::IndexDir& files) {
-  auto& memory = irs::DuckDBEngine::Instance().instance().GetMemoryFileSystem();
   size_t count = 0;
   for (const auto& file : SegmentFilesOf(files.Committed())) {
     count +=
-      memory.OpenBlockFile(files.Fs().JoinPath(files.Root(), file)) ? 1 : 0;
+      files.Fs().OpenBlockFile(files.Fs().JoinPath(files.Root(), file)) ? 1 : 0;
   }
   return count;
 }
@@ -4838,14 +4827,9 @@ TEST(DirectoryTest, private_memory) {
     out->Close();
   }
   ASSERT_TRUE(files.Has("file"));
-  EXPECT_FALSE(db.GetMemoryFileSystem().FileExists(
-    files.Fs().JoinPath(files.Root(), "file")));
   EXPECT_FALSE(duckdb::FileSystem::GetFileSystem(db).FileExists(
     files.Fs().JoinPath(files.Root(), "file")));
-
-  std::vector<std::string> names;
-  files.Visit([&](std::string_view name) { names.emplace_back(name); });
-  EXPECT_EQ(std::vector<std::string>{"file"}, names);
+  EXPECT_EQ(std::vector<std::string>{"file"}, files.Files());
 
   const auto in_file = files.Open("file", duckdb::MappedFileAccess::NORMAL);
   ASSERT_TRUE(in_file->IsMapped());
@@ -4901,8 +4885,7 @@ TEST(DirectoryTest, private_memory_roots_are_separate) {
   write(rhs, "rhs", 2);
 
   const auto list = [](const ::tests::IndexDir& files) {
-    std::vector<std::string> names;
-    files.Visit([&](std::string_view name) { names.emplace_back(name); });
+    auto names = files.Files();
     absl::c_sort(names);
     return names;
   };

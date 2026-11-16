@@ -88,7 +88,7 @@ std::string BuildBackupLabel(std::string_view label, uint64_t start_lsn,
     absl::FormatTime("%Y-%m-%d %H:%M:%S UTC", start_time, absl::UTCTimeZone()),
     "\n", "LABEL: ", one_line, "\n", "START TIMELINE: ", kTimeline, "\n",
     kFormatKey, kBackupLabelFormat, "\n", kSystemKey, system_identifier, "\n",
-    kLogKey, cut.log_link, " ", cut.log_size, "\n");
+    kLogKey, cut.log_size, "\n");
   absl::StrAppend(&out, kChecksumKey, Checksum(out), "\n");
   return out;
 }
@@ -139,12 +139,9 @@ absl::StatusOr<BackupLabel> ParseBackupLabel(std::string_view text) {
       }
       has_system = true;
     } else if (absl::ConsumePrefix(&value, kLogKey)) {
-      const auto space = value.rfind(' ');
-      if (space == std::string_view::npos || space == 0 ||
-          !absl::SimpleAtoi(value.substr(space + 1), &label.cut.log_size)) {
+      if (!ParseFields(value, label.cut.log_size)) {
         return Malformed(line);
       }
-      label.cut.log_link = std::string{value.substr(0, space)};
       has_log = true;
     } else {
       return absl::InvalidArgumentError(

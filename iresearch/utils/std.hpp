@@ -45,14 +45,6 @@ struct AdjustConst<const In, Out> {
   typedef const Out* pointer;
 };
 
-// converts reverse iterator to corresponding forward iterator
-// the function does not accept containers "end"
-template<typename ReverseIterator>
-constexpr typename ReverseIterator::iterator_type ToForward(
-  ReverseIterator it) {
-  return --(it.base());
-}
-
 template<typename Container, typename Iterator>
 void SwapRemove(Container& cont, Iterator it) {
   SDB_ASSERT(!cont.empty());

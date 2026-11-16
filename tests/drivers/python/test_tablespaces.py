@@ -516,7 +516,7 @@ def test_large_index_files_upload_parts_at_once(tmp_path: Path) -> None:
         finally:
             server.stop()
     assert fake.requests["PUT_PART"] > 2, fake.requests
-    assert fake.max_parts_in_flight > 1, fake.requests
+    assert fake.max_upload_parts_in_flight > 1, fake.requests
     assert fake.requests["CHECKSUM"] > fake.requests["COMPLETE_UPLOAD"] > 0, fake.requests
     assert fake.requests["UNSIGNED_PAYLOAD"] >= fake.requests["PUT_PART"], fake.requests
     assert fake.requests["SIGNED_PAYLOAD"] == 0, fake.requests
@@ -546,6 +546,46 @@ def test_blob_blocks_are_staged_from_cache_blocks_and_read_back(tmp_path: Path) 
             assert _count_fox(again) == 20000
         finally:
             again.stop()
+
+
+def test_one_part_in_flight_sends_each_part_from_the_write_that_fills_it(
+        tmp_path: Path) -> None:
+    location = f"s3://bucket/serial-{tmp_path.name}"
+    with FakeS3(latency=0.05) as fake:
+        server = _Server(tmp_path / "data")
+        try:
+            assert server.wait_ready(), server.output()
+            with server.connect() as conn:
+                conn.execute("SET GLOBAL s3_uploader_parts_in_flight = 1")
+            _large_table(server, _Store(fake.endpoint, "key", "secret", "bucket"),
+                         location)
+            with server.connect() as conn:
+                conn.execute(CREATE_INDEX)
+            assert _count_fox(server) == 300000
+        finally:
+            server.stop()
+    assert fake.requests["PUT_PART"] > 2, fake.requests
+    assert fake.max_upload_parts_in_flight == 1, fake.requests
+
+
+def test_one_block_in_flight_stages_each_block_from_the_write_that_fills_it(
+        tmp_path: Path) -> None:
+    datadir = tmp_path / "data"
+    with FakeAzure() as fake:
+        server = _Server(datadir)
+        try:
+            assert server.wait_ready(), server.output()
+            with server.connect() as conn:
+                conn.execute("SET GLOBAL azure_write_block_size = 1000000")
+                conn.execute("SET GLOBAL azure_write_blocks_in_flight = 1")
+            _create_azure_secret(server, fake, f"az://indexes/serial-{tmp_path.name}")
+            _fill_docs(server, 20000)
+            with server.connect() as conn:
+                conn.execute(CREATE_INDEX)
+            assert _count_fox(server) == 20000
+        finally:
+            server.stop()
+    assert fake.requests["PUT_BLOCK"] > 1, fake.requests
 
 
 @pytest.mark.faults

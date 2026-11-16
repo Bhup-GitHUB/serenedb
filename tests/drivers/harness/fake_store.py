@@ -10,6 +10,7 @@ import collections
 import email.utils
 import http.server
 import threading
+import time
 import urllib.parse
 from typing import Self
 
@@ -58,6 +59,33 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.fake.read_held.clear()
         return body[held[1]:]
 
+    def _send_body(self, body: bytes, trickle: bool, held: str | None) -> None:
+        if not body or self.command == "HEAD":
+            return
+        if held is not None:
+            body = self._send_held(held, body)
+        rate = self.fake.trickle if trickle else 0
+        if not rate:
+            self.wfile.write(body)
+            return
+        chunk = max(1, rate // 10)
+        try:
+            for offset in range(0, len(body), chunk):
+                self.wfile.write(body[offset:offset + chunk])
+                self.wfile.flush()
+                time.sleep(chunk / rate)
+        except OSError:
+            self.close_connection = True
+
+    def _dropped(self, kind: str, name: str) -> bool:
+        with self.fake.lock:
+            if self.fake.drop[kind] == 0:
+                return False
+            self.fake.drop[kind] -= 1
+            self.fake.dropped.append(name)
+        self.close_connection = True
+        return True
+
 
 class _Server(http.server.ThreadingHTTPServer):
     request_queue_size = 1024
@@ -71,6 +99,9 @@ class FakeStore:
         self.held_read: tuple[str, int] | None = None
         self.read_held = threading.Event()
         self.read_resumed = threading.Event()
+        self.trickle = 0
+        self.drop: collections.Counter[str] = collections.Counter()
+        self.dropped: list[str] = []
         store = self
 
         class BoundHandler(handler):

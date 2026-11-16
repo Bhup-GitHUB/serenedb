@@ -578,8 +578,7 @@ void ConnectionContext::OnBoundPlan(duckdb::Binder& binder,
 }
 
 duckdb::shared_ptr<duckdb::ClientContext> CreateClientContext(
-  duckdb::DatabaseInstance& db,
-  duckdb::shared_ptr<duckdb::AttachedDatabase> temporary) {
+  duckdb::DatabaseInstance& db) {
   auto& manager = db.GetDatabaseManager();
   const auto name = manager.GetDefaultDatabase();
   duckdb::idx_t oid = 0;
@@ -592,8 +591,7 @@ duckdb::shared_ptr<duckdb::ClientContext> CreateClientContext(
     db, SessionIdentity{.user = irs::StaticStrings::kDefaultUser,
                         .role = pg::kRootUser,
                         .database = name.GetIdentifierName(),
-                        .database_id = oid,
-                        .temporary = std::move(temporary)});
+                        .database_id = oid});
 }
 
 duckdb::unique_ptr<duckdb::Connection> MakeConnection(

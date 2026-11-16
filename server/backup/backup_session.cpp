@@ -23,28 +23,19 @@
 #include <absl/cleanup/cleanup.h>
 #include <absl/time/clock.h>
 
-#include <duckdb/main/attached_database.hpp>
-#include <duckdb/main/database_manager.hpp>
-#include <iresearch/utils/duckdb_engine.hpp>
 #include <iresearch/utils/log.hpp>
 #include <iresearch/utils/pg/errcodes.hpp>
 #include <iresearch/utils/pg/sql_exception_macro.hpp>
 #include <optional>
-#include <span>
 #include <utility>
 
 #include "backup/backup_label.h"
 #include "backup/commit_gate.h"
 #include "backup/pg_control.h"
-#include "catalog/boot.h"
-#include "catalog/catalog.h"
 #include "catalog/cluster.h"
 #include "catalog/database_directory.h"
-#include "catalog/entry/inverted_index.h"
-#include "catalog/entry/search_table.h"
 #include "catalog/log.h"
 #include "catalog/transaction.h"
-#include "search/store.h"
 #include "search/task.h"
 #include "storage_engine/search_engine.h"
 
@@ -58,7 +49,6 @@ Cut RecordCut(duckdb::ClientContext& context, const std::string& backup_dir,
   const auto commits = CommitGate().Close(context);
   auto* log = catalog::Transactions::Get().GetLog();
   SDB_ENSURE(log, "cannot start a backup of a server without a log");
-  cut.log_link = duckdb::FileSystem::JoinPath(catalog::kEngineDir, kBackupDir);
   cut.log_size = log->Link(backup_dir);
   return cut;
 }
@@ -99,10 +89,6 @@ uint64_t BackupSession::Begin(duckdb::ClientContext& context, BackupOwner owner,
       ERR_MSG("a backup is already in progress"),
       ERR_DETAIL("It is held by the session with PID ", holder, "."));
   }
-  auto pins = catalog::SereneDBDatabases(
-    duckdb::DatabaseManager::Get(irs::DuckDBEngine::Instance().instance()));
-  std::erase_if(pins,
-                [](const auto& db) { return db->GetCatalog().InMemory(); });
   auto& fs = catalog::StorageFileSystem();
   auto backup_dir =
     fs.JoinPath(catalog::ClusterOf().Layout().engine, kBackupDir);
@@ -142,7 +128,6 @@ uint64_t BackupSession::Begin(duckdb::ClientContext& context, BackupOwner owner,
   // Noexcept committing of backup start
   _checkpoints = std::move(checkpoints);
   _maintenance = std::move(maintenance);
-  _pins = std::move(pins);
   _backup_dir = std::move(backup_dir);
   _owner = owner;
   _label_file = std::move(label_file);
@@ -184,7 +169,6 @@ void BackupSession::Stop() noexcept {
   search::RequestCleanups();
   _checkpoints.reset();
   catalog::ResumeRemovals();
-  _pins.clear();
   catalog::Log::Remove(catalog::StorageFileSystem(), _backup_dir);
   _backup_dir.clear();
   _owner = {};

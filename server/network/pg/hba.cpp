@@ -34,7 +34,6 @@
 #include <duckdb/common/query_context.hpp>
 #include <duckdb/main/database.hpp>
 #include <exception>
-#include <filesystem>
 #include <iresearch/store/storage.hpp>
 #include <iresearch/utils/duckdb_engine.hpp>
 #include <iresearch/utils/log.hpp>
@@ -948,10 +947,7 @@ std::optional<std::string> WriteConfigFile(std::string_view text) {
   }
   auto& fs = irs::DuckDBEngine::Instance().instance().GetInternalFileSystem();
   try {
-    if (const auto parent = std::filesystem::path{path}.parent_path();
-        !parent.empty()) {
-      fs.CreateDirectoriesRecursive(parent.string());
-    }
+    fs.CreateDirectoriesRecursive(fs.JoinPath(path, ".."));
     SDB_IF_FAILURE("hba_config_write_fails") {
       THROW_SQL_ERROR(ERR_MSG("intentional debug error"));
     }

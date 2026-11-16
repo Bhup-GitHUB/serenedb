@@ -21,12 +21,10 @@
 #include "catalog/database_directory.h"
 
 #include <absl/functional/any_invocable.h>
-#include <absl/strings/str_cat.h>
 #include <absl/synchronization/mutex.h>
 
 #include <atomic>
 #include <duckdb/common/error_data.hpp>
-#include <duckdb/common/fault_points.hpp>
 #include <duckdb/common/file_system.hpp>
 #include <duckdb/main/database.hpp>
 #include <duckdb/parallel/task_scheduler.hpp>

@@ -102,9 +102,6 @@ auto ResolveInput(const duckdb::InputFile& doc, const duckdb::InputFile& pos,
   return f.template operator()<duckdb::InputFileReader>();
 }
 
-// TODO(mbkkt) Make it overloads
-// Remove to many Readers implementations
-
 template<typename Input>
 void SkipScoreBounds(bool has_score_bounds, Input& in) {
   if (has_score_bounds) {

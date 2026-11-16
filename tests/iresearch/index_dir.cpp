@@ -108,12 +108,6 @@ std::vector<std::string> IndexDir::Files() const {
   return files;
 }
 
-void IndexDir::Visit(absl::FunctionRef<void(std::string_view)> visitor) const {
-  for (const auto& name : Files()) {
-    visitor(name);
-  }
-}
-
 irs::IndexReaderOptions IndexDir::ReaderOptions(
   irs::IndexReaderOptions options) const {
   if (!options.released) {

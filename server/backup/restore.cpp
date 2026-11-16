@@ -92,7 +92,7 @@ void Restore(const catalog::DataDirectory& layout,
   RequireDirectory(fs, layout.StoreDir());
 
   const auto log = layout.LogDir();
-  if (const auto link = fs.JoinPath(data_dir, cut.log_link);
+  if (const auto link = fs.JoinPath(layout.engine, kBackupDir);
       fs.DirectoryExists(link)) {
     fs.CreateDirectoryExtended(
       log, {.mode = duckdb::CreateDirectoryMode::RECURSIVE});
@@ -104,7 +104,6 @@ void Restore(const catalog::DataDirectory& layout,
 
   fs.TryRemoveFile(fs.JoinPath(data_dir, "recovery.signal"));
   fs.TryRemoveFile(fs.JoinPath(data_dir, "standby.signal"));
-  RemoveLogCopy(fs, fs.JoinPath(layout.engine, kBackupDir));
   SDB_IF_FAILURE("crash_in_restore_after_cleanup") { SDB_IMMEDIATE_ABORT(); }
   irs::WriteWhole(fs, fs.JoinPath(layout.engine, kSubscriptionHoldFile), {},
                   true);

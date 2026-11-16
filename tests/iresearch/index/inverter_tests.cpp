@@ -2330,10 +2330,10 @@ TEST(InverterEndToEndTest, EmptyPositionalFieldWritesNoStreams) {
     }
     bool has_pos = false;
     bool has_pay = false;
-    dir.Visit([&](std::string_view name) {
+    for (const auto& name : dir.Files()) {
       has_pos |= name.ends_with(".pos");
       has_pay |= name.ends_with(".pay");
-    });
+    }
     EXPECT_EQ(text_tokens, has_pos);
     EXPECT_EQ(text_tokens, has_pay);
   };

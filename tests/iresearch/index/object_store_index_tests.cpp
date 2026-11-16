@@ -625,9 +625,7 @@ TEST(ObjectStoreIndexTest, a_listing_skips_nested_objects) {
   const tests::IndexDir nested{Db(), absl::StrCat(root, "/nested")};
   nested.Create("inner")->Close();
 
-  std::vector<std::string> names;
-  dir.Visit([&](std::string_view name) { names.emplace_back(name); });
-  EXPECT_EQ(std::vector<std::string>{"top"}, names);
+  EXPECT_EQ(std::vector<std::string>{"top"}, dir.Files());
 }
 
 TEST(ObjectStoreIndexTest, posting_heads_prefetch_every_clause) {

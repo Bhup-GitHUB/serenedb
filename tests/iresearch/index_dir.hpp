@@ -21,7 +21,6 @@
 #pragma once
 
 #include <absl/base/thread_annotations.h>
-#include <absl/functional/function_ref.h>
 #include <absl/synchronization/mutex.h>
 
 #include <duckdb/common/file_system.hpp>
@@ -29,9 +28,9 @@
 #include <duckdb/common/serializer/buffered_file_writer.hpp>
 #include <duckdb/main/database.hpp>
 #include <duckdb/storage/external_file_cache/input_file_reader.hpp>
+#include <iresearch/formats/flush_state.hpp>
 #include <iresearch/index/index_meta.hpp>
 #include <iresearch/index/index_reader_options.hpp>
-#include <iresearch/formats/flush_state.hpp>
 #include <iresearch/index/segment_hold.hpp>
 #include <iresearch/store/storage.hpp>
 #include <iresearch/utils/string.hpp>
@@ -66,7 +65,6 @@ class IndexDir {
   void Sync(std::span<const std::string_view> names) const;
   void Compact(std::string_view name) const;
   std::vector<std::string> Files() const;
-  void Visit(absl::FunctionRef<void(std::string_view)> visitor) const;
 
   duckdb::DatabaseInstance& Db() const noexcept { return _state->db; }
   duckdb::FileSystem& Fs() const noexcept { return _state->fs; }

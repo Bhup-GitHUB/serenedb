@@ -128,11 +128,10 @@ duckdb::shared_ptr<duckdb::InputFile> HookFileSystem::OpenBlockFile(
 }
 
 duckdb::unique_ptr<duckdb::FileWriter> HookFileSystem::OpenFileWriter(
-  const std::string& path, bool keep_cached,
-  duckdb::optional_ptr<duckdb::FileOpener> opener) {
+  const std::string& path, duckdb::optional_ptr<duckdb::FileOpener> opener) {
   OnCreate(Name(path));
   auto writer = duckdb::make_uniq<HookFileWriter>(
-    *this, _inner.OpenFileWriter(path, keep_cached, opener), path);
+    *this, _inner.OpenFileWriter(path, opener), path);
   OnCreated(Name(path));
   return writer;
 }
@@ -206,7 +205,6 @@ bool HookFileSystem::OnDiskFile(duckdb::FileHandle& handle) {
 duckdb::FileExistence HookFileSystem::TryFileExists(
   const std::string& filename, duckdb::optional_ptr<duckdb::FileOpener> opener,
   duckdb::optional_ptr<duckdb::ErrorData> error) {
-  OnExists(Name(filename));
   return _inner.TryFileExists(filename, opener, error);
 }
 
@@ -238,7 +236,6 @@ bool HookFileSystem::ListFiles(
 void HookFileSystem::MoveFile(const std::string& source,
                               const std::string& target,
                               duckdb::optional_ptr<duckdb::FileOpener> opener) {
-  OnRename(Name(source), Name(target));
   _inner.MoveFile(source, target, opener);
 }
 
@@ -259,7 +256,6 @@ bool HookFileSystem::TryRemoveFile(
 void HookFileSystem::SyncDirectory(
   const std::string& directory,
   duckdb::optional_ptr<duckdb::FileOpener> opener) {
-  OnSyncDirectory();
   _inner.SyncDirectory(directory, opener);
 }
 

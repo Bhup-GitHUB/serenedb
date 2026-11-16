@@ -114,7 +114,7 @@ uint64_t EncodeCluster(QuantizerWriter& writer, duckdb::WriteStream& out,
   return c.pay_start;
 }
 
-bstring ReadPayload(MemoryFile& file, uint64_t start, uint64_t end) {
+bstring ReadPayload(duckdb::MemoryStream& file, uint64_t start, uint64_t end) {
   bstring payload(end - start, 0);
   const auto file_bytes = tests::Bytes(file);
   duckdb::InputFileReader in{file_bytes};
@@ -125,11 +125,11 @@ bstring ReadPayload(MemoryFile& file, uint64_t start, uint64_t end) {
 
 bstring EncodeChunks(QuantizerWriter& writer, const std::vector<float>& points,
                      uint32_t d, std::span<const size_t> chunks) {
-  MemoryFile file;
+  duckdb::MemoryStream file;
   uint64_t start = 0;
   uint64_t end = 0;
   {
-    MemoryFileOutput out{file};
+    auto& out = file;
     start = out.Position();
     PayloadStream stream{writer};
     size_t off = 0;
@@ -138,7 +138,6 @@ bstring EncodeChunks(QuantizerWriter& writer, const std::vector<float>& points,
       off += m;
     }
     stream.Finish(out);
-    out.Flush();
     end = out.Position();
   }
   return ReadPayload(file, start, end);
@@ -157,7 +156,7 @@ void ExpectBytesEq(const bstring& want, const bstring& got) {
 class ClusterScorer {
  public:
   ClusterScorer(const std::shared_ptr<const QuantizerCodebook>& codebook,
-                MemoryFile& file, uint64_t pay_start, size_t total,
+                duckdb::MemoryStream& file, uint64_t pay_start, size_t total,
                 const float* centroid, uint32_t lane0 = 0)
     : _qr{MakeQuantizerReader(codebook)},
       _setting{_qr->BlockSetting()},
@@ -257,13 +256,12 @@ std::array<score_t, 3> PqRoundtrip(uint32_t d, uint32_t pq_m,
   }
   writer->Train(residual_train.data(), residual_train.size() / d);
 
-  MemoryFile file;
+  duckdb::MemoryStream file;
   uint64_t pay_start;
   {
-    MemoryFileOutput out{file};
+    auto& out = file;
     pay_start = out.Position();
     EncodeCluster(*writer, out, points.data(), 3);
-    out.Flush();
   }
 
   const bstring blob = SerializeStats(*writer);
@@ -306,10 +304,10 @@ TEST_P(none_quantizer_test, roundtrip_is_bit_exact) {
   EXPECT_EQ(writer->BlockSetting().group_size, 1);
   EXPECT_TRUE(SerializeStats(*writer).empty());
 
-  MemoryFile file;
+  duckdb::MemoryStream file;
   uint64_t pay_start;
   {
-    MemoryFileOutput out{file};
+    auto& out = file;
     pay_start = out.Position();
     {
       PayloadStream stream{*writer};
@@ -317,7 +315,6 @@ TEST_P(none_quantizer_test, roundtrip_is_bit_exact) {
       stream.Add(out, points.data() + kFirstBatch * d, n - kFirstBatch);
       stream.Finish(out);
     }
-    out.Flush();
     EXPECT_EQ(out.Position() - pay_start, n * d * sizeof(float));
   }
 
@@ -393,7 +390,7 @@ std::vector<float> MakePanoramaData(uint32_t d, size_t n, uint32_t seed) {
 }
 
 struct PanoramaIndex {
-  MemoryFile file;
+  duckdb::MemoryStream file;
   std::unique_ptr<QuantizerWriter> writer;
   bstring blob;
   uint64_t pay_start = 0;
@@ -421,7 +418,7 @@ void BuildPanorama(PanoramaIndex& index, uint32_t d, VectorMetric metric,
   EXPECT_EQ(index.blob.size(),
             2 * sizeof(uint32_t) + size_t{d} * d * sizeof(float));
 
-  MemoryFileOutput out{index.file};
+  auto& out = index.file;
   index.pay_start = out.Position();
   constexpr size_t kBatch = kPostingBlock;
   {
@@ -432,7 +429,6 @@ void BuildPanorama(PanoramaIndex& index, uint32_t d, VectorMetric metric,
     }
     stream.Finish(out);
   }
-  out.Flush();
 }
 
 ClusterScorer OpenPanorama(PanoramaIndex& index, uint32_t d,
@@ -651,13 +647,12 @@ TEST_P(rabitq_quantizer_test, roundtrip_ranking_across_dims) {
             size_t{d} * d * sizeof(float));  // never a dense matrix
   writer->SetClusterCentroid(centroid.data());
 
-  MemoryFile file;
+  duckdb::MemoryStream file;
   uint64_t pay_start;
   {
-    MemoryFileOutput out{file};
+    auto& out = file;
     pay_start = out.Position();
     EncodeCluster(*writer, out, points.data(), n);
-    out.Flush();
   }
 
   std::vector<float> query(d, 0.f);
@@ -697,13 +692,12 @@ TEST(rabitq_quantizer_test, roundtrip_ranking_matches_exact_l2) {
   ASSERT_NE(writer, nullptr);
   writer->SetClusterCentroid(centroid.data());
 
-  MemoryFile file;
+  duckdb::MemoryStream file;
   uint64_t pay_start;
   {
-    MemoryFileOutput out{file};
+    auto& out = file;
     pay_start = out.Position();
     EncodeCluster(*writer, out, points.data(), n);
-    out.Flush();
   }
 
   // Query closest to p0 (distance 0.5), then p1 (2.5), then p2 (18.5).
@@ -761,13 +755,12 @@ TEST(rabitq_quantizer_test, roundtrip_ranking_matches_exact_inner_product) {
   ASSERT_NE(writer, nullptr);
   writer->SetClusterCentroid(centroid.data());
 
-  MemoryFile file;
+  duckdb::MemoryStream file;
   uint64_t pay_start;
   {
-    MemoryFileOutput out{file};
+    auto& out = file;
     pay_start = out.Position();
     EncodeCluster(*writer, out, points.data(), n);
-    out.Flush();
   }
 
   const std::vector<float> query{3.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f};
@@ -801,13 +794,12 @@ std::vector<score_t> RaBitQRoundtrip(uint32_t d, uint32_t nb_bits,
   EXPECT_NE(writer, nullptr);
   writer->SetClusterCentroid(centroid.data());
 
-  MemoryFile file;
+  duckdb::MemoryStream file;
   uint64_t pay_start;
   {
-    MemoryFileOutput out{file};
+    auto& out = file;
     pay_start = out.Position();
     EncodeCluster(*writer, out, points.data(), n);
-    out.Flush();
   }
 
   const bstring blob = SerializeStats(*writer);
@@ -879,18 +871,17 @@ TEST(rabitq_quantizer_test, one_bit_scores_comparable_across_clusters) {
     {.kind = VectorQuantization::RaBitQ, .nb_bits = 1}, d, metric);
   ASSERT_NE(writer, nullptr);
 
-  MemoryFile file;
+  duckdb::MemoryStream file;
   PayloadStream::Cluster cl1;
   PayloadStream::Cluster cl2;
   {
-    MemoryFileOutput out{file};
+    auto& out = file;
     PayloadStream stream{*writer};
     writer->SetClusterCentroid(c1.data());
     cl1 = stream.Add(out, points1.data(), 2);
     writer->SetClusterCentroid(c2.data());
     cl2 = stream.Add(out, points2.data(), 2);
     stream.Finish(out);
-    out.Flush();
   }
 
   std::vector<float> query(d, 5.f);
@@ -1063,18 +1054,17 @@ TEST(pq_quantizer_test, l2_scores_comparable_across_clusters) {
   }
   writer->Train(train.data(), train.size() / d);
 
-  MemoryFile file;
+  duckdb::MemoryStream file;
   PayloadStream::Cluster cl1;
   PayloadStream::Cluster cl2;
   {
-    MemoryFileOutput out{file};
+    auto& out = file;
     PayloadStream stream{*writer};
     writer->SetClusterCentroid(c1.data());
     cl1 = stream.Add(out, points1.data(), 2);
     writer->SetClusterCentroid(c2.data());
     cl2 = stream.Add(out, points2.data(), 2);
     stream.Finish(out);
-    out.Flush();
   }
 
   std::vector<float> query(d, 0.f);
@@ -1128,13 +1118,12 @@ TEST(pq_quantizer_test, cluster_spans_multiple_fastscan_blocks_with_odd_m) {
   writer->SetClusterCentroid(centroid.data());
   writer->Train(points.data(), n);
 
-  MemoryFile file;
+  duckdb::MemoryStream file;
   uint64_t pay_start;
   {
-    MemoryFileOutput out{file};
+    auto& out = file;
     pay_start = out.Position();
     EncodeCluster(*writer, out, points.data(), n);
-    out.Flush();
   }
 
   const std::vector<float> query{1.5f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f};
@@ -1229,12 +1218,12 @@ void ExpectSharedGroupsMatchSoloClusters(
   ASSERT_EQ(centroids.size(), sizes.size() * d);
   ASSERT_EQ(SerializeStats(*make()), SerializeStats(*make()));
 
-  MemoryFile shared_file;
+  duckdb::MemoryStream shared_file;
   std::vector<PayloadStream::Cluster> spans;
   auto shared_w = make();
   uint64_t shared_bytes = 0;
   {
-    MemoryFileOutput out{shared_file};
+    auto& out = shared_file;
     PayloadStream stream{*shared_w};
     size_t off = 0;
     for (size_t c = 0; c < sizes.size(); ++c) {
@@ -1243,7 +1232,6 @@ void ExpectSharedGroupsMatchSoloClusters(
       off += sizes[c];
     }
     stream.Finish(out);
-    out.Flush();
     shared_bytes = out.Position();
   }
   // The whole point: one padded group for the stream, not one per cluster.
@@ -1271,15 +1259,14 @@ void ExpectSharedGroupsMatchSoloClusters(
     const float* cen = centroids.data() + c * d;
     shares = shares || spans[c].lane0 != 0;
 
-    MemoryFile solo_file;
+    duckdb::MemoryStream solo_file;
     auto solo_w = make();
     uint64_t solo_start = 0;
     {
-      MemoryFileOutput out{solo_file};
+      auto& out = solo_file;
       solo_w->SetClusterCentroid(cen);
       solo_start =
         EncodeCluster(*solo_w, out, points.data() + off * d, sizes[c]);
-      out.Flush();
     }
     auto solo_stats =
       MakeQuantizerStats(quant, d, SerializeStats(*solo_w), metric);
@@ -1709,15 +1696,14 @@ TEST_P(code_rekey_test, encode_into_matches_encode) {
   if (QuantizerNeedsCentroid(quant)) {
     writer->SetClusterCentroid(centroid.data());
   }
-  MemoryFile file;
+  duckdb::MemoryStream file;
   uint64_t start = 0;
   uint64_t end = 0;
   {
-    MemoryFileOutput out{file};
+    auto& out = file;
     start = out.Position();
     writer->Encode(out, points.data(), n);
     writer->Finish(out);
-    out.Flush();
     end = out.Position();
   }
   ExpectBytesEq(ReadPayload(file, start, end), f.codes);
@@ -2752,15 +2738,14 @@ TEST(hnsw_pq_quantizer_test, encode_into_matches_encode) {
                         VectorMetric::InnerProduct, 0, /*row_major=*/true);
   ASSERT_NE(writer, nullptr);
   writer->Train(points.data(), std::min(n, writer->TrainSamples(n)));
-  MemoryFile file;
+  duckdb::MemoryStream file;
   uint64_t start = 0;
   uint64_t end = 0;
   {
-    MemoryFileOutput out{file};
+    auto& out = file;
     start = out.Position();
     writer->Encode(out, points.data(), n);
     writer->Finish(out);
-    out.Flush();
     end = out.Position();
   }
   ExpectBytesEq(ReadPayload(file, start, end), f.codes);

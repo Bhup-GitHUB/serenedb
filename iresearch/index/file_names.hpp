@@ -41,14 +41,7 @@ std::vector<std::string> SegmentFiles(std::string_view segment, uint8_t kinds);
 
 std::string FileName(uint64_t id);
 
-// Returns string in the following format : {name}.{ext}
-void FileName(std::string& out, std::string_view name, std::string_view ext);
-
-inline std::string FileName(std::string_view name, std::string_view ext) {
-  std::string result;
-  FileName(result, name, ext);
-  return result;
-}
+std::string FileName(std::string_view name, std::string_view ext);
 
 bool ParseSegmentId(std::string_view name, uint64_t& id) noexcept;
 

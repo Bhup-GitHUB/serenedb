@@ -82,9 +82,7 @@ class FailingFileSystem final : public tests::HookFileSystem {
  public:
   enum class Failure : size_t {
     CREATE = 0,
-    EXISTS,
     OPEN,
-    RENAME,
     REMOVE,
     SYNC,
     CLOSE,
@@ -104,12 +102,8 @@ class FailingFileSystem final : public tests::HookFileSystem {
   bool NoFailures() const noexcept { return _failures.empty(); }
 
   void OnCreate(std::string_view name) final { Inject(Failure::CREATE, name); }
-  void OnExists(std::string_view name) final { Inject(Failure::EXISTS, name); }
   void OnOpen(std::string_view name) final { Inject(Failure::OPEN, name); }
   void OnRemove(std::string_view name) final { Inject(Failure::REMOVE, name); }
-  void OnRename(std::string_view src, std::string_view) final {
-    Inject(Failure::RENAME, src);
-  }
   void OnSync(std::string_view name) final { Inject(Failure::SYNC, name); }
   void OnClose(std::string_view name) final { Inject(Failure::CLOSE, name); }
 

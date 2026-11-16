@@ -27,6 +27,7 @@
 
 #include "iresearch/index/composite_reader.hpp"
 #include "iresearch/index/index_meta.hpp"
+#include "iresearch/index/index_reader_options.hpp"
 
 namespace irs {
 

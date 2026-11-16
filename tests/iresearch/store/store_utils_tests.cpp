@@ -21,220 +21,63 @@
 /// @author Vasiliy Nabatchikov
 ////////////////////////////////////////////////////////////////////////////////
 
-#include <duckdb/common/serializer/memory_stream.hpp>
 #include <iresearch/utils/bytes_utils.hpp>
-#include <unordered_set>
 
 #include "tests_shared.hpp"
-#include "utils/write_helpers.hpp"
 
-using namespace irs;
-
-namespace tests::detail {
-
-template<typename T>
-void ReadWriteCore(const std::vector<T>& src,
-                   const std::function<T(duckdb::InputFileReader&)>& reader,
-                   const std::function<void(duckdb::WriteStream&, T)>& writer) {
-  duckdb::MemoryStream out;
-  std::for_each(src.begin(), src.end(),
-                [&out, &writer](const T& v) { writer(out, v); });
-
-  duckdb::InputFileReader in{irs::bytes_view{out.GetData(), out.GetPosition()}};
-  std::for_each(src.begin(), src.end(),
-                [&in, &reader](const T& v) { ASSERT_EQ(v, reader(in)); });
-}
-
-// Since NaN != NaN according to the ieee754
-template<typename T>
-void ReadWriteCoreNan(
-  const std::function<T(duckdb::InputFileReader&)>& reader,
-  const std::function<void(duckdb::WriteStream&, T)>& writer) {
-  duckdb::MemoryStream out;
-  writer(out, std::numeric_limits<T>::quiet_NaN());
-  writer(out, std::numeric_limits<T>::signaling_NaN());
-
-  duckdb::InputFileReader in{irs::bytes_view{out.GetData(), out.GetPosition()}};
-  ASSERT_TRUE(std::isnan(reader(in)));
-  ASSERT_TRUE(std::isnan(reader(in)));
-}
+namespace {
 
 template<typename T>
 void VencodeFromArray(T expected_value, size_t expected_length) {
   ASSERT_EQ(expected_length, irs::bytes_io<T>::vsize(expected_value));
   irs::byte_type buf[irs::bytes_io<T>::kMaxVSize]{};
 
-  // write data
-  {
-    auto* ptr = buf;
-    irs::WriteVarint<T>(expected_value, ptr);
-    ASSERT_EQ(expected_length, std::distance(buf, ptr));
-  }
+  auto* end = buf;
+  irs::WriteVarint<T>(expected_value, end);
+  ASSERT_EQ(expected_length, std::distance(buf, end));
 
-  // read data
-  {
-    const auto* ptr = buf;
-    ASSERT_EQ(expected_value, irs::vread<T>(ptr));
-    ASSERT_EQ(expected_length,
-              std::distance((const irs::byte_type*)(buf), ptr));
-  }
-
-  // skip data
-  {
-    const auto* ptr = buf;
-    irs::vskip<T>(ptr);
-    ASSERT_GE(ptr, buf);
-    ASSERT_EQ(expected_length,
-              std::distance((const irs::byte_type*)(buf), ptr));
-  }
+  const auto* ptr = buf;
+  ASSERT_EQ(expected_value, irs::vread<T>(ptr));
+  ASSERT_EQ(expected_length,
+            std::distance(static_cast<const irs::byte_type*>(buf), ptr));
 }
 
-}  // namespace tests::detail
+}  // namespace
 
 TEST(store_utils_tests, vint_from_array) {
-  tests::detail::VencodeFromArray(UINT32_C(0), 1);
-  tests::detail::VencodeFromArray(UINT32_C(1), 1);
-  tests::detail::VencodeFromArray(UINT32_C(100), 1);
-  tests::detail::VencodeFromArray(UINT32_C(127), 1);
-  tests::detail::VencodeFromArray(UINT32_C(128), 2);
-  tests::detail::VencodeFromArray(UINT32_C(16383), 2);
-  tests::detail::VencodeFromArray(UINT32_C(16384), 3);
-  tests::detail::VencodeFromArray(UINT32_C(32000), 3);
-  tests::detail::VencodeFromArray(UINT32_C(2097151), 3);
-  tests::detail::VencodeFromArray(UINT32_C(2097152), 4);
-  tests::detail::VencodeFromArray(UINT32_C(268435455), 4);
-  tests::detail::VencodeFromArray(UINT32_C(268435456), 5);
-  tests::detail::VencodeFromArray(std::numeric_limits<uint32_t>::max(), 5);
+  VencodeFromArray(UINT32_C(0), 1);
+  VencodeFromArray(UINT32_C(1), 1);
+  VencodeFromArray(UINT32_C(100), 1);
+  VencodeFromArray(UINT32_C(127), 1);
+  VencodeFromArray(UINT32_C(128), 2);
+  VencodeFromArray(UINT32_C(16383), 2);
+  VencodeFromArray(UINT32_C(16384), 3);
+  VencodeFromArray(UINT32_C(32000), 3);
+  VencodeFromArray(UINT32_C(2097151), 3);
+  VencodeFromArray(UINT32_C(2097152), 4);
+  VencodeFromArray(UINT32_C(268435455), 4);
+  VencodeFromArray(UINT32_C(268435456), 5);
+  VencodeFromArray(std::numeric_limits<uint32_t>::max(), 5);
 }
 
 TEST(store_utils_tests, vlong_from_array) {
-  tests::detail::VencodeFromArray(UINT64_C(0), 1);
-  tests::detail::VencodeFromArray(UINT64_C(1), 1);
-  tests::detail::VencodeFromArray(UINT64_C(100), 1);
-  tests::detail::VencodeFromArray(UINT64_C(127), 1);
-  tests::detail::VencodeFromArray(UINT64_C(128), 2);
-  tests::detail::VencodeFromArray(UINT64_C(16383), 2);
-  tests::detail::VencodeFromArray(UINT64_C(16384), 3);
-  tests::detail::VencodeFromArray(UINT64_C(32000), 3);
-  tests::detail::VencodeFromArray(UINT64_C(2097151), 3);
-  tests::detail::VencodeFromArray(UINT64_C(2097152), 4);
-  tests::detail::VencodeFromArray(UINT64_C(268435455), 4);
-  tests::detail::VencodeFromArray(UINT64_C(268435456), 5);
-  tests::detail::VencodeFromArray(UINT64_C(34359738367), 5);
-  tests::detail::VencodeFromArray(UINT64_C(34359738368), 6);
-  tests::detail::VencodeFromArray(UINT64_C(4398046511103), 6);
-  tests::detail::VencodeFromArray(UINT64_C(4398046511104), 7);
-  tests::detail::VencodeFromArray(UINT64_C(72057594037927935), 8);
-  tests::detail::VencodeFromArray(UINT64_C(72057594037927936), 9);
-  tests::detail::VencodeFromArray(std::numeric_limits<uint64_t>::max(), 10);
-}
-
-TEST(store_utils_tests, zvfloat_read_write) {
-  tests::detail::ReadWriteCore<float_t>(
-    {
-      std::numeric_limits<float_t>::max(),
-      std::numeric_limits<float_t>::min(),
-      0.f,
-      std::numeric_limits<float_t>::infinity(),
-      -std::numeric_limits<float_t>::infinity(),
-      125.f,
-      53.f,
-      -1.f,
-      823132.4332f,
-      132621123.234f - 21532764.631984f,
-      -9847.23427f,
-    },
-    tests::ReadZvfloat, tests::WriteZvfloat);
-
-  /* NaN case */
-  tests::detail::ReadWriteCoreNan<float_t>(tests::ReadZvfloat,
-                                           tests::WriteZvfloat);
-}
-
-TEST(store_utils_tests, zvdouble_read_write) {
-  tests::detail::ReadWriteCore<double_t>(
-    {
-      std::numeric_limits<double_t>::max(),
-      std::numeric_limits<double_t>::min(),
-      std::numeric_limits<float_t>::max(),
-      std::numeric_limits<float_t>::min(),
-      0.,
-      std::numeric_limits<double_t>::infinity(),
-      -std::numeric_limits<double_t>::infinity(),
-      123.,
-      43.,
-      -1.,
-      247280479234.1239171,
-      3694208.1320823132,
-      -19274316.123,
-      -98743098097.34352532,
-    },
-    tests::ReadZvdouble, tests::WriteZvdouble);
-
-  /* NaN case */
-  tests::detail::ReadWriteCoreNan<double_t>(tests::ReadZvdouble,
-                                            tests::WriteZvdouble);
-}
-
-static void WriteSize(duckdb::WriteStream& out, size_t size) {
-  out.Write<uint64_t>(size);
-}
-static size_t ReadSize(duckdb::InputFileReader& in) {
-  return in.Read<uint64_t>();
-}
-
-TEST(store_utils_tests, size_read_write) {
-  static_assert(sizeof(uint64_t) == sizeof(size_t));
-  tests::detail::ReadWriteCore<size_t>(
-    {
-      std::numeric_limits<size_t>::max(),
-      std::numeric_limits<size_t>::min(),
-      0,
-      size_t(2037323242),
-      size_t(123132142),
-      size_t(12371792192121),
-      size_t(9719496156),
-    },
-    ReadSize, WriteSize);
-}
-
-TEST(store_utils_tests, zvint_read_write) {
-  tests::detail::ReadWriteCore<int32_t>(
-    {
-      std::numeric_limits<int32_t>::max(),
-      std::numeric_limits<int32_t>::min(),
-      0,
-      103282101,
-      51916519,
-      -911728376,
-      -10725017,
-    },
-    irs::ReadZV32<duckdb::InputFileReader>, irs::WriteZV32);
-}
-
-TEST(store_utils_tests, std_string_read_write) {
-  tests::detail::ReadWriteCore<std::string>(
-    {
-      std::string(),
-      std::string(""),
-      std::string("quick brown fox 1232141"),
-      std::string("jumps over the 0218021"),
-      std::string("lazy p1230142hlds"),
-      std::string("dob  sdofjasoufdsa"),
-    },
-    irs::ReadString<std::string, duckdb::InputFileReader>,
-    tests::WriteStr<std::string>);
-}
-
-TEST(store_utils_tests, bytes_read_write) {
-  tests::detail::ReadWriteCore<bstring>(
-    {
-      bstring(),
-      bstring(irs::ViewCast<byte_type>(std::string_view("qalsdflsajfd"))),
-      bstring(irs::ViewCast<byte_type>(std::string_view("jfdldsflaflj"))),
-      bstring(irs::ViewCast<byte_type>(std::string_view("102174174010"))),
-      bstring(irs::ViewCast<byte_type>(std::string_view("0182ljdskfaof"))),
-    },
-    irs::ReadString<bstring, duckdb::InputFileReader>,
-    tests::WriteStr<bstring>);
+  VencodeFromArray(UINT64_C(0), 1);
+  VencodeFromArray(UINT64_C(1), 1);
+  VencodeFromArray(UINT64_C(100), 1);
+  VencodeFromArray(UINT64_C(127), 1);
+  VencodeFromArray(UINT64_C(128), 2);
+  VencodeFromArray(UINT64_C(16383), 2);
+  VencodeFromArray(UINT64_C(16384), 3);
+  VencodeFromArray(UINT64_C(32000), 3);
+  VencodeFromArray(UINT64_C(2097151), 3);
+  VencodeFromArray(UINT64_C(2097152), 4);
+  VencodeFromArray(UINT64_C(268435455), 4);
+  VencodeFromArray(UINT64_C(268435456), 5);
+  VencodeFromArray(UINT64_C(34359738367), 5);
+  VencodeFromArray(UINT64_C(34359738368), 6);
+  VencodeFromArray(UINT64_C(4398046511103), 6);
+  VencodeFromArray(UINT64_C(4398046511104), 7);
+  VencodeFromArray(UINT64_C(72057594037927935), 8);
+  VencodeFromArray(UINT64_C(72057594037927936), 9);
+  VencodeFromArray(std::numeric_limits<uint64_t>::max(), 10);
 }

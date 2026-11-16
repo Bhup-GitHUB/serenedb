@@ -498,17 +498,15 @@ TEST_P(BufferedColumnTestCase, StreamedRegions) {
 TEST(NormColumnReaderTest, CorruptExceptionIndexThrows) {
   constexpr uint32_t kRows = 4096;
   constexpr uint32_t kWideEvery = 512;
-  irs::MemoryFile written;
+  duckdb::MemoryStream written;
   irs::NormColumnMeta meta;
   {
-    irs::MemoryFileOutput out{written};
-    irs::NormColumnWriter writer{1, kRows,
-                                 [&]() -> duckdb::WriteStream& { return out; }};
+    irs::NormColumnWriter writer{
+      1, kRows, [&]() -> duckdb::WriteStream& { return written; }};
     for (uint32_t i = 0; i != kRows; ++i) {
       writer.Append(i, i % kWideEvery == 0 ? 70000 + i : 1 + i % 3);
     }
     writer.Finalize();
-    out.Flush();
     meta = writer.Meta();
   }
   ASSERT_EQ(meta.regions.size(), 1u);
@@ -521,14 +519,7 @@ TEST(NormColumnReaderTest, CorruptExceptionIndexThrows) {
     absl::little_endian::Store32(bytes.data() + region.table_offset + b * 4,
                                  region.exceptions);
   }
-  irs::MemoryFile corrupt;
-  {
-    irs::MemoryFileOutput out{corrupt};
-    out.WriteData(bytes.data(), bytes.size());
-    out.Flush();
-  }
-  const auto corrupt_bytes = tests::Bytes(corrupt);
-  const auto file = tests::OpenBytes(corrupt_bytes);
+  const auto file = tests::OpenBytes(bytes);
   const irs::NormColumnReader column{1, meta, *file};
   const auto reader = irs::MakePersistedNormReader(column);
   EXPECT_EQ(reader->Get(irs::doc_limits::min() + 1), 2u);

@@ -23,9 +23,6 @@
 #include <absl/algorithm/container.h>
 #include <absl/container/flat_hash_map.h>
 #include <absl/container/flat_hash_set.h>
-#include <absl/strings/ascii.h>
-#include <absl/strings/numbers.h>
-#include <absl/strings/str_cat.h>
 
 #include <algorithm>
 #include <duckdb/common/error_data.hpp>

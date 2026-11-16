@@ -179,7 +179,6 @@ add_executable(
     store/index_input_tests.cpp
     store/simulated_object_store_tests.cpp
     store/store_utils_tests.cpp
-    utils/bit_packing_tests.cpp
     utils/bit_utils_tests.cpp
     utils/bitset_tests.cpp
     utils/bitvector_tests.cpp

@@ -20,15 +20,15 @@
 
 #include "search/log_entry.h"
 
-#include <cstring>
 #include <duckdb/common/serializer/binary_deserializer.hpp>
 #include <duckdb/common/serializer/binary_serializer.hpp>
 #include <duckdb/common/serializer/memory_stream.hpp>
+#include <iresearch/index/document_mask.hpp>
 #include <iresearch/utils/assert.hpp>
 #include <iresearch/utils/pg/errcodes.hpp>
 #include <iresearch/utils/pg/sql_exception_macro.hpp>
+#include <iresearch/utils/string.hpp>
 #include <memory>
-#include <new>
 #include <utility>
 #include <vector>
 
@@ -39,16 +39,12 @@
 namespace sdb::search {
 namespace {
 
-constexpr std::align_val_t kFrozenAlignment{32};
-
 std::string Frozen(const irs::DocumentMask& mask) {
   const auto size = mask.FrozenSize();
-  std::unique_ptr<char, decltype([](char* frozen) {
-                    ::operator delete(frozen, kFrozenAlignment);
-                  })>
-    aligned{static_cast<char*>(::operator new(size, kFrozenAlignment))};
-  mask.WriteFrozen(aligned.get());
-  return std::string{aligned.get(), size};
+  const auto aligned = irs::DocumentMask::AllocateFrozen(size);
+  auto* data = reinterpret_cast<char*>(aligned.get());
+  mask.WriteFrozen(data);
+  return std::string{data, size};
 }
 
 std::shared_ptr<const irs::DocumentMask> Thawed(std::string_view bytes) {
@@ -56,13 +52,8 @@ std::shared_ptr<const irs::DocumentMask> Thawed(std::string_view bytes) {
     THROW_SQL_ERROR(ERR_CODE(ERRCODE_DATA_CORRUPTED),
                     ERR_MSG("search log: deletes without rows"));
   }
-  std::shared_ptr<irs::byte_type> buffer{
-    static_cast<irs::byte_type*>(
-      ::operator new(bytes.size(), kFrozenAlignment)),
-    [](irs::byte_type* data) { ::operator delete(data, kFrozenAlignment); }};
-  std::memcpy(buffer.get(), bytes.data(), bytes.size());
-  return std::make_shared<const irs::DocumentMask>(std::move(buffer),
-                                                   bytes.size());
+  return std::make_shared<const irs::DocumentMask>(
+    irs::DocumentMask::ReadFrozen(irs::ViewCast<irs::byte_type>(bytes)));
 }
 
 void WritePatch(duckdb::Serializer& object, const irs::FieldPatch& field) {

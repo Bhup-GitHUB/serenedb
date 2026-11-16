@@ -53,9 +53,6 @@ class FakeAzure(FakeStore):
         self.staged: dict[tuple[str, str], dict[str, bytes]] = {}
         self.appended: dict[tuple[str, str], bytearray] = {}
         self.directories: set[tuple[str, str]] = set()
-        self.trickle = 0
-        self.drop: collections.Counter[str] = collections.Counter()
-        self.dropped: list[str] = []
         self.hold: dict[str, threading.Event] = {}
         self.unheld: collections.Counter[str] = collections.Counter()
 
@@ -125,22 +122,7 @@ class _Handler(Handler):
             self.send_header(name, value)
         self.send_header("Content-Length", str(len(body) if content_length is None else content_length))
         self.end_headers()
-        if not body or self.command == "HEAD":
-            return
-        if held is not None:
-            body = self._send_held(held, body)
-        rate = self.fake.trickle if trickle else 0
-        if not rate:
-            self.wfile.write(body)
-            return
-        chunk = max(1, rate // 10)
-        try:
-            for offset in range(0, len(body), chunk):
-                self.wfile.write(body[offset:offset + chunk])
-                self.wfile.flush()
-                time.sleep(chunk / rate)
-        except OSError:
-            self.close_connection = True
+        self._send_body(body, trickle, held)
 
     def _error(self, status: int, code: str) -> None:
         if self.command == "HEAD":
@@ -172,15 +154,6 @@ class _Handler(Handler):
 
     def _occupied(self, container: str, name: str) -> bool:
         return self.headers.get("If-None-Match") == "*" and (container, name) in self.fake.blobs
-
-    def _dropped(self, kind: str, name: str) -> bool:
-        with self.fake.lock:
-            if self.fake.drop[kind] == 0:
-                return False
-            self.fake.drop[kind] -= 1
-            self.fake.dropped.append(name)
-        self.close_connection = True
-        return True
 
     def do_HEAD(self) -> None:
         if self._forbidden():

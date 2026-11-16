@@ -53,9 +53,8 @@ void PrefetchDocExtents(const duckdb::InputFile& file, Metas&& metas) {
 }
 
 template<typename InputType>
-InputType OpenDocInput(
-  const PostingMeta& meta, const duckdb::InputFile& doc_in,
-  duckdb::ReadAheadSteps steps = duckdb::ReadAheadSteps::NONE) {
+InputType OpenDocInput(const PostingMeta& meta, const duckdb::InputFile& doc_in,
+                       duckdb::ReadAheadSteps steps) {
   if (meta.inline_size != 0) {
     return InputType{InlineInput(meta)};
   }

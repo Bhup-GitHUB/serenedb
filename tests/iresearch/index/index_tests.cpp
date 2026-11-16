@@ -23,6 +23,7 @@
 
 #include "index_tests.hpp"
 
+#include <absl/algorithm/container.h>
 #include <absl/container/flat_hash_set.h>
 #include <absl/random/random.h>
 #include <faiss/utils/distances.h>
@@ -4484,7 +4485,7 @@ TEST_P(IndexTestCase, compact_single_segment) {
 
     // get number of files in 1st segment
     count = 0;
-    dir().Visit(get_number_of_files_in_segments);
+    absl::c_for_each(dir().Files(), get_number_of_files_in_segments);
 
     ASSERT_TRUE(writer->Compact(irs::index_utils::MakePolicy(
       irs::index_utils::CompactionCount())));  // nothing to compact
@@ -4589,7 +4590,7 @@ TEST_P(IndexTestCase, segment_compact_long_running) {
     ASSERT_EQ(0, dir.RemoveReleased());
 
     // retrieve total number of segment files
-    dir.Visit(get_number_of_files_in_segments);
+    absl::c_for_each(dir.Files(), get_number_of_files_in_segments);
 
     // acquire file system lock, and block compaction
     fs.intermediate_commits_lock.lock();
@@ -4743,7 +4744,7 @@ TEST_P(IndexTestCase, segment_compact_long_running) {
 
     // retrieve total number of segment files
     count = 0;
-    dir.Visit(get_number_of_files_in_segments);
+    absl::c_for_each(dir.Files(), get_number_of_files_in_segments);
 
     // segment 2
     ASSERT_TRUE(InsertWithName(*writer, *doc2));
@@ -4902,7 +4903,7 @@ TEST_P(IndexTestCase, segment_compact_long_running) {
 
     // retrieve total number of segment files
     count = 0;
-    dir.Visit(get_number_of_files_in_segments);
+    absl::c_for_each(dir.Files(), get_number_of_files_in_segments);
 
     // acquire file system lock, and block compaction
     fs.intermediate_commits_lock.lock();
@@ -5041,7 +5042,7 @@ TEST_P(IndexTestCase, segment_compact_long_running) {
 
     // retrieve total number of segment files
     count = 0;
-    dir.Visit(get_number_of_files_in_segments);
+    absl::c_for_each(dir.Files(), get_number_of_files_in_segments);
 
     fs.intermediate_commits_lock
       .lock();  // acquire file system lock, and block compaction
@@ -5224,7 +5225,7 @@ TEST_P(IndexTestCase, segment_compact_commit) {
 
     // count number of files in segments
     count = 0;
-    dir().Visit(get_number_of_files_in_segments);
+    absl::c_for_each(dir().Files(), get_number_of_files_in_segments);
 
     ASSERT_TRUE(writer->Compact(irs::index_utils::MakePolicy(
       irs::index_utils::CompactionCount())));  // compact
@@ -5312,7 +5313,7 @@ TEST_P(IndexTestCase, segment_compact_commit) {
 
     // count number of files in segments
     count = 0;
-    dir().Visit(get_number_of_files_in_segments);
+    absl::c_for_each(dir().Files(), get_number_of_files_in_segments);
 
     // segment 3
     ASSERT_TRUE(InsertWithName(*writer, *doc3));
@@ -5421,7 +5422,7 @@ TEST_P(IndexTestCase, segment_compact_commit) {
 
     // count number of files in segments
     count = 0;
-    dir().Visit(get_number_of_files_in_segments);
+    absl::c_for_each(dir().Files(), get_number_of_files_in_segments);
 
     // segment 3
     ASSERT_TRUE(InsertWithName(*writer, *doc3));
@@ -5724,7 +5725,7 @@ TEST_P(IndexTestCase, segment_compact_pending_commit) {
 
     // count number of files in segments
     count = 0;
-    dir().Visit(get_number_of_files_in_segments);
+    absl::c_for_each(dir().Files(), get_number_of_files_in_segments);
 
     ASSERT_FALSE(
       writer
@@ -5827,7 +5828,7 @@ TEST_P(IndexTestCase, segment_compact_pending_commit) {
 
     // count number of files in segments
     count = 0;
-    dir().Visit(get_number_of_files_in_segments);
+    absl::c_for_each(dir().Files(), get_number_of_files_in_segments);
 
     // segment 3
     ASSERT_TRUE(InsertWithName(*writer, *doc3));
@@ -5957,7 +5958,7 @@ TEST_P(IndexTestCase, segment_compact_pending_commit) {
 
     // count number of files in segments
     count = 0;
-    dir().Visit(get_number_of_files_in_segments);
+    absl::c_for_each(dir().Files(), get_number_of_files_in_segments);
 
     // segment 3
     ASSERT_TRUE(InsertWithName(*writer, *doc3));
@@ -6122,7 +6123,7 @@ TEST_P(IndexTestCase, segment_compact_pending_commit) {
 
     // count number of files in segments
     count = 0;
-    dir().Visit(get_number_of_files_in_segments);
+    absl::c_for_each(dir().Files(), get_number_of_files_in_segments);
 
     ASSERT_EQ(0, dir().RemoveReleased());
     tests::Remove(*writer, query_doc1);
@@ -6260,7 +6261,7 @@ TEST_P(IndexTestCase, segment_compact_pending_commit) {
 
     // count number of files in segments
     count = 0;
-    dir().Visit(get_number_of_files_in_segments);
+    absl::c_for_each(dir().Files(), get_number_of_files_in_segments);
 
     ASSERT_EQ(0, dir().RemoveReleased());
     tests::Remove(*writer, query_doc1_doc4);
@@ -6400,7 +6401,7 @@ TEST_P(IndexTestCase, segment_compact_pending_commit) {
 
     // count number of files in segments
     count = 0;
-    dir().Visit(get_number_of_files_in_segments);
+    absl::c_for_each(dir().Files(), get_number_of_files_in_segments);
 
     ASSERT_EQ(0, dir().RemoveReleased());
     tests::Remove(*writer, query_doc1);
@@ -6528,7 +6529,7 @@ TEST_P(IndexTestCase, segment_compact_pending_commit) {
     AssertSnapshotEquality(*writer);
 
     count = 0;
-    dir().Visit(get_number_of_files_in_segments);
+    absl::c_for_each(dir().Files(), get_number_of_files_in_segments);
 
     ASSERT_TRUE(writer->Compact(
       irs::index_utils::MakePolicy(irs::index_utils::CompactionCount())));
@@ -6557,7 +6558,7 @@ TEST_P(IndexTestCase, segment_compact_pending_commit) {
 
     // count number of files in segments
     count = 0;
-    dir().Visit(get_number_of_files_in_segments);
+    absl::c_for_each(dir().Files(), get_number_of_files_in_segments);
 
     // segment 2
     ASSERT_TRUE(InsertWithName(*writer, *doc3));
@@ -6612,7 +6613,7 @@ TEST_P(IndexTestCase, segment_compact_pending_commit) {
     // check all data is deleted
     const auto one_segment_count = count;
     count = 0;
-    dir().Visit(get_number_of_files_in_segments);
+    absl::c_for_each(dir().Files(), get_number_of_files_in_segments);
     // files count should be the same as with one segment
     ASSERT_EQ(one_segment_count, count);
   }
@@ -6636,7 +6637,7 @@ TEST_P(IndexTestCase, segment_compact_pending_commit) {
 
     // count number of files in segments
     count = 0;
-    dir().Visit(get_number_of_files_in_segments);
+    absl::c_for_each(dir().Files(), get_number_of_files_in_segments);
 
     // segment 2
     ASSERT_TRUE(InsertWithName(*writer, *doc3));
@@ -6696,7 +6697,7 @@ TEST_P(IndexTestCase, segment_compact_pending_commit) {
     // check all data is deleted
     const auto one_segment_count = count;
     count = 0;
-    dir().Visit(get_number_of_files_in_segments);
+    absl::c_for_each(dir().Files(), get_number_of_files_in_segments);
     // files count should be the same as with one segment
     ASSERT_EQ(one_segment_count, count);
   }
@@ -6795,7 +6796,7 @@ TEST_P(IndexTestCase, segment_compact_pending_commit) {
 
     // count number of files in segments
     count = 0;
-    dir().Visit(get_number_of_files_in_segments);
+    absl::c_for_each(dir().Files(), get_number_of_files_in_segments);
 
     ASSERT_EQ(0, dir().RemoveReleased());
     tests::Remove(*writer, query_doc1_doc4);
@@ -6957,7 +6958,7 @@ TEST_P(IndexTestCase, segment_compact_pending_commit) {
 
     // count number of files in segments
     count = 0;
-    dir().Visit(get_number_of_files_in_segments);
+    absl::c_for_each(dir().Files(), get_number_of_files_in_segments);
 
     ASSERT_EQ(0, dir().RemoveReleased());
     ASSERT_TRUE(InsertWithName(*writer, *doc5));
@@ -7118,7 +7119,7 @@ TEST_P(IndexTestCase, segment_compact_pending_commit) {
 
     // count number of files in segments
     count = 0;
-    dir().Visit(get_number_of_files_in_segments);
+    absl::c_for_each(dir().Files(), get_number_of_files_in_segments);
 
     ASSERT_EQ(0, dir().RemoveReleased());
     ASSERT_TRUE(InsertWithName(*writer, *doc5));
@@ -8904,22 +8905,10 @@ TEST_P(IndexTestCase, writer_close) {
     AssertSnapshotEquality(*writer);
   }  // ensure writer is closed
 
-  std::vector<std::string> files;
-  auto list_files = [&files](std::string_view name) {
-    files.emplace_back(std::move(name));
-  };
-  directory.Visit(list_files);
-
-  // file removal should pass for all files (especially valid for Microsoft
-  // Windows)
-  for (auto& file : files) {
+  for (const auto& file : directory.Files()) {
     ASSERT_TRUE(directory.Remove(file));
   }
-
-  // validate that all files have been removed
-  files.clear();
-  directory.Visit(list_files);
-  ASSERT_TRUE(files.empty());
+  ASSERT_TRUE(directory.Files().empty());
 }
 
 TEST_P(IndexTestCase, writer_insert_immediate_remove) {
@@ -8947,7 +8936,7 @@ TEST_P(IndexTestCase, writer_insert_immediate_remove) {
       uint64_t id = 0;
       count += size_t(irs::ParseSegmentId(name, id));
     };
-  directory.Visit(get_number_of_files_in_segments);
+  absl::c_for_each(directory.Files(), get_number_of_files_in_segments);
   const auto one_segment_files_count = count;
 
   // Create segment and immediately do a remove operation
@@ -8981,7 +8970,7 @@ TEST_P(IndexTestCase, writer_insert_immediate_remove) {
 
   // validate that all files from old segments have been removed
   count = 0;
-  directory.Visit(get_number_of_files_in_segments);
+  absl::c_for_each(directory.Files(), get_number_of_files_in_segments);
   ASSERT_EQ(count, one_segment_files_count);
 }
 
@@ -9009,7 +8998,7 @@ TEST_P(IndexTestCase, writer_insert_immediate_remove_all) {
       uint64_t id = 0;
       count += size_t(irs::ParseSegmentId(name, id));
     };
-  directory.Visit(get_number_of_files_in_segments);
+  absl::c_for_each(directory.Files(), get_number_of_files_in_segments);
   const auto one_segment_files_count = count;
 
   // Create segment and immediately do a remove operation for all added
@@ -9046,7 +9035,7 @@ TEST_P(IndexTestCase, writer_insert_immediate_remove_all) {
 
   // validate that all files from old segments have been removed
   count = 0;
-  directory.Visit(get_number_of_files_in_segments);
+  absl::c_for_each(directory.Files(), get_number_of_files_in_segments);
   ASSERT_EQ(count, one_segment_files_count);
 }
 
@@ -9072,7 +9061,7 @@ TEST_P(IndexTestCase, writer_remove_all_from_last_segment) {
       uint64_t id = 0;
       count += size_t(irs::ParseSegmentId(name, id));
     };
-  directory.Visit(get_number_of_files_in_segments);
+  absl::c_for_each(directory.Files(), get_number_of_files_in_segments);
   ASSERT_GT(count, 0);
 
   // Remove all documents from segment
@@ -9091,7 +9080,7 @@ TEST_P(IndexTestCase, writer_remove_all_from_last_segment) {
 
     // validate that all files from old segments have been removed
     count = 0;
-    directory.Visit(get_number_of_files_in_segments);
+    absl::c_for_each(directory.Files(), get_number_of_files_in_segments);
     ASSERT_EQ(count, 0);
   }
 
@@ -9160,7 +9149,7 @@ TEST_P(IndexTestCase, writer_remove_all_from_last_segment_compaction) {
         uint64_t id = 0;
         count += size_t(irs::ParseSegmentId(name, id));
       };
-    directory.Visit(get_number_of_files_in_segments);
+    absl::c_for_each(directory.Files(), get_number_of_files_in_segments);
     ASSERT_EQ(count, 0);
   }
 

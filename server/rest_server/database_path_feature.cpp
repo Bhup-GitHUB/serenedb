@@ -27,7 +27,6 @@
 #include <duckdb/common/file_system.hpp>
 #include <duckdb/main/database.hpp>
 #include <exception>
-#include <filesystem>
 #include <iresearch/utils/application_exit.hpp>
 #include <iresearch/utils/duckdb_engine.hpp>
 #include <iresearch/utils/log.hpp>
@@ -53,16 +52,16 @@ namespace sdb {
 DatabasePathFeature::DatabasePathFeature()
   : _directory(
       lifecycle::ResolveDataDir(absl::GetFlag(FLAGS_server_directory))) {
+  auto& fs = irs::DuckDBEngine::Instance().instance().GetInternalFileSystem();
   // Resolve the HBA config path against the (now absolute) data directory.
   if (const std::string hba = absl::GetFlag(FLAGS_hba_config); hba.empty()) {
-    _hba_config_file = duckdb::FileSystem::JoinPath(_directory, "pg_hba.conf");
-  } else if (std::filesystem::path{hba}.is_absolute()) {
+    _hba_config_file = fs.JoinPath(_directory, "pg_hba.conf");
+  } else if (fs.IsPathAbsolute(hba)) {
     _hba_config_file = hba;
   } else {
-    _hba_config_file = duckdb::FileSystem::JoinPath(_directory, hba);
+    _hba_config_file = fs.JoinPath(_directory, hba);
   }
 
-  auto& fs = irs::DuckDBEngine::Instance().instance().GetInternalFileSystem();
   try {
     if (fs.CreateDirectoryExtended(
           _directory, {.mode = duckdb::CreateDirectoryMode::RECURSIVE})) {

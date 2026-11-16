@@ -144,7 +144,7 @@ std::unique_ptr<duckdb::BufferedFileWriter> OpenOutput(duckdb::FileSystem& fs,
                                                        std::string_view root,
                                                        std::string_view name) {
   auto path = fs.JoinPath(root, name);
-  auto writer = fs.OpenFileWriter(path, true);
+  auto writer = fs.OpenFileWriter(path);
   return std::make_unique<duckdb::BufferedFileWriter>(fs, std::move(path),
                                                       std::move(writer));
 }

@@ -40,7 +40,6 @@ namespace sdb::backup {
 inline constexpr std::string_view kBackupDir = "backup";
 
 struct Cut {
-  std::string log_link;
   uint64_t log_size = 0;
 };
 
@@ -71,8 +70,6 @@ class BackupSession final {
   bool _active ABSL_GUARDED_BY(_mutex) = false;
   utils::DrainGate::Closed _checkpoints ABSL_GUARDED_BY(_mutex);
   utils::DrainGate::Closed _maintenance ABSL_GUARDED_BY(_mutex);
-  std::vector<duckdb::shared_ptr<duckdb::AttachedDatabase>> _pins
-    ABSL_GUARDED_BY(_mutex);
   std::string _backup_dir ABSL_GUARDED_BY(_mutex);
   BackupOwner _owner ABSL_GUARDED_BY(_mutex);
   std::string _label_file ABSL_GUARDED_BY(_mutex);

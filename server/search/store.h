@@ -137,8 +137,8 @@ class Store final : public std::enable_shared_from_this<Store>,
   void Open();
 
   // A drop commits while readers may still hold this store; the destructor
-  // removes the directory once the last of them lets go. Never set on
-  // shutdown or detach, where the directory must survive.
+  // removes its segment files once the last of them lets go. Never set on
+  // shutdown or detach, where the files must survive.
   void MarkDropped() noexcept {
     if (_writer && !_read_only) {
       _dropped.store(true, std::memory_order_release);

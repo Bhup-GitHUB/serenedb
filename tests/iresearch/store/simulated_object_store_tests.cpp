@@ -227,9 +227,7 @@ TEST(SimulatedObjectStoreTest, index_files_on_the_store) {
   EXPECT_EQ(1, store.Requests().get);
 
   files.Rename("segment", "renamed");
-  std::vector<std::string> names;
-  files.Visit([&](std::string_view name) { names.emplace_back(name); });
-  EXPECT_EQ(std::vector<std::string>{"renamed"}, names);
+  EXPECT_EQ(std::vector<std::string>{"renamed"}, files.Files());
   ASSERT_TRUE(files.Remove("renamed"));
   ASSERT_THROW(files.Open("renamed", duckdb::MappedFileAccess::NORMAL),
                duckdb::IOException);

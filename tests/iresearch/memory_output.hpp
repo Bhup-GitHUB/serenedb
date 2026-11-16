@@ -21,60 +21,14 @@
 #pragma once
 
 #include <duckdb/common/memory_mapped_file.hpp>
-#include <duckdb/common/serializer/write_stream.hpp>
+#include <duckdb/common/serializer/memory_stream.hpp>
 #include <duckdb/storage/external_file_cache/input_file_reader.hpp>
 #include <iresearch/utils/string.hpp>
-#include <iterator>
-#include <memory>
 
-namespace irs {
-
-class MemoryFile {
- public:
-  uint64_t Length() const noexcept { return _bytes.size(); }
-  bytes_view Bytes() const noexcept { return _bytes; }
-
-  void Append(const byte_type* data, size_t size) { _bytes.append(data, size); }
-
- private:
-  bstring _bytes;
-};
-
-class MemoryFileOutput final : public duckdb::WriteStream {
- public:
-  explicit MemoryFileOutput(MemoryFile& file) noexcept : _file{file} {
-    SetWindow(_buf, sizeof(_buf));
-    write_offset = file.Length();
-  }
-
-  void Flush() {
-    Append(write_begin, WindowSize());
-    write_pos = write_begin;
-  }
-
- private:
-  void Overflow(const byte_type* data, size_t size) final {
-    Flush();
-    Append(data, size);
-  }
-
-  void Append(const byte_type* data, size_t size) {
-    if (size == 0) {
-      return;
-    }
-    _file.Append(data, size);
-    write_offset += size;
-  }
-
-  byte_type _buf[64];
-  MemoryFile& _file;
-};
-
-}  // namespace irs
 namespace tests {
 
-inline irs::bstring Bytes(const irs::MemoryFile& file) {
-  return irs::bstring{file.Bytes()};
+inline irs::bstring Bytes(const duckdb::MemoryStream& out) {
+  return irs::bstring{out.GetData(), out.GetPosition()};
 }
 
 class BytesMapping final : public duckdb::MemoryMappedFile {

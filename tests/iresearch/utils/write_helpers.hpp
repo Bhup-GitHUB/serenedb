@@ -26,10 +26,21 @@
 #include <duckdb/storage/external_file_cache/input_file_reader.hpp>
 #include <iresearch/utils/assert.hpp>
 #include <iresearch/utils/bytes_utils.hpp>
-#include <iresearch/utils/number_utils.hpp>
 #include <limits>
 
 namespace irs {
+
+constexpr uint32_t ZigZagEncode32(int32_t n) noexcept {
+  return (static_cast<uint32_t>(n) << 1) ^ static_cast<uint32_t>(n >> 31);
+}
+
+constexpr int32_t ZigZagDecode32(uint32_t n) noexcept {
+  return static_cast<int32_t>((n >> 1) ^ (~(n & 1) + 1));
+}
+
+constexpr uint64_t ZigZagEncode64(int64_t n) noexcept {
+  return (static_cast<uint64_t>(n) << 1) ^ static_cast<uint64_t>(n >> 63);
+}
 
 template<typename StringType,
          typename TraitsType = typename StringType::traits_type>
@@ -75,15 +86,9 @@ StringType ReadString(auto& in) {
 }  // namespace irs
 namespace tests {
 
-uint16_t ReadU16(duckdb::InputFileReader& in);
-
 void WriteZvfloat(duckdb::WriteStream& out, float_t v);
 
-float_t ReadZvfloat(duckdb::InputFileReader& in);
-
 void WriteZvdouble(duckdb::WriteStream& out, double_t v);
-
-double_t ReadZvdouble(duckdb::InputFileReader& in);
 
 template<typename StringType>
 void WriteStr(duckdb::WriteStream& out, const StringType& str) {

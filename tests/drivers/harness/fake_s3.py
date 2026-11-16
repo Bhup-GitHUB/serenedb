@@ -4,7 +4,7 @@ Path-style buckets that exist on first use, single and multipart uploads,
 the x-amz-meta-* metadata a single upload sets, ranged reads, ListObjectsV2,
 single and batched deletes.
 Requests are not authenticated. It counts requests by kind, accepted
-connections and the most part uploads in flight at once; `latency` delays every request, `trickle`
+connections and the most part uploads in flight at once, in all and in one upload; `latency` delays every request, `trickle`
 sends the bodies of reads at that many bytes a second, `hold_read` holds a ranged read in the
 middle of its body, the part numbers in `failing_parts` are refused with a 500, and while
 `put_error` is set a single-request upload is refused with 403 and that error code. The next `throttle` requests are refused with 503 SlowDown, and the next
@@ -38,7 +38,6 @@ from __future__ import annotations
 
 import argparse
 import base64
-import collections
 import hashlib
 import json
 import threading
@@ -140,16 +139,15 @@ class FakeS3(FakeStore):
     def __init__(self, latency: float = 0.0, port: int = 0) -> None:
         super().__init__(_Handler, port)
         self.latency = latency
-        self.trickle = 0
         self.objects: dict[tuple[str, str], _Object] = {}
         self.uploads: dict[str, _Upload] = {}
         self.parts_in_flight = 0
         self.max_parts_in_flight = 0
+        self.upload_parts_in_flight: dict[str, int] = {}
+        self.max_upload_parts_in_flight = 0
         self.failing_parts: set[int] = set()
         self.throttle = 0
         self.session_tokens: set[str] | None = None
-        self.drop: collections.Counter[str] = collections.Counter()
-        self.dropped: list[str] = []
         self.put_error: str | None = None
         self.stalling: tuple[str, str] | None = None
         self.stalled = threading.Event()
@@ -201,6 +199,8 @@ class FakeS3(FakeStore):
         with self.lock:
             self.requests.clear()
             self.max_parts_in_flight = self.parts_in_flight
+            self.max_upload_parts_in_flight = max(self.upload_parts_in_flight.values(),
+                                                  default=0)
 
 
 class _Handler(Handler):
@@ -223,22 +223,7 @@ class _Handler(Handler):
         self.send_header("Content-Length",
                          str(len(body) if content_length is None else content_length))
         self.end_headers()
-        if not body or self.command == "HEAD":
-            return
-        if held is not None:
-            body = self._send_held(held, body)
-        rate = self.fake.trickle if trickle else 0
-        if not rate:
-            self.wfile.write(body)
-            return
-        chunk = max(1, rate // 10)
-        try:
-            for offset in range(0, len(body), chunk):
-                self.wfile.write(body[offset:offset + chunk])
-                self.wfile.flush()
-                time.sleep(chunk / rate)
-        except OSError:
-            self.close_connection = True
+        self._send_body(body, trickle, held)
 
     def _xml(self, status: int, body: str) -> None:
         self._reply(status, ('<?xml version="1.0" encoding="UTF-8"?>' + body).encode(),
@@ -319,15 +304,6 @@ class _Handler(Handler):
             self.fake.stalling = None
         self.fake.stalled.set()
         self.fake.release.wait(120)
-        self.close_connection = True
-        return True
-
-    def _dropped(self, kind: str, key: str) -> bool:
-        with self.fake.lock:
-            if self.fake.drop[kind] == 0:
-                return False
-            self.fake.drop[kind] -= 1
-            self.fake.dropped.append(key)
         self.close_connection = True
         return True
 
@@ -494,6 +470,10 @@ class _Handler(Handler):
             self.fake.parts_in_flight += 1
             self.fake.max_parts_in_flight = max(self.fake.max_parts_in_flight,
                                                 self.fake.parts_in_flight)
+            in_upload = self.fake.upload_parts_in_flight.get(upload_id, 0) + 1
+            self.fake.upload_parts_in_flight[upload_id] = in_upload
+            self.fake.max_upload_parts_in_flight = max(self.fake.max_upload_parts_in_flight,
+                                                       in_upload)
         try:
             body = self._body()
             self._wait()
@@ -521,6 +501,7 @@ class _Handler(Handler):
         finally:
             with self.fake.lock:
                 self.fake.parts_in_flight -= 1
+                self.fake.upload_parts_in_flight[upload_id] -= 1
 
     def do_POST(self) -> None:
         bucket, key, query = self._target()
