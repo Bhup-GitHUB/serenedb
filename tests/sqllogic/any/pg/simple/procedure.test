@@ -232,6 +232,71 @@ db error: ERROR: function kind_missing() does not exist
 
 
 statement ok
+CREATE PROCEDURE mixed_kind() AS $$ SELECT 1 $$ LANGUAGE sql;
+
+
+statement ok
+CREATE FUNCTION mixed_kind(a TEXT) RETURNS SETOF INTEGER AS $$ SELECT 2 $$ LANGUAGE sql;
+
+
+query
+SELECT oid::regprocedure::text AS routine, prokind FROM pg_proc WHERE proname = 'mixed_kind' ORDER BY 1;
+----
+routine	prokind
+mixed_kind()	p
+mixed_kind(text)	f
+
+
+statement ok
+CALL mixed_kind();
+
+
+query
+SELECT mixed_kind('x'::text) AS v;
+----
+v
+2
+
+
+statement error
+SELECT * FROM mixed_kind();
+----
+db error: ERROR: mixed_kind() is a procedure
+HINT: To call a procedure, use CALL.
+
+
+onlyif postgres
+statement error
+CALL mixed_kind('x'::text);
+----
+db error: ERROR: mixed_kind(text) is not a procedure
+HINT: To call a function, use SELECT.
+
+
+skipif postgres
+statement error
+CALL mixed_kind('x'::text);
+----
+db error: ERROR: mixed_kind() is not a procedure
+HINT: To call a function, use SELECT.
+
+
+statement error
+CREATE OR REPLACE FUNCTION mixed_kind() RETURNS SETOF INTEGER AS $$ SELECT 3 $$ LANGUAGE sql;
+----
+db error: ERROR: cannot change routine kind
+DETAIL: "mixed_kind" is a procedure.
+
+
+statement ok
+DROP PROCEDURE mixed_kind();
+
+
+statement ok
+DROP FUNCTION mixed_kind(text);
+
+
+statement ok
 CREATE FUNCTION drop_signature(x INTEGER) RETURNS INTEGER AS $$ SELECT x $$ LANGUAGE sql;
 
 
