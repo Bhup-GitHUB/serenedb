@@ -58,10 +58,8 @@ IdxReader::IdxReader(duckdb::FileSystem& fs, std::string_view root,
             const auto id = obj.ReadProperty<uint64_t>(0, "id");
             const auto tree_offset =
               obj.ReadProperty<uint64_t>(1, "tree_offset");
-            obj.ReadDeletedProperty<uint64_t>(2, "tree_byte_size");
             const auto stats_offset =
               obj.ReadProperty<uint64_t>(3, "stats_offset");
-            obj.ReadDeletedProperty<uint64_t>(4, "stats_byte_size");
             const auto root_byte_size =
               obj.ReadProperty<uint64_t>(5, "root_byte_size");
 
@@ -81,7 +79,6 @@ IdxReader::IdxReader(duckdb::FileSystem& fs, std::string_view root,
             const auto id = obj.ReadProperty<uint64_t>(0, "id");
             const HnswMeta meta{
               .offset = obj.ReadProperty<uint64_t>(1, "offset"),
-              .byte_size = obj.ReadProperty<uint64_t>(2, "byte_size"),
               .header =
                 {
                   .d = obj.ReadProperty<uint32_t>(3, "d"),

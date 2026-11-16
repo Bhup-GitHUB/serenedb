@@ -81,14 +81,14 @@ int DuckExceptionToErrcode(duckdb::ExceptionType type) {
     case duckdb::ExceptionType::PARAMETER_NOT_RESOLVED:
     case duckdb::ExceptionType::PARAMETER_NOT_ALLOWED:
       return ERRCODE_INDETERMINATE_DATATYPE;
-    case duckdb::ExceptionType::IO:
-      return ERRCODE_IO_ERROR;
-    case duckdb::ExceptionType::DATA_CORRUPTION:
-      return ERRCODE_DATA_CORRUPTED;
     case duckdb::ExceptionType::CONNECTION:
     case duckdb::ExceptionType::NETWORK:
     case duckdb::ExceptionType::HTTP:
       return ERRCODE_CONNECTION_EXCEPTION;
+    case duckdb::ExceptionType::IO:
+      return ERRCODE_IO_ERROR;
+    case duckdb::ExceptionType::DATA_CORRUPTION:
+      return ERRCODE_DATA_CORRUPTED;
     case duckdb::ExceptionType::INTERRUPT:
       return ERRCODE_QUERY_CANCELED;
     default:

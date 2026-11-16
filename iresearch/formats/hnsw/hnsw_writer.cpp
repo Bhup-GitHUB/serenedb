@@ -1466,7 +1466,6 @@ void HnswWriter::Flush() {
 
   _idx->AddHnsw(_info.index_id, HnswMeta{
                                   .offset = offset,
-                                  .byte_size = out.Position() - offset,
                                   .header = header,
                                 });
 

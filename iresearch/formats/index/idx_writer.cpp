@@ -20,7 +20,6 @@
 
 #include "iresearch/formats/index/idx_writer.hpp"
 
-#include <duckdb/common/fault_points.hpp>
 #include <duckdb/common/serializer/binary_serializer.hpp>
 #include <duckdb/common/serializer/write_stream.hpp>
 #include <duckdb/common/types.hpp>
@@ -85,13 +84,7 @@ void IdxWriter::Commit() {
         list.WriteObject([&](duckdb::BinarySerializer& obj) {
           obj.WriteProperty<uint64_t>(0, "id", e.id);
           obj.WriteProperty<uint64_t>(1, "tree_offset", e.meta.tree_offset);
-          SDB_IF_FAILURE("ivf_footer_byte_sizes") {
-            obj.WriteProperty<uint64_t>(2, "tree_byte_size", 0);
-          }
           obj.WriteProperty<uint64_t>(3, "stats_offset", e.meta.stats_offset);
-          SDB_IF_FAILURE("ivf_footer_byte_sizes") {
-            obj.WriteProperty<uint64_t>(4, "stats_byte_size", 0);
-          }
           obj.WriteProperty<uint64_t>(5, "root_byte_size",
                                       e.meta.root_byte_size);
         });
@@ -103,7 +96,6 @@ void IdxWriter::Commit() {
         list.WriteObject([&](duckdb::BinarySerializer& obj) {
           obj.WriteProperty<uint64_t>(0, "id", e.id);
           obj.WriteProperty<uint64_t>(1, "offset", e.meta.offset);
-          obj.WriteProperty<uint64_t>(2, "byte_size", e.meta.byte_size);
           const auto& h = e.meta.header;
           obj.WriteProperty<uint32_t>(3, "d", h.d);
           obj.WriteProperty<uint8_t>(4, "metric",
