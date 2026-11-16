@@ -60,11 +60,11 @@ IndexDir::IndexDir(duckdb::DatabaseInstance& db, duckdb::FileSystem& fs,
 
 std::unique_ptr<duckdb::BufferedFileWriter> IndexDir::Create(
   std::string_view name) const {
-  return irs::OpenOutput(Fs(), Root(), name, _observers, true);
+  return irs::OpenOutput(Fs(), Root(), name, Tracker(), true);
 }
 
 void IndexDir::Close(duckdb::BufferedFileWriter& out) const {
-  irs::CloseOutput(out, _observers);
+  irs::CloseOutput(out, Tracker());
 }
 
 duckdb::shared_ptr<duckdb::InputFile> IndexDir::Open(
@@ -82,13 +82,7 @@ bool IndexDir::Has(std::string_view name) const {
 }
 
 bool IndexDir::Remove(std::string_view name) const {
-  if (!Fs().TryRemoveFile(Fs().JoinPath(Root(), name))) {
-    return false;
-  }
-  for (auto* observer : _observers) {
-    observer->Removed(name);
-  }
-  return true;
+  return Fs().TryRemoveFile(Fs().JoinPath(Root(), name));
 }
 
 void IndexDir::Rename(std::string_view src, std::string_view dst) const {
@@ -106,7 +100,15 @@ void IndexDir::Compact(std::string_view name) const {
 }
 
 std::vector<std::string> IndexDir::Files() const {
-  return irs::ListIndexFiles(Fs(), Root());
+  std::vector<std::string> files;
+  Fs().ListFiles(Root(),
+                 [&](duckdb::OpenFileInfo& info) {
+                   if (!duckdb::FileSystem::IsDirectory(info)) {
+                     files.push_back(std::move(info.path));
+                   }
+                 },
+                 nullptr, {.strict = true});
+  return files;
 }
 
 void IndexDir::Visit(absl::FunctionRef<void(std::string_view)> visitor) const {
@@ -176,9 +178,9 @@ void IndexDir::RaiseTopSegmentId(uint64_t id) const {
   top = std::max(top, id);
 }
 
-IndexDir IndexDir::Observed(irs::FileObserver& observer) const {
+IndexDir IndexDir::Tracked(irs::FileTracker& tracker) const {
   auto result = *this;
-  result._observers.push_back(&observer);
+  result._tracker = &tracker;
   return result;
 }
 

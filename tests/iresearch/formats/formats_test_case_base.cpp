@@ -351,7 +351,7 @@ TEST_P(FormatTestCase, fields_read_write) {
     irs::FlushState state{
       .fs = dir().Fs(),
       .root = dir().Root(),
-      .observers = dir().Observers(),
+      .tracker = dir().Tracker(),
       .name = "segment_name",
       .doc_count = 100,
       .index_features = field.index_features,
@@ -363,7 +363,7 @@ TEST_P(FormatTestCase, fields_read_write) {
     tests::MockTermReader term_reader{
       terms, irs::FieldMeta{field.id, field.index_features}};
 
-    irs::IdxWriter idx{dir().Fs(), dir().Root(), dir().Observers(),
+    irs::IdxWriter idx{dir().Fs(), dir().Root(), dir().Tracker(),
                        "segment_name"};
     irs::term_dict::FieldWriter writer{/*compaction=*/false};
     writer.SetIdxWriter(idx);
@@ -661,7 +661,7 @@ void RoundTrip(std::string_view segment_name, uint64_t row_count,
   auto& db = ::irs::DuckDBEngine::Instance().instance();
   tests::IndexDir dir{db, TestEnv::MemoryRoot()};
   {
-    irs::ColWriter w{db, dir.Fs(), dir.Root(), dir.Observers(), segment_name};
+    irs::ColWriter w{db, dir.Fs(), dir.Root(), dir.Tracker(), segment_name};
     populate(w);
     w.Commit(row_count);
   }
@@ -815,7 +815,7 @@ TEST_P(FormatTestCase, columns_rw) {
   };
 
   {
-    irs::ColWriter w{db, dir.Fs(), dir.Root(), dir.Observers(), "_1"};
+    irs::ColWriter w{db, dir.Fs(), dir.Root(), dir.Tracker(), "_1"};
     auto& f0 = irs::tests::OpenBlobColumn(w, kF0);
     auto& f1 = irs::tests::OpenBlobColumn(w, kF1);
     irs::tests::OpenBlobColumn(w, kEmpty);  // empty column in the middle
@@ -854,7 +854,7 @@ TEST_P(FormatTestCase, columns_rw) {
   static constexpr irs::field_id kS2F1 = 1;
   static constexpr irs::field_id kS2F2 = 2;
   {
-    irs::ColWriter w{db, dir.Fs(), dir.Root(), dir.Observers(), "_2"};
+    irs::ColWriter w{db, dir.Fs(), dir.Root(), dir.Tracker(), "_2"};
     auto& f0 = irs::tests::OpenBlobColumn(w, kS2F0);
     irs::tests::OpenBlobColumn(w, kS2F1);  // pushed but never written
     auto& f2 = irs::tests::OpenBlobColumn(w, kS2F2);
@@ -1162,7 +1162,7 @@ TEST_P(FormatTestCase, columns_rw_typed) {
   auto& db = ::irs::DuckDBEngine::Instance().instance();
   IndexDir dir{db, TestEnv::MemoryRoot()};
   {
-    irs::ColWriter w{db, dir.Fs(), dir.Root(), dir.Observers(),
+    irs::ColWriter w{db, dir.Fs(), dir.Root(), dir.Tracker(),
                      "columns_rw_typed"};
 
     // Typed BIGINT column.
@@ -1352,7 +1352,7 @@ TEST_P(FormatTestCase, columns_rw_typed) {
   constexpr irs::field_id kRgIntId = 100;
   constexpr irs::field_id kRgStrId = 101;
   {
-    irs::ColWriter w{db, dir.Fs(), dir.Root(), dir.Observers(),
+    irs::ColWriter w{db, dir.Fs(), dir.Root(), dir.Tracker(),
                      "columns_rw_typed_rg"};
     auto& cw_int = w.OpenColumn(kRgIntId, duckdb::LogicalType::BIGINT,
                                 /*skip_validity=*/false,
@@ -1570,7 +1570,7 @@ TEST_P(FormatTestCase, columns_rw_bit_mask) {
   auto& db = ::irs::DuckDBEngine::Instance().instance();
   IndexDir dir{db, TestEnv::MemoryRoot()};
   {
-    irs::ColWriter w{db, dir.Fs(), dir.Root(), dir.Observers(),
+    irs::ColWriter w{db, dir.Fs(), dir.Root(), dir.Tracker(),
                      "columns_rw_bit_mask_rg"};
     auto& cw = w.OpenColumn(kBigId, duckdb::LogicalType::BLOB,
                             /*skip_validity=*/false,
@@ -1742,7 +1742,7 @@ TEST_P(FormatTestCase, columns_rw_dense_mask) {
   auto& db = ::irs::DuckDBEngine::Instance().instance();
   IndexDir dir{db, TestEnv::MemoryRoot()};
   {
-    irs::ColWriter w{db, dir.Fs(), dir.Root(), dir.Observers(),
+    irs::ColWriter w{db, dir.Fs(), dir.Root(), dir.Tracker(),
                      "columns_rw_dense_mask_rg"};
     auto& cw = w.OpenColumn(kBigId, duckdb::LogicalType::BLOB,
                             /*skip_validity=*/false,
@@ -1940,7 +1940,7 @@ TEST_P(FormatTestCase, columns_rw_big_document) {
   auto& db = ::irs::DuckDBEngine::Instance().instance();
   IndexDir dir{db, TestEnv::MemoryRoot()};
   {
-    irs::ColWriter w{db, dir.Fs(), dir.Root(), dir.Observers(),
+    irs::ColWriter w{db, dir.Fs(), dir.Root(), dir.Tracker(),
                      "columns_rw_big_document_rg"};
     auto& cw = w.OpenColumn(kBigId, duckdb::LogicalType::BLOB,
                             /*skip_validity=*/false,
@@ -2000,8 +2000,7 @@ TEST_P(FormatTestCase, columns_rw_writer_reuse) {
   IndexDir dir{db, TestEnv::MemoryRoot()};
 
   {
-    irs::ColWriter w{db, dir.Fs(), dir.Root(), dir.Observers(),
-                     "_rollback_seg"};
+    irs::ColWriter w{db, dir.Fs(), dir.Root(), dir.Tracker(), "_rollback_seg"};
     irs::tests::OpenBlobColumn(w, /*id=*/1);
     w.Rollback();
   }
@@ -2017,7 +2016,7 @@ TEST_P(FormatTestCase, columns_rw_writer_reuse) {
   static constexpr irs::field_id kIdCol = 7;
   static constexpr irs::field_id kNameCol = 8;
   auto write_seg = [&](const SegSpec& seg, uint64_t prefix) {
-    irs::ColWriter w{db, dir.Fs(), dir.Root(), dir.Observers(), seg.name};
+    irs::ColWriter w{db, dir.Fs(), dir.Root(), dir.Tracker(), seg.name};
     auto& id_w = irs::tests::OpenBlobColumn(w, kIdCol);
     auto& name_w = irs::tests::OpenBlobColumn(w, kNameCol);
     for (uint64_t i = 0; i < seg.row_count; ++i) {
@@ -2124,7 +2123,7 @@ TEST_P(FormatTestCase, columns_rw_writer_reuse) {
   constexpr uint64_t kBigRows = 2048;
   constexpr std::string_view kBigSeg = "_big";
   {
-    irs::ColWriter w{db, dir.Fs(), dir.Root(), dir.Observers(), kBigSeg};
+    irs::ColWriter w{db, dir.Fs(), dir.Root(), dir.Tracker(), kBigSeg};
     auto& id_w = w.OpenColumn(
       kIdCol, duckdb::LogicalType::BLOB, /*skip_validity=*/false,
       /*row_group_size=*/512, duckdb::CompressionType::COMPRESSION_AUTO);
@@ -2317,7 +2316,7 @@ TEST_P(FormatTestCase, columns_rw_same_col_empty_repeat) {
   auto& db = ::irs::DuckDBEngine::Instance().instance();
   IndexDir dir{db, TestEnv::MemoryRoot()};
   {
-    irs::ColWriter w{db, dir.Fs(), dir.Root(), dir.Observers(),
+    irs::ColWriter w{db, dir.Fs(), dir.Root(), dir.Tracker(),
                      "same_col_empty_repeat_rg"};
     auto& id_w = w.OpenColumn(kBigIdCol, duckdb::LogicalType::BLOB,
                               /*skip_validity=*/false,
@@ -2516,7 +2515,7 @@ TEST_P(FormatTestCase, columns_rw_sparse_column_dense_block) {
   auto& db = ::irs::DuckDBEngine::Instance().instance();
   IndexDir dir{db, TestEnv::MemoryRoot()};
   {
-    irs::ColWriter w{db, dir.Fs(), dir.Root(), dir.Observers(),
+    irs::ColWriter w{db, dir.Fs(), dir.Root(), dir.Tracker(),
                      "sparse_dense_block_rg"};
     auto& cw = w.OpenColumn(kBigId, duckdb::LogicalType::BLOB,
                             /*skip_validity=*/false,
@@ -2756,8 +2755,7 @@ TEST_P(FormatTestCase, columns_rw_sparse_dense_offset_column_border_case) {
   auto& db = ::irs::DuckDBEngine::Instance().instance();
   IndexDir dir{db, TestEnv::MemoryRoot()};
   {
-    irs::ColWriter w{db, dir.Fs(), dir.Root(), dir.Observers(),
-                     "border_case_rg"};
+    irs::ColWriter w{db, dir.Fs(), dir.Root(), dir.Tracker(), "border_case_rg"};
     auto& dense = w.OpenColumn(kBigDenseId, duckdb::LogicalType::BLOB,
                                /*skip_validity=*/false,
                                /*row_group_size=*/512,
@@ -2959,7 +2957,7 @@ TEST_P(FormatTestCase, columns_issue700) {
   auto& db = ::irs::DuckDBEngine::Instance().instance();
   IndexDir dir{db, TestEnv::MemoryRoot()};
   {
-    irs::ColWriter w{db, dir.Fs(), dir.Root(), dir.Observers(), "issue700_rg"};
+    irs::ColWriter w{db, dir.Fs(), dir.Root(), dir.Tracker(), "issue700_rg"};
     auto& cw = w.OpenColumn(kBigColId, duckdb::LogicalType::BLOB,
                             /*skip_validity=*/false,
                             /*row_group_size=*/512,

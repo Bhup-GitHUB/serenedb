@@ -299,7 +299,7 @@ class PostingsWriter final {
   bitset _docs;             // Set of all processed documents
   size_t _docs_first_word = std::numeric_limits<size_t>::max();
   size_t _docs_end_word = 0;
-  FileObservers _observers;
+  FileTracker* _tracker = nullptr;
   std::unique_ptr<duckdb::BufferedFileWriter> _doc_out;  // Postings (doc+freq)
   std::unique_ptr<duckdb::BufferedFileWriter> _pos_out;  // Positions
   std::unique_ptr<duckdb::BufferedFileWriter> _pay_out;  // Payload (pay+offs)
@@ -361,7 +361,7 @@ inline void PostingsWriter::AddBlock(const PostingMeta& meta, doc_id_t last) {
 inline void PostingsWriter::Prepare(const FlushState& state) {
   SDB_ASSERT(!IsNull(state.name));
 
-  _observers = state.observers;
+  _tracker = &state.tracker;
 
   // Prepare document stream
   SDB_ASSERT(!_doc_out);
@@ -772,7 +772,7 @@ inline void PostingsWriter::FlushDocBlock(const PostingMeta& meta) {
 inline void PostingsWriter::End() {
   block_io::WriteSlack(*_doc_out);
   format_utils::WriteFooter(*_doc_out);
-  CloseOutput(*_doc_out, _observers);
+  CloseOutput(*_doc_out, *_tracker);
   _doc_out.reset();
 
   if (_pos_out) {
@@ -784,7 +784,7 @@ inline void PostingsWriter::End() {
     }
     block_io::WriteSlack(*_pos_out);
     format_utils::WriteFooter(*_pos_out);
-    CloseOutput(*_pos_out, _observers);
+    CloseOutput(*_pos_out, *_tracker);
     _pos_out.reset();
   } else {
     SDB_ASSERT(_pos.size == 0);
@@ -801,7 +801,7 @@ inline void PostingsWriter::End() {
     }
     block_io::WriteSlack(*_pay_out);
     format_utils::WriteFooter(*_pay_out);
-    CloseOutput(*_pay_out, _observers);
+    CloseOutput(*_pay_out, *_tracker);
     _pay_out.reset();
   } else {
     SDB_ASSERT(_pay.size == 0);

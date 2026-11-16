@@ -83,11 +83,11 @@ void SerializeNormColumn(duckdb::BinarySerializer& s,
 }  // namespace
 
 ColWriter::ColWriter(duckdb::DatabaseInstance& db, duckdb::FileSystem& fs,
-                     std::string_view root, const FileObservers& observers,
+                     std::string_view root, FileTracker& tracker,
                      std::string_view segment_name)
   : _fs{fs},
     _root{root},
-    _observers{observers},
+    _tracker{tracker},
     _segment_name{segment_name},
     _filename{FileName(segment_name)},
     _db{&db} {}
@@ -102,7 +102,7 @@ void ColWriter::EnsureOut() {
   if (_out) {
     return;
   }
-  _out = OpenOutput(_fs, _root, _filename, _observers, true);
+  _out = OpenOutput(_fs, _root, _filename, _tracker, true);
   _write_ctx = std::make_unique<WriteContext>(
     *_db, *_out,
     _field_options ? _field_options->block_size : DEFAULT_BLOCK_ALLOC_SIZE);
@@ -361,7 +361,7 @@ bool ColWriter::Commit(uint64_t target_row,
                                               _write_ctx->GetBlockAllocSize(),
                                               DEFAULT_BLOCK_ALLOC_SIZE);
   });
-  CloseOutput(*_out, _observers);
+  CloseOutput(*_out, _tracker);
   _out.reset();
   _committed = true;
   return true;

@@ -51,7 +51,7 @@ struct AnnBuildEnv;
 class ColWriter final {
  public:
   ColWriter(duckdb::DatabaseInstance& db, duckdb::FileSystem& fs,
-            std::string_view root, const FileObservers& observers,
+            std::string_view root, FileTracker& tracker,
             std::string_view segment_name);
   ~ColWriter();
 
@@ -123,7 +123,7 @@ class ColWriter final {
 
   duckdb::FileSystem& _fs;
   std::string _root;
-  FileObservers _observers;
+  FileTracker& _tracker;
   std::string _segment_name;
   std::string _filename;
   duckdb::DatabaseInstance* _db;

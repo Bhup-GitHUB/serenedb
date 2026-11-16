@@ -265,15 +265,15 @@ void Write(std::string_view root, const Terms& terms, Ladder ladder,
            uint64_t rows) {
   auto& db = irs::DuckDBEngine::Instance().instance();
   auto& fs = duckdb::FileSystem::GetFileSystem(db);
-  const irs::FileObservers observers;
+  irs::FileTracker tracker;
   const irs::FlushState state{
     .fs = fs,
     .root = root,
-    .observers = observers,
+    .tracker = tracker,
     .name = "segment",
     .doc_count = rows,
   };
-  irs::IdxWriter idx{fs, root, observers, "segment"};
+  irs::IdxWriter idx{fs, root, tracker, "segment"};
   irs::term_dict::FieldWriter writer{false};
   writer.SetIdxWriter(idx);
   writer.prepare(state, 1);
@@ -292,9 +292,14 @@ uint64_t DirectoryBytes(std::string_view root) {
   auto& db = irs::DuckDBEngine::Instance().instance();
   auto& fs = duckdb::FileSystem::GetFileSystem(db);
   uint64_t total = 0;
-  for (const auto& name : irs::ListIndexFiles(fs, root)) {
-    total += fs.OpenInputFile(fs.JoinPath(root, name))->GetSize();
-  }
+  fs.ListFiles(std::string{root},
+               [&](duckdb::OpenFileInfo& info) {
+                 if (!duckdb::FileSystem::IsDirectory(info)) {
+                   total +=
+                     fs.OpenInputFile(fs.JoinPath(root, info.path))->GetSize();
+                 }
+               },
+               nullptr, {.strict = true});
   return total;
 }
 

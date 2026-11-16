@@ -346,7 +346,7 @@ Format15TestCase::ReadMeta Format15TestCase::WriteReadMeta(
     const irs::FlushState state{
       .fs = dir.Fs(),
       .root = dir.Root(),
-      .observers = dir.Observers(),
+      .tracker = dir.Tracker(),
       .norms = &irs::SubReader::empty(),
       .name = "segment_name",
       .scorer = scorer,

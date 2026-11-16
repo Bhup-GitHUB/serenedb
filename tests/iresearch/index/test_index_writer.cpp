@@ -41,6 +41,16 @@
 namespace tests {
 namespace {
 
+uint64_t TopFileSegment(const IndexDir& dir) {
+  uint64_t top = 0;
+  for (const auto& name : dir.Files()) {
+    if (uint64_t id = 0; irs::ParseSegmentId(name, id)) {
+      top = std::max(top, id);
+    }
+  }
+  return top;
+}
+
 irs::CompositeReader Open(const IndexDir& dir,
                           const irs::IndexReaderOptions& options) {
   const auto committed = dir.Committed();
@@ -247,8 +257,7 @@ IndexWriter::IndexWriter(const IndexDir& dir, OpenMode mode,
   RemoveUnheld(dir);
   _writer =
     irs::IndexWriter::Make(dir.Db(), dir.Fs(), dir.Root(), std::move(options));
-  _writer->ReserveSegmentId(
-    std::max(irs::MaxSegmentId(dir.Files()), dir.TopSegmentId()));
+  _writer->ReserveSegmentId(std::max(TopFileSegment(dir), dir.TopSegmentId()));
 }
 
 IndexWriter::~IndexWriter() {

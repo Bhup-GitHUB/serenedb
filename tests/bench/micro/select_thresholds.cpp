@@ -114,8 +114,8 @@ std::unique_ptr<Blk> BuildBlk(const Shape& shape, uint64_t w) {
   }
   const auto col_type = qr->GetTypes()[0];
   {
-    irs::ColWriter writer{CsDb(), blk->fs, kRoot, irs::FileObservers{},
-                          kSegName};
+    irs::FileTracker tracker;
+    irs::ColWriter writer{CsDb(), blk->fs, kRoot, tracker, kSegName};
     auto& cw = writer.OpenColumn(kField, col_type);
     uint64_t pos = 0;
     while (auto chunk = qr->Fetch()) {

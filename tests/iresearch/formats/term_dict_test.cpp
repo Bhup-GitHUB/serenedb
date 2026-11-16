@@ -380,12 +380,12 @@ class TermDictTest : public tests::DirectoryTestCaseBase {
     irs::FlushState state{
       .fs = dir().Fs(),
       .root = dir().Root(),
-      .observers = dir().Observers(),
+      .tracker = dir().Tracker(),
       .name = kSegment,
       .doc_count = docs,
       .index_features = irs::IndexFeatures::None,
     };
-    irs::IdxWriter idx{dir().Fs(), dir().Root(), dir().Observers(), kSegment};
+    irs::IdxWriter idx{dir().Fs(), dir().Root(), dir().Tracker(), kSegment};
     irs::term_dict::FieldWriter writer{compaction};
     writer.SetIdxWriter(idx);
     const uint64_t keyed = absl::c_count_if(
@@ -1947,12 +1947,12 @@ TEST_P(TermDictTest, ordinal_limit_refuses_more_keyed_dictionaries) {
   const irs::FlushState state{
     .fs = dir().Fs(),
     .root = dir().Root(),
-    .observers = dir().Observers(),
+    .tracker = dir().Tracker(),
     .name = kSegment,
     .doc_count = 10,
     .index_features = irs::IndexFeatures::None,
   };
-  irs::IdxWriter idx{dir().Fs(), dir().Root(), dir().Observers(), kSegment};
+  irs::IdxWriter idx{dir().Fs(), dir().Root(), dir().Tracker(), kSegment};
   irs::term_dict::FieldWriter writer{false};
   writer.SetIdxWriter(idx);
   ASSERT_SQL_ERROR(writer.prepare(state, kLimit + 1),

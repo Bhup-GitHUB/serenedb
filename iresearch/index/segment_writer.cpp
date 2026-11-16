@@ -93,7 +93,6 @@ SegmentWriter::SegmentWriter(ConstructToken, duckdb::DatabaseInstance& db,
                              const SegmentWriterOptions& options)
   : _fs{fs},
     _root{root},
-    _observers{&_tracker},
     _scorer{options.scorer},
     _fields{InverterMemory{
       duckdb::BufferManager::GetBufferManager(db).GetBufferAllocator(),
@@ -119,14 +118,14 @@ void SegmentWriter::flush(SegmentMeta& meta, DocumentMaskBuilder& docs_mask) {
   FlushState state{
     .fs = _fs,
     .root = _root,
-    .observers = _observers,
+    .tracker = _tracker,
     .norms = this,
     .name = _seg_name,
     .scorer = _scorer,
     .doc_count = buffered_docs(),
   };
 
-  IdxWriter idx{_fs, _root, _observers, _seg_name};
+  IdxWriter idx{_fs, _root, _tracker, _seg_name};
 
   std::vector<std::unique_ptr<AnnWriter>> ann_writers;
   if (_col_writer) {
@@ -237,7 +236,7 @@ std::shared_ptr<const SegmentReaderImpl> SegmentWriter::SealPiece(uint64_t id) {
   auto fields = std::make_shared<PieceFields>();
   FlushState state{.fs = _fs,
                    .root = _root,
-                   .observers = _observers,
+                   .tracker = _tracker,
                    .name = _seg_name,
                    .doc_count = docs};
   PieceFieldWriter field_writer{*fields, /*compaction=*/false};
@@ -325,7 +324,7 @@ void SegmentWriter::reset(const SegmentMeta& meta) {
 
   const auto* active = ActiveFieldOptions();
   _col_writer =
-    std::make_unique<ColWriter>(_db, _fs, _root, _observers, meta.name);
+    std::make_unique<ColWriter>(_db, _fs, _root, _tracker, meta.name);
   _col_writer->SetDeferredSeal(_deferred_columns);
   _col_writer->SetFieldOptions(active);
   _col_writer->SetHnswBases(_hnsw_bases);

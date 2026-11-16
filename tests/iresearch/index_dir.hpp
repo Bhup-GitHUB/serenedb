@@ -75,7 +75,9 @@ class IndexDir {
   irs::ReleasedSegments& Released() const noexcept {
     return *_state->segments->released;
   }
-  const irs::FileObservers& Observers() const noexcept { return _observers; }
+  irs::FileTracker& Tracker() const noexcept {
+    return _tracker ? *_tracker : _state->untracked;
+  }
 
   irs::IndexReaderOptions ReaderOptions(
     irs::IndexReaderOptions options = {}) const;
@@ -87,7 +89,7 @@ class IndexDir {
   uint64_t TopSegmentId() const;
   void RaiseTopSegmentId(uint64_t id) const;
 
-  IndexDir Observed(irs::FileObserver& observer) const;
+  IndexDir Tracked(irs::FileTracker& tracker) const;
   IndexDir Over(duckdb::FileSystem& fs) const;
   IndexDir Reopened() const;
 
@@ -122,10 +124,11 @@ class IndexDir {
     std::string root;
     StorageKind kind;
     std::shared_ptr<Segments> segments;
+    irs::FileTracker untracked;
   };
 
   std::shared_ptr<State> _state;
-  irs::FileObservers _observers;
+  irs::FileTracker* _tracker = nullptr;
 };
 
 }  // namespace tests

@@ -35,18 +35,17 @@
 namespace irs {
 
 IdxWriter::IdxWriter(duckdb::FileSystem& fs, std::string_view root,
-                     const FileObservers& observers,
-                     std::string_view segment_name)
+                     FileTracker& tracker, std::string_view segment_name)
   : _fs{fs},
     _root{root},
-    _observers{observers},
+    _tracker{tracker},
     _filename{FileName(segment_name, kIdxFormatExt)} {}
 
 void IdxWriter::EnsureOut() {
   if (_out) {
     return;
   }
-  _out = OpenOutput(_fs, _root, _filename, _observers, true);
+  _out = OpenOutput(_fs, _root, _filename, _tracker, true);
 }
 
 duckdb::WriteStream& IdxWriter::BlocksOut() {
@@ -128,7 +127,7 @@ void IdxWriter::Commit() {
                          });
     }
   });
-  CloseOutput(*_out, _observers);
+  CloseOutput(*_out, _tracker);
   _out.reset();
 }
 

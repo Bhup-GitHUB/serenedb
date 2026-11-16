@@ -293,7 +293,7 @@ TEST(ObjectStoreIndexTest, collected_column_blocks_serve_gathers) {
   tests::ObjectStore();
   const tests::IndexDir dir{Db(), Root()};
   {
-    irs::ColWriter writer{Db(), dir.Fs(), dir.Root(), dir.Observers(), "seg"};
+    irs::ColWriter writer{Db(), dir.Fs(), dir.Root(), dir.Tracker(), "seg"};
     auto& plain = writer.OpenColumn(kPlain, duckdb::LogicalType::BIGINT,
                                     /*skip_validity=*/false, kRgSize);
     auto& structs =
@@ -416,7 +416,7 @@ int64_t Mixed(uint64_t row) {
 
 void WriteMixedColumn(const tests::IndexDir& dir, irs::field_id id,
                       uint32_t rg_size, uint64_t rows) {
-  irs::ColWriter writer{Db(), dir.Fs(), dir.Root(), dir.Observers(), "seg"};
+  irs::ColWriter writer{Db(), dir.Fs(), dir.Root(), dir.Tracker(), "seg"};
   auto& plain = writer.OpenColumn(id, duckdb::LogicalType::BIGINT,
                                   /*skip_validity=*/true, rg_size);
   for (uint64_t pos = 0; pos != rows; pos += STANDARD_VECTOR_SIZE) {
@@ -558,7 +558,7 @@ TEST(ObjectStoreIndexTest, collected_variant_blocks_serve_gathers) {
   tests::ObjectStore();
   const tests::IndexDir dir{Db(), Root()};
   {
-    irs::ColWriter writer{Db(), dir.Fs(), dir.Root(), dir.Observers(), "seg"};
+    irs::ColWriter writer{Db(), dir.Fs(), dir.Root(), dir.Tracker(), "seg"};
     auto& variants = writer.OpenColumn(kVariant, duckdb::LogicalType::VARIANT(),
                                        /*skip_validity=*/false, kRgSize);
     duckdb::Connection con{Db()};

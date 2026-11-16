@@ -144,7 +144,7 @@ Footer ReadFooter(const duckdb::InputFile& file, std::string_view name,
 std::unique_ptr<duckdb::BufferedFileWriter> PrepareOutput(
   const FlushState& state, std::string_view ext) {
   return OpenOutput(state.fs, state.root, FileName(state.name, ext),
-                    state.observers, true);
+                    state.tracker, true);
 }
 
 }  // namespace irs::format_utils

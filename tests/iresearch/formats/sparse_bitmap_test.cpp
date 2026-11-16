@@ -171,7 +171,7 @@ bool DocInRanges(const RangeType (&ranges)[N], irs::doc_id_t doc) {
 template<size_t N>
 void WriteRanges(duckdb::DatabaseInstance& db, const tests::IndexDir& dir,
                  std::string_view name, const RangeType (&ranges)[N]) {
-  irs::ColWriter w{db, dir.Fs(), dir.Root(), dir.Observers(), name};
+  irs::ColWriter w{db, dir.Fs(), dir.Root(), dir.Tracker(), name};
   // Use the override that lets us pick the row-group size. We pass
   // skip_validity=false (we *want* the validity bits) and
   // COMPRESSION_AUTO so the codec picks an appropriate validity
@@ -644,7 +644,7 @@ TEST_P(SparseBitmapTestCase, read_write_empty) {
   // Shape (a): segment with no columns at all.
   constexpr std::string_view kName = "empty_seg";
   {
-    irs::ColWriter w{Db(), dir.Fs(), dir.Root(), dir.Observers(), kName};
+    irs::ColWriter w{Db(), dir.Fs(), dir.Root(), dir.Tracker(), kName};
     // No OpenColumn -> footer has zero column entries; the segment
     // still commits with a valid .col file.
     w.Commit(/*target_row=*/0);
@@ -662,7 +662,7 @@ TEST_P(SparseBitmapTestCase, read_write_empty) {
   // Shape (b): segment with a column that has zero rows.
   constexpr std::string_view kName2 = "empty_col";
   {
-    irs::ColWriter w{Db(), dir.Fs(), dir.Root(), dir.Observers(), kName2};
+    irs::ColWriter w{Db(), dir.Fs(), dir.Root(), dir.Tracker(), kName2};
     irs::tests::OpenBlobColumn(w, /*id=*/1);
     w.Commit(/*target_row=*/0);
   }
@@ -796,7 +796,7 @@ TEST_P(SparseBitmapTestCase, rw_sparse_blocks) {
   tests::IndexDir dir{Db(), TestEnv::MemoryRoot()};
   constexpr std::string_view kName = "sparse_blocks";
   {
-    irs::ColWriter w{Db(), dir.Fs(), dir.Root(), dir.Observers(), kName};
+    irs::ColWriter w{Db(), dir.Fs(), dir.Root(), dir.Tracker(), kName};
     auto& cw = w.OpenColumn(/*id=*/1, duckdb::LogicalType::BLOB,
                             /*skip_validity=*/false, kRowGroupSize,
                             duckdb::CompressionType::COMPRESSION_AUTO);
@@ -1075,7 +1075,7 @@ TEST_P(SparseBitmapTestCase, insert_erase) {
   constexpr irs::doc_id_t kSurvivingDoc = 70000;   // valid, later RG
 
   {
-    irs::ColWriter w{Db(), dir.Fs(), dir.Root(), dir.Observers(), kName};
+    irs::ColWriter w{Db(), dir.Fs(), dir.Root(), dir.Tracker(), kName};
     auto& cw = w.OpenColumn(/*id=*/1, duckdb::LogicalType::BLOB,
                             /*skip_validity=*/false, kRowGroupSize,
                             duckdb::CompressionType::COMPRESSION_AUTO);

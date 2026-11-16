@@ -20,9 +20,6 @@
 
 #pragma once
 
-#include <absl/container/inlined_vector.h>
-#include <absl/synchronization/mutex.h>
-
 #include <duckdb/common/file_system.hpp>
 #include <duckdb/common/serializer/buffered_file_writer.hpp>
 #include <memory>
@@ -32,52 +29,34 @@
 #include <vector>
 
 #include "iresearch/index/segment_hold.hpp"
-#include "iresearch/utils/containers/flat_hash_set.hpp"
 
 namespace irs {
-
-class FileObserver {
- public:
-  virtual void Created(std::string_view name) = 0;
-  virtual void Written(uint64_t bytes) = 0;
-  virtual void Removed(std::string_view name) = 0;
-
- protected:
-  ~FileObserver() = default;
-};
-
-using FileObservers = absl::InlinedVector<FileObserver*, 2>;
 
 struct TrackedFiles {
   std::vector<std::string> files;
   uint64_t bytes = 0;
 };
 
-class FileTracker final : public FileObserver {
+class FileTracker {
  public:
-  void Created(std::string_view name) final;
-  void Written(uint64_t bytes) final;
-  void Removed(std::string_view name) final;
+  void Created(std::string name) { _files.push_back(std::move(name)); }
+  void Written(uint64_t bytes) noexcept { _bytes += bytes; }
 
-  TrackedFiles Flush();
+  TrackedFiles Flush() noexcept;
   void Remove(duckdb::FileSystem& fs, std::string_view root) noexcept;
 
  private:
-  containers::FlatHashSet<std::string> _files;
-  uint64_t _files_size = 0;
+  std::vector<std::string> _files;
+  uint64_t _bytes = 0;
 };
 
-std::unique_ptr<duckdb::BufferedFileWriter> OpenOutput(
-  duckdb::FileSystem& fs, std::string_view root, std::string_view name,
-  const FileObservers& observers, bool keep_cached);
+std::unique_ptr<duckdb::BufferedFileWriter> OpenOutput(duckdb::FileSystem& fs,
+                                                       std::string_view root,
+                                                       std::string_view name,
+                                                       FileTracker& tracker,
+                                                       bool keep_cached);
 
-void CloseOutput(duckdb::BufferedFileWriter& out,
-                 const FileObservers& observers);
-
-std::vector<std::string> ListIndexFiles(duckdb::FileSystem& fs,
-                                        std::string_view root);
-
-uint64_t MaxSegmentId(std::span<const std::string> files);
+void CloseOutput(duckdb::BufferedFileWriter& out, FileTracker& tracker);
 
 bool RemoveIndexFiles(duckdb::FileSystem& fs, std::string_view root,
                       std::span<const std::string> names);

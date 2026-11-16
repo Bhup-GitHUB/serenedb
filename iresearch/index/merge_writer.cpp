@@ -843,7 +843,7 @@ bool ComputeDocMappingsAndFieldMeta(
 }
 
 void OpenColWriter(duckdb::DatabaseInstance& db, duckdb::FileSystem& fs,
-                   std::string_view root, const FileObservers& observers,
+                   std::string_view root, FileTracker& tracker,
                    std::string_view segment_name,
                    ManagedVector<MergeWriter::ReaderCtx>& readers,
                    std::vector<MergeSource>& sources,
@@ -858,8 +858,7 @@ void OpenColWriter(duckdb::DatabaseInstance& db, duckdb::FileSystem& fs,
       .alive_count = static_cast<uint64_t>(ctx.reader->live_docs_count()),
     });
   }
-  col_writer =
-    std::make_unique<ColWriter>(db, fs, root, observers, segment_name);
+  col_writer = std::make_unique<ColWriter>(db, fs, root, tracker, segment_name);
   col_writer->SetFieldOptions(field_options);
   col_writer->SetHnswBases(hnsw_bases);
 }
@@ -878,7 +877,6 @@ auto MergeWriter::Flush(SegmentMeta& segment,
   -> yaclib::Future<bool> {
   bool result = false;
   FileTracker tracker;
-  const FileObservers observers{&tracker};
   Finally segment_invalidator = [&]() noexcept {
     if (!result) [[unlikely]] {
       tracker.Remove(_fs, _root);
@@ -905,7 +903,7 @@ auto MergeWriter::Flush(SegmentMeta& segment,
 
   std::vector<MergeSource> sources;
   std::unique_ptr<ColWriter> col_writer;
-  OpenColWriter(_db, _fs, _root, observers, segment.name, _readers, sources,
+  OpenColWriter(_db, _fs, _root, tracker, segment.name, _readers, sources,
                 col_writer, _field_options, _hnsw_bases);
   SDB_ASSERT(col_writer);
 
@@ -927,7 +925,7 @@ auto MergeWriter::Flush(SegmentMeta& segment,
 
   std::unique_ptr<ColReader> col_reader;
   MergedNormProvider norm_provider;
-  IdxWriter idx{_fs, _root, observers, segment.name};
+  IdxWriter idx{_fs, _root, tracker, segment.name};
 
   col_writer->SetIdxWriter(idx);
   if (!col_writer->Commit(segment.docs_count, progress_callback)) {
@@ -955,7 +953,7 @@ auto MergeWriter::Flush(SegmentMeta& segment,
   const FlushState state{
     .fs = _fs,
     .root = _root,
-    .observers = observers,
+    .tracker = tracker,
     .norms = norm_provider.reader != nullptr ? &norm_provider : nullptr,
     .name = segment.name,
     .scorer = _scorer,
@@ -998,7 +996,6 @@ auto MergeWriter::Flush(SegmentMeta& segment,
 std::shared_ptr<const SegmentReaderImpl> MergeWriter::FlushPiece(
   SegmentMeta& segment, uint64_t id) {
   FileTracker tracker;
-  const FileObservers observers{&tracker};
   TrackedFiles flushed;
   const absl::Cleanup remove = [&] {
     tracker.Remove(_fs, _root);
@@ -1017,7 +1014,7 @@ std::shared_ptr<const SegmentReaderImpl> MergeWriter::FlushPiece(
 
   std::vector<MergeSource> sources;
   std::unique_ptr<ColWriter> col_writer;
-  OpenColWriter(_db, _fs, _root, observers, segment.name, _readers, sources,
+  OpenColWriter(_db, _fs, _root, tracker, segment.name, _readers, sources,
                 col_writer, _field_options, _hnsw_bases);
   const auto merged_norm_ids =
     MergeNorms(*col_writer, sources, field_meta_map, _field_options);
@@ -1034,7 +1031,7 @@ std::shared_ptr<const SegmentReaderImpl> MergeWriter::FlushPiece(
   const FlushState state{
     .fs = _fs,
     .root = _root,
-    .observers = observers,
+    .tracker = tracker,
     .name = segment.name,
     .doc_count = segment.docs_count,
     .index_features = index_features,

@@ -48,8 +48,8 @@ struct HnswEntry {
 
 class IdxWriter final {
  public:
-  IdxWriter(duckdb::FileSystem& fs, std::string_view root,
-            const FileObservers& observers, std::string_view segment_name);
+  IdxWriter(duckdb::FileSystem& fs, std::string_view root, FileTracker& tracker,
+            std::string_view segment_name);
 
   IdxWriter(const IdxWriter&) = delete;
   IdxWriter& operator=(const IdxWriter&) = delete;
@@ -70,7 +70,7 @@ class IdxWriter final {
 
   duckdb::FileSystem& _fs;
   std::string _root;
-  FileObservers _observers;
+  FileTracker& _tracker;
   std::string _filename;
   std::unique_ptr<duckdb::BufferedFileWriter> _out;
   std::vector<IvfCentroidEntry> _ivf_entries;

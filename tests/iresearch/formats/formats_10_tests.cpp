@@ -67,7 +67,7 @@ class Format10TestCase : public tests::FormatTestCase {
       irs::FlushState state{
         .fs = dir->Fs(),
         .root = dir->Root(),
-        .observers = dir->Observers(),
+        .tracker = dir->Tracker(),
         .name = "segment_name",
         .doc_count = docs.back().first + 1,
         .index_features = field.index_features,
@@ -267,7 +267,7 @@ TEST_P(Format10TestCase, postings_read_write_single_doc) {
     irs::FlushState state{
       .fs = dir().Fs(),
       .root = dir().Root(),
-      .observers = dir().Observers(),
+      .tracker = dir().Tracker(),
       .name = "segment_name",
       .doc_count = 100,
       .index_features = field.index_features,
@@ -427,7 +427,7 @@ TEST_P(Format10TestCase, postings_read_write) {
     irs::FlushState state{
       .fs = dir().Fs(),
       .root = dir().Root(),
-      .observers = dir().Observers(),
+      .tracker = dir().Tracker(),
       .name = "segment_name",
       .doc_count = 150,
       .index_features = field.index_features,
@@ -576,7 +576,7 @@ TEST_P(Format10TestCase, postings_writer_reuse) {
     irs::FlushState state{
       .fs = dir().Fs(),
       .root = dir().Root(),
-      .observers = dir().Observers(),
+      .tracker = dir().Tracker(),
       .name = "0",
       .doc_count = 10000,
       // all possible features in segment
@@ -608,7 +608,7 @@ TEST_P(Format10TestCase, postings_writer_reuse) {
     irs::FlushState state{
       .fs = dir().Fs(),
       .root = dir().Root(),
-      .observers = dir().Observers(),
+      .tracker = dir().Tracker(),
       .name = "1",
       .doc_count = 10000,
       // all possible features in segment
@@ -639,7 +639,7 @@ TEST_P(Format10TestCase, postings_writer_reuse) {
     irs::FlushState state{
       .fs = dir().Fs(),
       .root = dir().Root(),
-      .observers = dir().Observers(),
+      .tracker = dir().Tracker(),
       .name = "2",
       .doc_count = 10000,
       // all possible features in segment
@@ -670,7 +670,7 @@ TEST_P(Format10TestCase, postings_writer_reuse) {
     irs::FlushState state{
       .fs = dir().Fs(),
       .root = dir().Root(),
-      .observers = dir().Observers(),
+      .tracker = dir().Tracker(),
       .name = "3",
       .doc_count = 10000,
       // all possible features in segment
@@ -700,7 +700,7 @@ TEST_P(Format10TestCase, postings_writer_reuse) {
     irs::FlushState state{
       .fs = dir().Fs(),
       .root = dir().Root(),
-      .observers = dir().Observers(),
+      .tracker = dir().Tracker(),
       .name = "4",
       .doc_count = 10000,
       // all possible features in segment
@@ -730,7 +730,7 @@ TEST_P(Format10TestCase, postings_writer_reuse) {
     irs::FlushState state{
       .fs = dir().Fs(),
       .root = dir().Root(),
-      .observers = dir().Observers(),
+      .tracker = dir().Tracker(),
       .name = "5",
       .doc_count = 10000,
     };
@@ -772,7 +772,7 @@ TEST_P(Format10TestCase, ires336) {
   irs::FlushState flush_state{
     .fs = dir->Fs(),
     .root = dir->Root(),
-    .observers = dir->Observers(),
+    .tracker = dir->Tracker(),
     .name = segment_name,
     .doc_count = 10000,
   };
@@ -781,7 +781,7 @@ TEST_P(Format10TestCase, ires336) {
   field_meta.id = kFieldId;
   {
     tests::MockTermReader term_reader{trms, field_meta};
-    irs::IdxWriter idx{dir->Fs(), dir->Root(), dir->Observers(), segment_name};
+    irs::IdxWriter idx{dir->Fs(), dir->Root(), dir->Tracker(), segment_name};
     irs::term_dict::FieldWriter fw{/*compaction=*/true};
     fw.SetIdxWriter(idx);
     fw.prepare(flush_state, 1);
@@ -974,7 +974,7 @@ TEST_P(Format10TestCase, position_reset_with_offsets) {
         irs::FlushState state{
           .fs = dir->Fs(),
           .root = dir->Root(),
-          .observers = dir->Observers(),
+          .tracker = dir->Tracker(),
           .name = "segment_name",
           .doc_count = docs.back().first + 1,
           .index_features = field.index_features,

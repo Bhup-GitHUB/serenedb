@@ -283,7 +283,6 @@ class SegmentWriter final : public NormProvider, util::Noncopyable {
   FileTracker _tracker;
   duckdb::FileSystem& _fs;
   std::string _root;
-  FileObservers _observers;
   ScorerPtr _scorer;
   std::unique_ptr<ColReader> _col_reader;
   size_t _docs = 0;

@@ -116,7 +116,7 @@ void WriteVectorColumn(const ::tests::IndexDir& dir,
                        std::span<const float> data) {
   const uint64_t n = data.size() / d;
   const auto atype = duckdb::LogicalType::ARRAY(duckdb::LogicalType::FLOAT, d);
-  ColWriter w{db, dir.Fs(), dir.Root(), dir.Observers(), "seg"};
+  ColWriter w{db, dir.Fs(), dir.Root(), dir.Tracker(), "seg"};
   auto& cw = w.OpenColumn(id, atype, /*skip_validity=*/false, /*rg_size=*/4096);
   uint64_t pos = 0;
   while (pos < n) {

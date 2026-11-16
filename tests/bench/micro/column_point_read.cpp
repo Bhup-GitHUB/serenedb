@@ -233,7 +233,8 @@ std::unique_ptr<Seg> BuildSeg(Codec codec) {
   const auto rows = Rows();
   const auto type = TypeOf(codec);
   {
-    irs::ColWriter w{CsDb(), fs, root, irs::FileObservers{}, kSeg};
+    irs::FileTracker tracker;
+    irs::ColWriter w{CsDb(), fs, root, tracker, kSeg};
     auto& cw = w.OpenColumn(kField, type, false, DEFAULT_ROW_GROUP_SIZE,
                             CompressionOf(codec));
     Generator gen{codec};

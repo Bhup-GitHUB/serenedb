@@ -27,6 +27,7 @@
 #include <absl/strings/numbers.h>
 #include <absl/strings/str_cat.h>
 
+#include <algorithm>
 #include <duckdb/common/error_data.hpp>
 #include <duckdb/common/file_system.hpp>
 #include <duckdb/common/path.hpp>
@@ -78,6 +79,7 @@ struct LiveStorage {
 struct StoreListing {
   std::string directory;
   std::vector<std::string> files;
+  uint64_t top_segment = 0;
 };
 
 std::vector<StoreListing> ListStores(std::vector<std::string> directories) {
@@ -92,19 +94,24 @@ std::vector<StoreListing> ListStores(std::vector<std::string> directories) {
       auto& listing = listings[i];
       listing.directory = std::move(directories[i]);
       try {
-        listing.files =
-          irs::ListIndexFiles(StorageFileSystem(), listing.directory);
+        StorageFileSystem().ListFiles(
+          listing.directory,
+          [&](duckdb::OpenFileInfo& info) {
+            uint64_t id = 0;
+            if (!duckdb::FileSystem::IsDirectory(info) &&
+                irs::ParseSegmentId(info.path, id)) {
+              listing.top_segment = std::max(listing.top_segment, id);
+              listing.files.push_back(std::move(info.path));
+            }
+          },
+          nullptr, {.strict = true});
       } catch (const std::exception& e) {
         SDB_FATAL(STARTUP, "cannot list directory '", listing.directory,
                   "': ", duckdb::ErrorData{e}.RawMessage());
       }
-      std::erase_if(listing.files, [](const std::string& file) {
-        uint64_t id = 0;
-        return !irs::ParseSegmentId(file, id);
-      });
     });
   for (const auto& listing : listings) {
-    irs::ReserveSegmentId(*SegmentIds(), irs::MaxSegmentId(listing.files));
+    irs::ReserveSegmentId(*SegmentIds(), listing.top_segment);
   }
   return listings;
 }

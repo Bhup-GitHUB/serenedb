@@ -4661,7 +4661,7 @@ TEST_P(DirectoryTestCase, file_tracker) {
   // a tracking copy shares the root and the released segments
   {
     irs::FileTracker tracker;
-    auto track_dir = dir.Observed(tracker);
+    auto track_dir = dir.Tracked(tracker);
 
     ASSERT_EQ(dir.Root(), track_dir.Root());
     ASSERT_EQ(&dir.Released(), &track_dir.Released());
@@ -4670,7 +4670,7 @@ TEST_P(DirectoryTestCase, file_tracker) {
   // files reached through a tracking copy that it did not create stay untracked
   {
     irs::FileTracker tracker;
-    auto track_dir = dir.Observed(tracker);
+    auto track_dir = dir.Tracked(tracker);
     const std::string_view file{"abc"};
     auto file1 = dir.Create(file);
     ASSERT_FALSE(!file1);
@@ -4695,7 +4695,7 @@ TEST_P(DirectoryTestCase, file_tracker) {
   // files created through the tracking copy are tracked
   {
     irs::FileTracker tracker;
-    auto track_dir = dir.Observed(tracker);
+    auto track_dir = dir.Tracked(tracker);
     auto file1 = track_dir.Create("abc");
     ASSERT_FALSE(!file1);
     auto file2 = track_dir.Create("def");
@@ -4707,7 +4707,7 @@ TEST_P(DirectoryTestCase, file_tracker) {
   // test create
   {
     irs::FileTracker tracker;
-    auto track_dir = dir.Observed(tracker);
+    auto track_dir = dir.Tracked(tracker);
     const std::string_view file{"abc"};
     {
       auto file1 = track_dir.Create(file);
@@ -5034,7 +5034,7 @@ TEST_F(DirectoryHookTest, file_tracker_failures) {
   {
     irs::FileTracker tracker;
 
-    ASSERT_THROW(hooked.Observed(tracker).Create("abc"), duckdb::IOException);
+    ASSERT_THROW(hooked.Tracked(tracker).Create("abc"), duckdb::IOException);
 
     ASSERT_TRUE(tracker.Flush().files.empty());
   }
