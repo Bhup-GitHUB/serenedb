@@ -90,8 +90,8 @@ ABSL_FLAG(uint64_t, pg_max_message_bytes, sdb::network::kDefaultMaxMessageBytes,
           "parameter value). Bulk data should use COPY, which streams.");
 
 ABSL_FLAG(uint64_t, io_threads, 0,
-          "IO threads for HTTP and pg-wire connections (0 = max(1, "
-          "cpu_count / 4)).");
+          "IO threads for HTTP and pg-wire connections (0 = the number of "
+          "physical cores).");
 
 ABSL_FLAG(uint64_t, max_connections, 0,
           "Max concurrent client connections across all listeners (0 = "
