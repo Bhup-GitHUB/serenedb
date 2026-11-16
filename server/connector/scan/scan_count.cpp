@@ -67,16 +67,13 @@ void RunCountScan(duckdb::TableFunctionInput&, ScanGlobalState& g,
         auto* table = BeginVerify(l.col_verify, sub, g, l);
         auto plan = irs::count::MakeRoot(
           seg_query,
-          {.table = table, .span = g.UnitSpan(unit), .partial = true});
+          {.table = table, .span = g.UnitSpan(unit), .partial = !g.remote});
         EnsurePlanned(plan != nullptr);
         l.root = std::move(plan);
         l.root_seg = unit.seg;
       }
       l.local_count += l.root->Run(range.begin, range.end);
       l.root_end = range.end;
-      if (g.remote) {
-        FinishRoot(l);
-      }
     }
     FinishUnit(g, l);
   }

@@ -146,10 +146,18 @@ class TermCount : public Root {
       const auto doc = doc_limits::min() + _posting.state.cookie.doc_delta;
       return min <= doc && doc < max;
     }
-    const auto above = from_start ? count : Source().AtLeast(min);
-    const auto below = to_end ? 0 : Source().AtLeast(max);
+    const auto above = from_start ? count : Rank(min);
+    const auto below = to_end ? 0 : Rank(max);
     SDB_ASSERT(above >= below);
     return above - below;
+  }
+
+  uint64_t Rank(doc_id_t doc) {
+    if (doc != _rank_doc) {
+      _rank_doc = doc;
+      _rank = Source().AtLeast(doc);
+    }
+    return _rank;
   }
 
   struct RankSource {
@@ -180,6 +188,8 @@ class TermCount : public Root {
 
   detail::PostingClause _posting;
   std::unique_ptr<RankSource> _ranks;
+  doc_id_t _rank_doc = doc_limits::invalid();
+  uint64_t _rank = 0;
   doc_id_t _pending_begin = doc_limits::invalid();
   doc_id_t _pending_end = doc_limits::invalid();
   bool _partial;

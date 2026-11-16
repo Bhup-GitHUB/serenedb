@@ -66,10 +66,6 @@ void CollectUnit(ScanGlobalState& g, TopKLocalState& l) {
   }
   l.root->Run(range.begin, range.end, collector);
   l.root_end = range.end;
-  if (g.remote) {
-    l.root.reset();
-    l.root_seg = std::numeric_limits<uint32_t>::max();
-  }
 }
 
 void PublishHits(ScanGlobalState& g, TopKLocalState& l) {
