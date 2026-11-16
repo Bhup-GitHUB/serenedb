@@ -202,4 +202,8 @@ class BooleanFilter final : public FilterWithType<BooleanFilter> {
 
 bool ContainsNegation(Filter& filter);
 
+void PreparePositiveLeaves(const Filter& filter, const SubReader& segment,
+                           const PrepareContext& ctx,
+                           absl::FunctionRef<void(QueryBuilder::ptr)> sink);
+
 }  // namespace irs
