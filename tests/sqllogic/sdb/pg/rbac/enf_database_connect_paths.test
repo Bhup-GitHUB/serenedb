@@ -235,6 +235,14 @@ db error: ERROR: permission denied for database "edcp_other_<slt:ignore>"
 DETAIL: User does not have CONNECT privilege.
 
 
+connection c_ved user=edcp_vedernikoff password=edcp_pw
+statement error
+GRANT USAGE ON SCHEMA edcp_other_${__DATABASE__}.edcp_kept TO PUBLIC;
+----
+db error: ERROR: permission denied for database "edcp_other_<slt:ignore>"
+DETAIL: User does not have CONNECT privilege.
+
+
 query
 SELECT table_name FROM duckdb_tables() WHERE database_name = 'edcp_other_${__DATABASE__}' AND schema_name = 'public' ORDER BY 1;
 ----
