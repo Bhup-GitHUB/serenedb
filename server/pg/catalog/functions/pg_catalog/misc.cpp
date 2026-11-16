@@ -150,8 +150,9 @@ struct DescribedObject {
 
 std::optional<DescribedObject> Described(const Session& session, uint64_t oid) {
   if (auto entry = EntryByOid(session, oid);
-      entry && CatalogClassOid(entry->type) != kPgProcTable) {
-    return DescribedObject{CatalogClassOid(entry->type), entry->comment};
+      entry && duckdb::ObjectKindOf(entry->type).pg_class != kPgProcTable) {
+    return DescribedObject{duckdb::ObjectKindOf(entry->type).pg_class,
+                           entry->comment};
   }
   const auto found = FindMacro(session, oid);
   if (!found.macro) {
@@ -197,7 +198,8 @@ void ShobjDescriptionFunction(duckdb::DataChunk& args,
         return duckdb::nullopt;
       }
       auto entry = cluster.LookupOid(transaction, static_cast<uint64_t>(oid));
-      if (!entry || CatalogClassOid(entry->type) != table->Sql().oid) {
+      if (!entry ||
+          duckdb::ObjectKindOf(entry->type).pg_class != table->Sql().oid) {
         return duckdb::nullopt;
       }
       return Comment(result, entry->comment);
@@ -228,7 +230,8 @@ void ColDescriptionFunction(duckdb::DataChunk& args,
     [&](int64_t oid, int32_t column) -> duckdb::optional<duckdb::string_t> {
       auto entry = EntryByOid(session, oid);
       if (!entry || column < 0 ||
-          (column == 0 && CatalogClassOid(entry->type) != kPgClassTable)) {
+          (column == 0 &&
+           duckdb::ObjectKindOf(entry->type).pg_class != kPgClassTable)) {
         return duckdb::nullopt;
       }
       if (column == 0) {

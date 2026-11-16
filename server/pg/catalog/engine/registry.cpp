@@ -68,10 +68,10 @@ class SystemEmptyScan final : public SystemScan {
 std::vector<SystemTable*> gTables;
 std::deque<SystemTable> gEmptyTables;
 
-const duckdb::AclItem kOwnerAcl{.grantee = kRootUser,
-                                .grantor = kRootUser,
-                                .privs = duckdb::Permissions::AllPrivileges(
-                                  duckdb::CatalogType::TABLE_ENTRY)};
+const duckdb::AclItem kOwnerAcl{
+  .grantee = kRootUser,
+  .grantor = kRootUser,
+  .privs = duckdb::ObjectKindOf(duckdb::CatalogType::TABLE_ENTRY).privileges};
 
 using Key = std::pair<std::string_view, std::string_view>;
 using FunctionKey =

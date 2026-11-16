@@ -90,26 +90,7 @@ struct DefaultAcl {
   AclMode owner;
 };
 
-DefaultAcl ClassAcl(char objtype, CatalogType type) {
-  return {objtype, duckdb::Permissions::PublicPrivileges(type),
-          duckdb::Permissions::AllPrivileges(type)};
-}
-
-const DefaultAcl kDefaultAcls[] = {
-  {'c', AclMode::NoRights, AclMode::NoRights},
-  ClassAcl('r', CatalogType::TABLE_ENTRY),
-  ClassAcl('s', CatalogType::SEQUENCE_ENTRY),
-  ClassAcl('d', CatalogType::DATABASE_ENTRY),
-  ClassAcl('f', CatalogType::MACRO_ENTRY),
-  ClassAcl('l', CatalogType::LANGUAGE_ENTRY),
-  {'L', AclMode::NoRights, AclMode::Select | AclMode::Update},
-  ClassAcl('n', CatalogType::SCHEMA_ENTRY),
-  {'t', AclMode::NoRights, AclMode::Create},
-  ClassAcl('F', CatalogType::FOREIGN_DATA_WRAPPER_ENTRY),
-  ClassAcl('S', CatalogType::FOREIGN_SERVER_ENTRY),
-  ClassAcl('T', CatalogType::TYPE_ENTRY),
-  ClassAcl('p', CatalogType::PARAMETER_ENTRY),
-};
+#include "pg/catalog/generated/acl_defaults.gen.inc"
 
 void AclDefaultFunction(duckdb::DataChunk& args, duckdb::ExpressionState& state,
                         duckdb::Vector& result) {
@@ -366,7 +347,7 @@ bool OwnerOnly(const Relation& relation) {
 
 AclMode RelationRights(const Relation& relation) {
   return RelationType(relation) == CatalogType::SEQUENCE_ENTRY
-           ? duckdb::Permissions::AllPrivileges(CatalogType::SEQUENCE_ENTRY)
+           ? duckdb::ObjectKindOf(CatalogType::SEQUENCE_ENTRY).privileges
            : ~AclMode::NoRights;
 }
 
@@ -448,7 +429,7 @@ struct RelationPrivileges : ObjectPrivileges<F> {
 struct TablePrivileges : RelationPrivileges<TablePrivileges> {
   static constexpr std::string_view kName = "has_table_privilege";
   static constexpr CatalogType kType = CatalogType::TABLE_ENTRY;
-  static constexpr AclMode kModes = duckdb::Permissions::AllPrivileges(kType);
+  static constexpr AclMode kModes = duckdb::ObjectKindOf(kType).privileges;
   static constexpr bool kSuperuserFirst = false;
 
   static std::optional<ObjectTarget> Target(const Session&,
@@ -578,7 +559,7 @@ struct ColumnPrivileges : RelationPrivileges<ColumnPrivileges> {
 struct SchemaPrivileges : ObjectPrivileges<SchemaPrivileges> {
   static constexpr std::string_view kName = "has_schema_privilege";
   static constexpr CatalogType kType = CatalogType::SCHEMA_ENTRY;
-  static constexpr AclMode kModes = duckdb::Permissions::AllPrivileges(kType);
+  static constexpr AclMode kModes = duckdb::ObjectKindOf(kType).privileges;
   static constexpr bool kSuperuserFirst = true;
 
   static uint64_t Resolve(const Session& session, std::string_view name) {
@@ -606,7 +587,7 @@ struct SchemaPrivileges : ObjectPrivileges<SchemaPrivileges> {
 struct SequencePrivileges : RelationPrivileges<SequencePrivileges> {
   static constexpr std::string_view kName = "has_sequence_privilege";
   static constexpr CatalogType kType = CatalogType::SEQUENCE_ENTRY;
-  static constexpr AclMode kModes = duckdb::Permissions::AllPrivileges(kType);
+  static constexpr AclMode kModes = duckdb::ObjectKindOf(kType).privileges;
   static constexpr bool kSuperuserFirst = false;
 
   static std::optional<ObjectTarget> Target(const Session& session,
@@ -623,7 +604,7 @@ struct SequencePrivileges : RelationPrivileges<SequencePrivileges> {
 struct FunctionPrivileges : ObjectPrivileges<FunctionPrivileges> {
   static constexpr std::string_view kName = "has_function_privilege";
   static constexpr CatalogType kType = CatalogType::MACRO_ENTRY;
-  static constexpr AclMode kModes = duckdb::Permissions::AllPrivileges(kType);
+  static constexpr AclMode kModes = duckdb::ObjectKindOf(kType).privileges;
   static constexpr bool kSuperuserFirst = true;
 
   static uint64_t Resolve(const Session& session, std::string_view name) {
@@ -636,7 +617,7 @@ struct FunctionPrivileges : ObjectPrivileges<FunctionPrivileges> {
     MacroOverload found;
     if (!entry) {
       found = FindMacro(session, oid);
-    } else if (CatalogClassOid(entry->type) == kPgProcTable) {
+    } else if (duckdb::ObjectKindOf(entry->type).pg_class == kPgProcTable) {
       const auto& macro = entry->Cast<duckdb::MacroCatalogEntry>();
       found = {.entry = &macro, .macro = macro.FindOverload(oid).get()};
     }
@@ -663,7 +644,7 @@ struct FunctionPrivileges : ObjectPrivileges<FunctionPrivileges> {
 struct TypePrivileges : ObjectPrivileges<TypePrivileges> {
   static constexpr std::string_view kName = "has_type_privilege";
   static constexpr CatalogType kType = CatalogType::TYPE_ENTRY;
-  static constexpr AclMode kModes = duckdb::Permissions::AllPrivileges(kType);
+  static constexpr AclMode kModes = duckdb::ObjectKindOf(kType).privileges;
   static constexpr bool kSuperuserFirst = true;
 
   static uint64_t Resolve(const Session& session, std::string_view name) {
@@ -693,7 +674,8 @@ struct TypePrivileges : ObjectPrivileges<TypePrivileges> {
     }
     if (oid & kRowTypeOidBit) {
       const auto relation = EntryByOid(session, RowTypeRelation(oid));
-      if (!relation || CatalogClassOid(relation->type) != kPgClassTable) {
+      if (!relation ||
+          duckdb::ObjectKindOf(relation->type).pg_class != kPgClassTable) {
         return std::nullopt;
       }
       return ObjectTarget{&kBuiltinPermissions};
@@ -722,7 +704,7 @@ struct TypePrivileges : ObjectPrivileges<TypePrivileges> {
 struct DatabasePrivileges : ObjectPrivileges<DatabasePrivileges> {
   static constexpr std::string_view kName = "has_database_privilege";
   static constexpr CatalogType kType = CatalogType::DATABASE_ENTRY;
-  static constexpr AclMode kModes = duckdb::Permissions::AllPrivileges(kType);
+  static constexpr AclMode kModes = duckdb::ObjectKindOf(kType).privileges;
   static constexpr bool kSuperuserFirst = true;
 
   static uint64_t Resolve(const Session& session, std::string_view name) {
@@ -746,7 +728,7 @@ struct DatabasePrivileges : ObjectPrivileges<DatabasePrivileges> {
 struct ServerPrivileges : ObjectPrivileges<ServerPrivileges> {
   static constexpr std::string_view kName = "has_server_privilege";
   static constexpr CatalogType kType = CatalogType::FOREIGN_SERVER_ENTRY;
-  static constexpr AclMode kModes = duckdb::Permissions::AllPrivileges(kType);
+  static constexpr AclMode kModes = duckdb::ObjectKindOf(kType).privileges;
   static constexpr bool kSuperuserFirst = true;
 
   static uint64_t Resolve(const Session& session, std::string_view name) {
@@ -773,7 +755,7 @@ struct ForeignDataWrapperPrivileges
   static constexpr std::string_view kName =
     "has_foreign_data_wrapper_privilege";
   static constexpr CatalogType kType = CatalogType::FOREIGN_DATA_WRAPPER_ENTRY;
-  static constexpr AclMode kModes = duckdb::Permissions::AllPrivileges(kType);
+  static constexpr AclMode kModes = duckdb::ObjectKindOf(kType).privileges;
   static constexpr bool kSuperuserFirst = true;
 
   struct Scope : ObjectScope {
@@ -839,7 +821,7 @@ struct TablespacePrivileges : ObjectPrivileges<TablespacePrivileges> {
 struct LanguagePrivileges : ObjectPrivileges<LanguagePrivileges> {
   static constexpr std::string_view kName = "has_language_privilege";
   static constexpr CatalogType kType = CatalogType::LANGUAGE_ENTRY;
-  static constexpr AclMode kModes = duckdb::Permissions::AllPrivileges(kType);
+  static constexpr AclMode kModes = duckdb::ObjectKindOf(kType).privileges;
   static constexpr bool kSuperuserFirst = true;
 
   struct Scope : ObjectScope {
@@ -883,7 +865,7 @@ struct LanguagePrivileges : ObjectPrivileges<LanguagePrivileges> {
 struct ParameterPrivileges : ObjectPrivileges<ParameterPrivileges> {
   static constexpr std::string_view kName = "has_parameter_privilege";
   static constexpr CatalogType kType = CatalogType::PARAMETER_ENTRY;
-  static constexpr AclMode kModes = duckdb::Permissions::AllPrivileges(kType);
+  static constexpr AclMode kModes = duckdb::ObjectKindOf(kType).privileges;
   static constexpr bool kSuperuserFirst = false;
 
   struct Parameter {

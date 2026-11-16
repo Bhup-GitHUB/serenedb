@@ -234,7 +234,7 @@ MacroOverload FindMacro(const Session& session, uint64_t oid) {
   }
   const auto entry = session.database->LookupOwner(*session.transaction, oid);
   if (!entry || entry->internal ||
-      CatalogClassOid(entry->type) != kPgProcTable) {
+      duckdb::ObjectKindOf(entry->type).pg_class != kPgProcTable) {
     return {};
   }
   const auto& macro = entry->Cast<duckdb::MacroCatalogEntry>();

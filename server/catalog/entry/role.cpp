@@ -39,33 +39,6 @@
 namespace sdb::catalog {
 namespace {
 
-duckdb::RoleCapability PredefinedCapability(duckdb::idx_t oid) {
-  switch (oid) {
-    case pg::kPgReadAllSettingsRole:
-      return duckdb::RoleCapability::ReadAllSettings;
-    case pg::kPgReadAllStatsRole:
-      return duckdb::RoleCapability::ReadAllStats;
-    case pg::kPgSignalBackendRole:
-      return duckdb::RoleCapability::SignalBackend;
-    case pg::kPgCheckpointRole:
-      return duckdb::RoleCapability::Checkpoint;
-    case pg::kPgReadServerFilesRole:
-      return duckdb::RoleCapability::ReadServerFiles;
-    case pg::kPgWriteServerFilesRole:
-      return duckdb::RoleCapability::WriteServerFiles;
-    case pg::kPgReadAllDataRole:
-      return duckdb::RoleCapability::ReadAllData;
-    case pg::kPgWriteAllDataRole:
-      return duckdb::RoleCapability::WriteAllData;
-    case pg::kPgCreateSubscriptionRole:
-      return duckdb::RoleCapability::CreateSubscription;
-    case pg::kPgMaintainRole:
-      return duckdb::RoleCapability::Maintain;
-    default:
-      return duckdb::RoleCapability::None;
-  }
-}
-
 bool HashesEmptyPassword(std::string_view role, std::string_view password) {
   if (network::IsMd5Verifier(password)) {
     return network::VerifyCleartextAgainstMd5(password, role, "");
@@ -127,7 +100,7 @@ RoleCatalogEntry::RoleCatalogEntry(duckdb::Catalog& catalog,
                       info.oid,
                       info.options,
                       info.member_of,
-                      PredefinedCapability(info.oid),
+                      duckdb::PredefinedRoleCapability(info.oid),
                       IsPredefinedRole(info.oid)},
     _conn_limit{info.conn_limit},
     _valid_until{info.valid_until},

@@ -330,8 +330,8 @@ class PgDepend final : public SystemTableScan<kPgDependSql> {
   }
 
   void Namespace(const duckdb::CatalogEntry& entry) {
-    Depend(CatalogClassOid(entry.type), entry.oid, 0, kPgNamespaceTable,
-           entry.ParentSchemaOid(), 0, 'n');
+    Depend(duckdb::ObjectKindOf(entry.type).pg_class, entry.oid, 0,
+           kPgNamespaceTable, entry.ParentSchemaOid(), 0, 'n');
   }
 
   void RowType(duckdb::idx_t relation) {
@@ -354,8 +354,8 @@ class PgDepend final : public SystemTableScan<kPgDependSql> {
       }
       return;
     }
-    Depend(classid, objid, 0, CatalogClassOid(object.type), object.oid, 0,
-           deptype);
+    Depend(classid, objid, 0, duckdb::ObjectKindOf(object.type).pg_class,
+           object.oid, 0, deptype);
   }
 
   void Trigger(const duckdb::TableCatalogEntry& table,

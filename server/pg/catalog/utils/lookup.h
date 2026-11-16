@@ -70,8 +70,6 @@ inline constexpr std::array kRelationSets{duckdb::CatalogType::TABLE_ENTRY,
                                           duckdb::CatalogType::SEQUENCE_ENTRY,
                                           duckdb::CatalogType::INDEX_ENTRY};
 
-duckdb::idx_t CatalogClassOid(duckdb::CatalogType type);
-
 struct ObjectName {
   std::string_view schema;
   std::string_view name;

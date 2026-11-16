@@ -266,32 +266,27 @@ void VisitDatabaseGrants(duckdb::ClientContext& context,
       return item.grantee == role || item.grantor == role;
     });
   };
-  using enum duckdb::CatalogType;
   std::shared_ptr<const BuiltinFunctions> builtins;
-  const auto& rows = database.permissions.Rows();
-  for (const auto kind : {FOREIGN_DATA_WRAPPER_ENTRY, LANGUAGE_ENTRY,
-                          SCHEMA_ENTRY, MACRO_ENTRY, TYPE_ENTRY, TABLE_ENTRY}) {
-    const auto classid = CatalogClassOid(kind);
-    for (const auto& row : rows.OfKind(kind)) {
-      if (names(row.acl)) {
-        auto objid = row.oid;
-        if (kind == MACRO_ENTRY) {
-          if (!builtins) {
-            builtins = GetBuiltinFunctions(context);
-          }
-          const auto* builtin = builtins->FindByKey(row.name);
-          objid = builtin ? builtin->oid : kInvalidOid;
+  for (const auto& row : database.permissions.Rows().rows) {
+    const auto classid = duckdb::ObjectKindOf(row.kind).pg_class;
+    if (names(row.acl)) {
+      auto objid = row.oid;
+      if (row.kind == duckdb::CatalogType::MACRO_ENTRY) {
+        if (!builtins) {
+          builtins = GetBuiltinFunctions(context);
         }
-        visitor({classid, objid, 0});
+        const auto* builtin = builtins->FindByKey(row.name);
+        objid = builtin ? builtin->oid : kInvalidOid;
       }
-      const auto* system =
-        row.columns.empty() ? nullptr : FindSystemTable(row.oid);
-      for (const auto& column : row.columns) {
-        if (system && names(column.acl) &&
-            system->Columns().ColumnExists(column.column)) {
-          visitor({classid, row.oid,
-                   Attnum(system->Columns().GetColumn(column.column))});
-        }
+      visitor({classid, objid, 0});
+    }
+    const auto* system =
+      row.columns.empty() ? nullptr : FindSystemTable(row.oid);
+    for (const auto& column : row.columns) {
+      if (system && names(column.acl) &&
+          system->Columns().ColumnExists(column.column)) {
+        visitor({classid, row.oid,
+                 Attnum(system->Columns().GetColumn(column.column))});
       }
     }
   }
@@ -336,7 +331,7 @@ void VisitRoleReferences(
         }
         return;
       }
-      const auto classid = CatalogClassOid(object.type);
+      const auto classid = duckdb::ObjectKindOf(object.type).pg_class;
       if (const auto deptype = use(object.permissions)) {
         visitor({db->oid, classid, object.oid, 0, deptype},
                 [&] { return DescribeObject(context, object); });

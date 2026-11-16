@@ -47,40 +47,6 @@
 
 namespace sdb::pg {
 
-duckdb::idx_t CatalogClassOid(duckdb::CatalogType type) {
-  using enum duckdb::CatalogType;
-  switch (type) {
-    case TABLE_ENTRY:
-    case VIEW_ENTRY:
-    case INDEX_ENTRY:
-    case SEQUENCE_ENTRY:
-      return kPgClassTable;
-    case MACRO_ENTRY:
-    case TABLE_MACRO_ENTRY:
-      return kPgProcTable;
-    case TYPE_ENTRY:
-      return kPgTypeTable;
-    case SCHEMA_ENTRY:
-      return kPgNamespaceTable;
-    case DATABASE_ENTRY:
-      return kPgDatabaseTable;
-    case ROLE_ENTRY:
-      return kPgAuthidTable;
-    case FOREIGN_SERVER_ENTRY:
-      return kPgForeignServerTable;
-    case TOKENIZER_ENTRY:
-      return kPgTsDictTable;
-    case SUBSCRIPTION_ENTRY:
-      return kPgSubscriptionTable;
-    case FOREIGN_DATA_WRAPPER_ENTRY:
-      return kPgForeignDataWrapperTable;
-    case LANGUAGE_ENTRY:
-      return kPgLanguageTable;
-    default:
-      return kInvalidOid;
-  }
-}
-
 duckdb::optional_ptr<duckdb::CatalogEntry> EntryByOid(const Session& session,
                                                       uint64_t oid) {
   if (!session.database || oid == kInvalidOid) {
@@ -177,7 +143,7 @@ std::optional<Relation> FindRelation(
   const Session& session, uint64_t oid,
   duckdb::optional_ptr<duckdb::CatalogEntry> entry) {
   if (entry) {
-    if (CatalogClassOid(entry->type) != kPgClassTable &&
+    if (duckdb::ObjectKindOf(entry->type).pg_class != kPgClassTable &&
         (entry->type != duckdb::CatalogType::TYPE_ENTRY ||
          !duckdb::StructType::IsStruct(
            entry->Cast<duckdb::TypeCatalogEntry>().user_type))) {
@@ -195,7 +161,7 @@ std::optional<Relation> FindRelation(
     return Relation{key.table, key.constraint, nullptr, nullptr};
   }
   if (const auto entry = TemporaryEntryByOid(session, oid);
-      entry && CatalogClassOid(entry->type) == kPgClassTable) {
+      entry && duckdb::ObjectKindOf(entry->type).pg_class == kPgClassTable) {
     return Relation{entry, nullptr, nullptr, nullptr};
   }
   return std::nullopt;

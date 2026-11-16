@@ -1,4 +1,9 @@
-from .common import camel, cpp_str
+import os
+
+from .common import DUCKDB_INCLUDE, camel, cpp_str
+
+ROLE_CAPABILITY = os.path.join(DUCKDB_INCLUDE, 'common', 'enums',
+                               'role_capability.hpp')
 
 OPTIONS = {
     'rolsuper': 'Superuser',
@@ -56,3 +61,55 @@ def generate(gen):
                      f'{members}}},')
     lines.append('};')
     gen.write('predefined_roles.gen.inc', lines)
+    capabilities(gen, roles)
+
+
+def capabilities(gen, roles):
+    names = {name: camel(name.removeprefix('pg_')) for name in roles}
+    lines = [
+        '#pragma once',
+        '',
+        '#include "duckdb/common/constants.hpp"',
+        '',
+        'namespace duckdb {',
+        '',
+        'enum class RoleCapability : uint32_t {',
+        '\tNone = 0x0,',
+    ]
+    lines += [f'\t{capability} = {hex(1 << bit)},'
+              for bit, capability in enumerate(names.values())]
+    lines += [
+        f'\tSuperuser = {hex(1 << len(names))},',
+        '};',
+        '',
+        'constexpr RoleCapability operator|(RoleCapability a, '
+        'RoleCapability b) {',
+        '\treturn static_cast<RoleCapability>(static_cast<uint32_t>(a) | '
+        'static_cast<uint32_t>(b));',
+        '}',
+        'constexpr RoleCapability operator&(RoleCapability a, '
+        'RoleCapability b) {',
+        '\treturn static_cast<RoleCapability>(static_cast<uint32_t>(a) & '
+        'static_cast<uint32_t>(b));',
+        '}',
+        'constexpr RoleCapability &operator|=(RoleCapability &a, '
+        'RoleCapability b) {',
+        '\ta = a | b;',
+        '\treturn a;',
+        '}',
+        '',
+        'constexpr RoleCapability PredefinedRoleCapability(idx_t role) {',
+        '\tswitch (role) {',
+    ]
+    for name, capability in names.items():
+        lines += [f'\tcase {roles[name]["oid"]}:',
+                  f'\t\treturn RoleCapability::{capability};']
+    lines += [
+        '\tdefault:',
+        '\t\treturn RoleCapability::None;',
+        '\t}',
+        '}',
+        '',
+        '} // namespace duckdb',
+    ]
+    gen.write_path(ROLE_CAPABILITY, lines)

@@ -36,22 +36,16 @@
 namespace sdb::catalog {
 namespace {
 
+bool TopLevel(duckdb::CatalogType type) {
+  const auto container = duckdb::ObjectKindOf(type).container;
+  return container == duckdb::ObjectContainer::DATABASE ||
+         container == duckdb::ObjectContainer::CLUSTER;
+}
+
 bool TracksOwner(duckdb::CatalogType type) {
-  switch (type) {
-    case duckdb::CatalogType::TABLE_ENTRY:
-    case duckdb::CatalogType::VIEW_ENTRY:
-    case duckdb::CatalogType::SEQUENCE_ENTRY:
-    case duckdb::CatalogType::SCHEMA_ENTRY:
-    case duckdb::CatalogType::TYPE_ENTRY:
-    case duckdb::CatalogType::MACRO_ENTRY:
-    case duckdb::CatalogType::TABLE_MACRO_ENTRY:
-    case duckdb::CatalogType::TOKENIZER_ENTRY:
-    case duckdb::CatalogType::JOB_ENTRY:
-    case duckdb::CatalogType::FOREIGN_SERVER_ENTRY:
-      return true;
-    default:
-      return false;
-  }
+  const auto container = duckdb::ObjectKindOf(type).container;
+  return container == duckdb::ObjectContainer::DATABASE ||
+         container == duckdb::ObjectContainer::SCHEMA;
 }
 
 bool IsMacro(const duckdb::CatalogEntry& entry) {
@@ -67,17 +61,11 @@ bool GrantsTo(std::span<const duckdb::AclItem> acl, duckdb::idx_t role) {
 duckdb::QualifiedName OwnedEntryName(duckdb::CatalogTransaction transaction,
                                      duckdb::CatalogEntry& entry) {
   const auto& catalog = entry.ParentCatalog().GetName();
-  switch (entry.type) {
-    case duckdb::CatalogType::SCHEMA_ENTRY:
-    case duckdb::CatalogType::FOREIGN_SERVER_ENTRY:
-    case duckdb::CatalogType::SUBSCRIPTION_ENTRY:
-    case duckdb::CatalogType::DATABASE_ENTRY:
-    case duckdb::CatalogType::ROLE_ENTRY:
-      return duckdb::QualifiedName{catalog, duckdb::Identifier{}, entry.name};
-    default:
-      return duckdb::QualifiedName::FromCatalogSchema(
-        catalog, entry.ParentSchemaPath(transaction), entry.name);
+  if (TopLevel(entry.type)) {
+    return duckdb::QualifiedName{catalog, duckdb::Identifier{}, entry.name};
   }
+  return duckdb::QualifiedName::FromCatalogSchema(
+    catalog, entry.ParentSchemaPath(transaction), entry.name);
 }
 
 struct OwnedAlter {
@@ -117,7 +105,7 @@ duckdb::AlterPermissionsInfo& AddRevoke(std::vector<OwnedAlter>& alters,
                                         duckdb::CatalogType acl_class,
                                         const duckdb::DropOwnedInfo& info) {
   auto& alter = AddAlter(alters, catalog, transaction, entry);
-  alter.privileges = duckdb::Permissions::AllPrivileges(acl_class);
+  alter.privileges = duckdb::ObjectKindOf(acl_class).privileges;
   alter.revoke = true;
   alter.cascade = true;
   alter.grantee_id = role;
@@ -192,23 +180,18 @@ void RevokeShared(ClusterCatalog& cluster, duckdb::ClientContext& context,
         if (!local || entry.name != *local) {
           continue;
         }
-        using enum duckdb::CatalogType;
-        for (const auto kind :
-             {FOREIGN_DATA_WRAPPER_ENTRY, LANGUAGE_ENTRY, TABLE_ENTRY,
-              SCHEMA_ENTRY, MACRO_ENTRY, TYPE_ENTRY}) {
-          for (const auto& row : permissions.Rows().OfKind(kind)) {
-            if (!GrantsTo(row.acl, role) &&
-                absl::c_none_of(row.columns,
-                                [&](const duckdb::ColumnAcl& column) {
-                                  return GrantsTo(column.acl, role);
-                                })) {
-              continue;
-            }
-            auto& alter = database(role, kind);
-            alter.database_rows = {
-              duckdb::GrantRow{row.kind, row.oid, row.name, {}, {}}};
-            alter.object_owner_id = bootstrap;
+        for (const auto& row : permissions.Rows().rows) {
+          if (!GrantsTo(row.acl, role) &&
+              absl::c_none_of(row.columns,
+                              [&](const duckdb::ColumnAcl& column) {
+                                return GrantsTo(column.acl, role);
+                              })) {
+            continue;
           }
+          auto& alter = database(role, row.kind);
+          alter.database_rows = {
+            duckdb::GrantRow{row.kind, row.oid, row.name, {}, {}}};
+          alter.object_owner_id = bootstrap;
         }
         if (absl::c_any_of(permissions.defaults,
                            [&](const duckdb::DefaultAcl& row) {
@@ -308,7 +291,7 @@ void SereneDBCatalog::DropOwned(duckdb::CatalogTransaction transaction,
     if (owned(entry)) {
       return;
     }
-    const auto acl_class = duckdb::Permissions::AclClass(entry.type);
+    const auto acl_class = duckdb::ObjectKindOf(entry.type).acl_class;
     if (!IsMacro(entry)) {
       for (const auto role : info.role_ids) {
         if (duckdb::ReferencesRole(entry, role)) {
