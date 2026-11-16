@@ -49,6 +49,7 @@ struct BuiltinFunction {
   char volatility;
   std::string_view src;
   duckdb::RoleCapability capability = duckdb::RoleCapability::None;
+  std::string grant_key;
 };
 
 class BuiltinFunctions {
@@ -77,7 +78,6 @@ class BuiltinFunctions {
 std::shared_ptr<const BuiltinFunctions> GetBuiltinFunctions(
   duckdb::ClientContext& context);
 
-std::string BuiltinFunctionKey(const BuiltinFunction& function);
 const duckdb::Permissions& BuiltinFunctionPermissions(
   duckdb::ClientContext& context, const BuiltinFunction& function);
 std::string BuiltinFunctionKey(const duckdb::CatalogEntry& function,

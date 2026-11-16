@@ -179,6 +179,20 @@ struct BuiltinOverload {
   BuiltinFunction function;
 };
 
+std::string FunctionKey(duckdb::idx_t nsp, std::string_view name,
+                        std::span<const duckdb::idx_t> argtypes) {
+  return absl::StrCat(nsp, ".", name, "(", absl::StrJoin(argtypes, ","), ")");
+}
+
+std::string BuiltinGrantKey(std::string_view schema, std::string_view name,
+                            std::span<const duckdb::idx_t> argtypes) {
+  if (schema == DEFAULT_SCHEMA) {
+    return FunctionKey(kPgCatalogSchema, name, argtypes);
+  }
+  const auto* system = FindSystemObject(kSystemNamespaces, schema);
+  return system ? FunctionKey(system->oid, name, argtypes) : std::string{};
+}
+
 template<typename Visit>
 void VisitBuiltinOverloads(duckdb::ClientContext& context, Visit&& visit) {
   const auto emit_source = [&](std::string_view schema, std::string_view name,
@@ -192,6 +206,7 @@ void VisitBuiltinOverloads(duckdb::ClientContext& context, Visit&& visit) {
                           bool exact, char kind, duckdb::idx_t rettype,
                           std::vector<duckdb::idx_t> argtypes, bool retset,
                           bool strict, char volatility) {
+      auto grant_key = BuiltinGrantKey(schema, name, argtypes);
       visit(BuiltinOverload{
         .key = absl::StrCat(kind_name, " ", system_entry ? "system." : "",
                             schema, ".", name, "(", parameters, ")"),
@@ -209,7 +224,8 @@ void VisitBuiltinOverloads(duckdb::ClientContext& context, Visit&& visit) {
           .retset = retset,
           .strict = strict,
           .volatility = volatility,
-          .capability = capability}});
+          .capability = capability,
+          .grant_key = std::move(grant_key)}});
     };
     const auto emit_macros =
       [&](std::string_view kind_name,
@@ -305,13 +321,15 @@ std::vector<BuiltinFunction> CollectBuiltinFunctions(
   duckdb::ClientContext& context) {
   std::vector<BuiltinFunction> functions;
   for (const auto& proc : BuiltinProcs()) {
-    functions.emplace_back(
+    auto& function = functions.emplace_back(
       static_cast<duckdb::idx_t>(proc.oid), std::string{proc.name},
       kPgCatalogSchema, proc.kind, static_cast<duckdb::idx_t>(proc.lang),
       static_cast<duckdb::idx_t>(proc.rettype),
       std::vector<duckdb::idx_t>{proc.argtypes.begin(),
                                  proc.argtypes.begin() + proc.nargs},
       proc.retset, proc.strict, proc.volatility, proc.src);
+    function.grant_key = BuiltinGrantKey(irs::StaticStrings::kPgCatalogSchema,
+                                         function.name, function.argtypes);
   }
   std::vector<BuiltinOverload> overloads;
   VisitBuiltinOverloads(context, [&](BuiltinOverload&& overload) {
@@ -346,16 +364,6 @@ absl::Mutex gBuiltinsLock;
 std::shared_ptr<const BuiltinFunctions> gBuiltins
   ABSL_GUARDED_BY(gBuiltinsLock);
 
-duckdb::idx_t EntryNamespace(const duckdb::CatalogEntry& function) {
-  const auto schema = function.ParentSchemaName();
-  if (schema == duckdb::Identifier{irs::StaticStrings::kInformationSchema}) {
-    return kPgInformationSchema;
-  }
-  return schema == duckdb::Identifier{irs::StaticStrings::kDocsSchema}
-           ? kInvalidOid
-           : kPgCatalogSchema;
-}
-
 std::vector<duckdb::idx_t> OverloadArgTypes(
   const duckdb::CatalogEntry& function, duckdb::idx_t overload) {
   using enum duckdb::CatalogType;
@@ -389,25 +397,13 @@ std::vector<duckdb::idx_t> OverloadArgTypes(
   }
 }
 
-std::string FunctionKey(duckdb::idx_t nsp, std::string_view name,
-                        std::span<const duckdb::idx_t> argtypes) {
-  return absl::StrCat(nsp, ".", name, "(", absl::StrJoin(argtypes, ","), ")");
-}
-
 }  // namespace
-
-std::string BuiltinFunctionKey(const BuiltinFunction& function) {
-  return FunctionKey(function.nsp, function.name, function.argtypes);
-}
 
 std::string BuiltinFunctionKey(const duckdb::CatalogEntry& function,
                                duckdb::idx_t overload) {
-  const auto nsp = EntryNamespace(function);
-  if (nsp == kInvalidOid) {
-    return {};
-  }
-  return FunctionKey(nsp, function.name.GetIdentifierName(),
-                     OverloadArgTypes(function, overload));
+  return BuiltinGrantKey(function.ParentSchemaName().GetIdentifierName(),
+                         function.name.GetIdentifierName(),
+                         OverloadArgTypes(function, overload));
 }
 
 const duckdb::Permissions& BuiltinFunctionPermissions(
@@ -418,7 +414,7 @@ const duckdb::Permissions& BuiltinFunctionPermissions(
     .acl = {duckdb::AclItem{kRootUser, kRootUser, duckdb::AclMode::Execute,
                             duckdb::AclMode::NoRights}}};
   if (const auto grants = duckdb::BuiltinFunctionGrants(context)) {
-    if (const auto row = grants->find(BuiltinFunctionKey(function));
+    if (const auto row = grants->find(function.grant_key);
         row != grants->end()) {
       return row->second;
     }
@@ -429,16 +425,13 @@ const duckdb::Permissions& BuiltinFunctionPermissions(
 std::string BuiltinSignatureKey(
   const duckdb::CatalogEntry& function,
   const duckdb::vector<duckdb::LogicalType>& arguments) {
-  const auto nsp = EntryNamespace(function);
-  if (nsp == kInvalidOid) {
-    return {};
-  }
   std::vector<duckdb::idx_t> argtypes;
   argtypes.reserve(arguments.size());
   for (const auto& type : arguments) {
     argtypes.emplace_back(TypeOid(type));
   }
-  return FunctionKey(nsp, function.name.GetIdentifierName(), argtypes);
+  return BuiltinGrantKey(function.ParentSchemaName().GetIdentifierName(),
+                         function.name.GetIdentifierName(), argtypes);
 }
 
 BuiltinFunctions::BuiltinFunctions(duckdb::idx_t version,
@@ -456,7 +449,7 @@ const BuiltinFunction* BuiltinFunctions::FindByKey(std::string_view key) const {
     return nullptr;
   }
   for (const auto index : Named(key.substr(dot + 1, paren - dot - 1))) {
-    if (BuiltinFunctionKey(_functions[index]) == key) {
+    if (_functions[index].grant_key == key) {
       return &_functions[index];
     }
   }
