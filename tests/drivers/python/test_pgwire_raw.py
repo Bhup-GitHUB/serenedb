@@ -3858,6 +3858,19 @@ def test_sequence_sqlstates(conn):
     assert not errors(_simple(conn, "DROP SEQUENCE ns_seq"))
 
 
+@pytest.mark.parametrize(
+    "query",
+    [
+        "ALTER SERVER ns_no_server OWNER TO postgres",
+        "DROP SERVER ns_no_server",
+        "DROP SUBSCRIPTION ns_no_subscription",
+        "DROP TEXT SEARCH DICTIONARY ns_no_dictionary",
+    ],
+)
+def test_missing_object_is_undefined_object(conn, query):
+    assert sqlstates(_simple(conn, query)) == ["42704"]
+
+
 def test_deallocate_all_releases_protocol_statements(conn):
     handles = (
         "SELECT count(*) FROM duckdb_prepared_statements()"

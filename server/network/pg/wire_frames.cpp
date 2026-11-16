@@ -181,7 +181,8 @@ int DuckExceptionToErrcode(const duckdb::ErrorData& error) {
       return dup ? ERRCODE_DUPLICATE_FUNCTION : ERRCODE_UNDEFINED_FUNCTION;
     }
     if (kind == "Type" || kind == "Role" || kind == "Language" ||
-        kind == "Foreign Data Wrapper") {
+        kind == "Foreign Data Wrapper" || kind == "Foreign Server" ||
+        kind == "Subscription" || kind == "Tokenizer") {
       return dup ? ERRCODE_DUPLICATE_OBJECT : ERRCODE_UNDEFINED_OBJECT;
     }
     if (kind == "prepared statement") {
