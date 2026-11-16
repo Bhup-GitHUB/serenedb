@@ -3679,7 +3679,7 @@ TEST_P(DirectoryTestCase, visit) {
   {
     size_t calls_count = 0;
     auto visitor = [&calls_count](std::string_view) { ++calls_count; };
-    _dir->Visit(visitor);
+    absl::c_for_each(_dir->Files(), visitor);
     ASSERT_EQ(0, calls_count);
   }
 
@@ -3695,7 +3695,7 @@ TEST_P(DirectoryTestCase, visit) {
     auto visitor = [&names](std::string_view file) {
       EXPECT_TRUE(names.erase(file));
     };
-    _dir->Visit(visitor);
+    absl::c_for_each(_dir->Files(), visitor);
     ASSERT_TRUE(names.empty());
   }
 }
@@ -4165,7 +4165,7 @@ TEST_P(DirectoryTestCase, directory_size) {
         _dir->Open(name, duckdb::MappedFileAccess::NORMAL)->GetSize();
     };
 
-    _dir->Visit(visitor);
+    absl::c_for_each(_dir->Files(), visitor);
     ASSERT_EQ(sizeof(uint32_t), accumulated_size);
   }
 }
