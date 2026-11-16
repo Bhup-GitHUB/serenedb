@@ -243,14 +243,12 @@ void RegisterServerExtensions(duckdb::DatabaseInstance& db) {
   config.builtin_type_oid = &pg::BuiltinTypeOid;
   for (const auto& wrapper : pg::kForeignDataWrappers) {
     config.foreign_data_wrappers.emplace(
-      wrapper.name,
-      duckdb::ForeignDataWrapper{.oid = wrapper.oid, .owner = pg::kRootUser});
+      wrapper.name, duckdb::ForeignDataWrapper{.oid = wrapper.oid});
   }
   for (const auto& language : pg::kSystemLanguages) {
-    config.languages.emplace(language.name,
-                             duckdb::Language{.oid = language.oid,
-                                              .owner = pg::kRootUser,
-                                              .trusted = language.trusted});
+    config.languages.emplace(
+      language.name,
+      duckdb::Language{.oid = language.oid, .trusted = language.trusted});
   }
 }
 

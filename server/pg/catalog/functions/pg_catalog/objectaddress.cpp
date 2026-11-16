@@ -33,7 +33,6 @@
 #include <duckdb/catalog/catalog_entry/type_catalog_entry.hpp>
 #include <duckdb/common/vector/vector_iterator.hpp>
 #include <duckdb/common/vector/vector_writer.hpp>
-#include <duckdb/main/config.hpp>
 #include <iresearch/utils/pg/errcodes.hpp>
 #include <iresearch/utils/pg/sql_exception_macro.hpp>
 #include <iresearch/utils/static_strings.hpp>
@@ -377,17 +376,6 @@ ObjectIdentity IdentifyDatabase(const Session& session, uint64_t oid) {
            : Missing("database");
 }
 
-ObjectIdentity IdentifyForeignDataWrapper(const Session& session,
-                                          uint64_t oid) {
-  for (const auto& [name, wrapper] :
-       duckdb::DBConfig::GetConfig(*session.context).foreign_data_wrappers) {
-    if (wrapper.oid == oid) {
-      return IdentifyNamed("foreign-data wrapper", name);
-    }
-  }
-  return Missing("foreign-data wrapper");
-}
-
 std::optional<ObjectIdentity> IdentifyObject(const Session& session,
                                              const ObjectAddress& address) {
   const auto [classid, objid, objsubid] = address;
@@ -432,7 +420,7 @@ std::optional<ObjectIdentity> IdentifyObject(const Session& session,
     return IdentifyNamed("language", kSystemLanguages, objid);
   }
   if (classid == kPgForeignDataWrapperTable) {
-    return IdentifyForeignDataWrapper(session, objid);
+    return IdentifyNamed("foreign-data wrapper", kForeignDataWrappers, objid);
   }
   if (classid == kPgAmTable) {
     return IdentifyNamed("access method", kSystemAccessMethods, objid);
