@@ -615,7 +615,9 @@ struct FunctionPrivileges : ObjectPrivileges<FunctionPrivileges> {
     duckdb::optional_ptr<duckdb::CatalogEntry> entry) {
     MacroOverload found;
     if (!entry) {
-      found = FindMacro(session, oid);
+      if (oid >= kMaxSystem) {
+        found = FindMacro(session, oid);
+      }
     } else if (duckdb::ObjectKindOf(entry->type).pg_class == kPgProcTable) {
       const auto& macro = entry->Cast<duckdb::MacroCatalogEntry>();
       found = {.entry = &macro, .macro = macro.FindOverload(oid).get()};
