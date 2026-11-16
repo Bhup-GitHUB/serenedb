@@ -127,20 +127,14 @@ bool Reassigned(const duckdb::ReassignOwnedInfo& info, duckdb::idx_t owner) {
 void ScanOwnable(SereneDBCatalog& catalog,
                  duckdb::CatalogTransaction transaction,
                  absl::FunctionRef<void(duckdb::CatalogEntry&)> visit) {
-  const auto ownable = [&](duckdb::CatalogEntry& entry) {
+  catalog.ScanEntries(transaction, [&](duckdb::CatalogEntry& entry) {
     if (entry.internal || !TracksOwner(entry.type) ||
         (entry.type == duckdb::CatalogType::SEQUENCE_ENTRY &&
          OwnerOf(transaction, entry))) {
       return;
     }
     visit(entry);
-  };
-  catalog.Set(duckdb::CatalogType::SCHEMA_ENTRY)
-    .Scan(transaction, [&](duckdb::CatalogEntry& schema) {
-      ownable(schema);
-      schema.Cast<Schema>().ScanTree(transaction, ownable);
-    });
-  catalog.Servers().Scan(transaction, ownable);
+  });
 }
 
 void ReassignShared(ClusterCatalog& cluster, duckdb::ClientContext& context,
@@ -253,11 +247,6 @@ void SereneDBCatalog::ReassignOwned(duckdb::CatalogTransaction transaction,
       }
     }
   });
-  _subscriptions.Scan(transaction, [&](duckdb::CatalogEntry& entry) {
-    if (Reassigned(info, entry.permissions.owner)) {
-      AddReassign(alters, *this, transaction, entry, info);
-    }
-  });
   auto& context = transaction.GetContext();
   ReassignShared(ClusterOf(context), context, info, alters);
   Apply(alters);
@@ -321,7 +310,9 @@ void SereneDBCatalog::DropOwned(duckdb::CatalogTransaction transaction,
   std::vector<duckdb::DropInfo> overload_drops;
   ScanOwnable(*this, transaction, [&](duckdb::CatalogEntry& entry) {
     if (owned(entry)) {
-      dropped.push_back(entry);
+      if (!duckdb::ObjectKindOf(entry.type).shared) {
+        dropped.push_back(entry);
+      }
       return;
     }
     if (!IsMacro(entry)) {

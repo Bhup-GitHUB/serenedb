@@ -214,6 +214,18 @@ EntrySet* SereneDBCatalog::FindSet(duckdb::CatalogType type) {
   }
 }
 
+void SereneDBCatalog::ScanEntries(
+  duckdb::CatalogTransaction transaction,
+  absl::FunctionRef<void(duckdb::CatalogEntry&)> callback) {
+  Set(duckdb::CatalogType::SCHEMA_ENTRY)
+    .Scan(transaction, [&](duckdb::CatalogEntry& schema) {
+      callback(schema);
+      schema.Cast<Schema>().ScanTree(transaction, callback);
+    });
+  _servers.Scan(transaction, callback);
+  _subscriptions.Scan(transaction, callback);
+}
+
 duckdb::optional_ptr<duckdb::CatalogEntry> SereneDBCatalog::CreateForeignServer(
   duckdb::CatalogTransaction transaction,
   duckdb::CreateForeignServerInfo& info) {

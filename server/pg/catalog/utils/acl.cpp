@@ -363,13 +363,7 @@ void VisitRoleReferences(
         }
       }
     };
-    database.Set(SCHEMA_ENTRY)
-      .Scan(transaction, [&](duckdb::CatalogEntry& schema) {
-        entry(schema);
-        schema.Cast<catalog::Schema>().ScanTree(transaction, entry);
-      });
-    database.Servers().Scan(transaction, entry);
-    database.Subscriptions().Scan(transaction, entry);
+    database.ScanEntries(transaction, entry);
     const auto record =
       cluster.Set(DATABASE_ENTRY).Get(cluster_transaction, db->GetName());
     if (!record) {

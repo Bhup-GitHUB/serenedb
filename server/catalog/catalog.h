@@ -85,6 +85,8 @@ class SereneDBCatalog final : public BaseCatalog {
   CatalogSnapshots& Snapshots() noexcept { return _snapshots; }
   EntrySet& Servers() noexcept { return _servers; }
   EntrySet& Subscriptions() noexcept { return _subscriptions; }
+  void ScanEntries(duckdb::CatalogTransaction transaction,
+                   absl::FunctionRef<void(duckdb::CatalogEntry&)> callback);
 
   bool SupportsSubscriptions() const final { return true; }
   duckdb::optional_ptr<duckdb::CatalogEntry> CreateSubscription(

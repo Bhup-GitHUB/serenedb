@@ -2,7 +2,7 @@ import os
 import re
 
 from . import source
-from .common import DUCKDB_INCLUDE, camel, cpp_char, cpp_str
+from .common import DUCKDB_INCLUDE, camel, cpp_bool, cpp_char, cpp_str
 
 CATALOG_TYPE = os.path.join(DUCKDB_INCLUDE, 'common', 'enums',
                             'catalog_type.hpp')
@@ -64,6 +64,8 @@ def generate(gen):
     order = [name for name, _ in bits]
     defaults = source.default_privileges()
     classes = source.object_type_classes()
+    shared = {relation.oid for relation in gen.relations.values()
+              if relation.shared}
     check(classes, defaults)
 
     def mode(names, prefix=''):
@@ -136,6 +138,7 @@ def generate(gen):
         '\tAclMode privileges;',
         '\tAclMode public_privileges;',
         '\tidx_t pg_class;',
+        '\tbool shared;',
         '};',
         '',
         'constexpr ObjectKind ObjectKindOf(CatalogType type) {',
@@ -147,13 +150,15 @@ def generate(gen):
             lines.append('\t\tbreak;')
             continue
         public, owner = defaults.get(objtype, ([], []))
+        pg_class = classes.get(objtype, 0)
         lines.append(f'\t\treturn {{CatalogType::{kinds[0]}, '
                      f'ObjectContainer::{container}, {mode(owner)}, '
-                     f'{mode(public)}, {classes.get(objtype, 0)}}};')
+                     f'{mode(public)}, {pg_class}, '
+                     f'{cpp_bool(pg_class in shared)}}};')
     lines += [
         '\t}',
         '\treturn {type, ObjectContainer::NONE, AclMode::NoRights, '
-        'AclMode::NoRights, 0};',
+        'AclMode::NoRights, 0, false};',
         '}',
         '',
         '} // namespace duckdb',
