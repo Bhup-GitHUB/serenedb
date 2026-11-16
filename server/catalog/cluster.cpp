@@ -445,22 +445,7 @@ void ClusterCatalog::ApplyAlter(duckdb::CatalogTransaction transaction,
     BaseCatalog::Alter(transaction, info);
     return;
   }
-  DeclareModified(transaction, *this,
-                  duckdb::DatabaseModificationType::ALTER_TABLE);
-  const auto& name = info.GetQualifiedName().Name();
-  auto& set = Set(type);
-  auto entry = set.Get(transaction, name);
-  if (!entry) {
-    if (info.if_not_found != duckdb::OnEntryNotFound::THROW_EXCEPTION) {
-      return;
-    }
-    const bool database = type == duckdb::CatalogType::DATABASE_ENTRY;
-    THROW_SQL_ERROR(ERR_CODE(database ? ERRCODE_UNDEFINED_DATABASE
-                                      : ERRCODE_UNDEFINED_OBJECT),
-                    ERR_MSG(database ? "database \"" : "role \"",
-                            name.GetIdentifierName(), "\" does not exist"));
-  }
-  catalog::AlterEntry(transaction, set, *entry, info);
+  AlterIn(Set(type), transaction, info);
 }
 
 duckdb::optional_ptr<duckdb::CatalogEntry> ClusterCatalog::CreateRole(

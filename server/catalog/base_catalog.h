@@ -190,6 +190,14 @@ class BaseCatalog : public duckdb::Catalog {
   bool DropFrom(EntrySet& set, duckdb::CatalogTransaction transaction,
                 duckdb::CatalogType type, duckdb::DropInfo& info);
 
+  struct AlteredEntry {
+    duckdb::optional_ptr<duckdb::CatalogEntry> before;
+    duckdb::optional_ptr<duckdb::CatalogEntry> after;
+  };
+
+  AlteredEntry AlterIn(EntrySet& set, duckdb::CatalogTransaction transaction,
+                       duckdb::AlterInfo& info);
+
   OidIndex _oids;
   EntrySet _schemas;
 };

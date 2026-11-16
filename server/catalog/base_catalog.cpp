@@ -369,6 +369,22 @@ bool BaseCatalog::DropFrom(EntrySet& set,
   return false;
 }
 
+BaseCatalog::AlteredEntry BaseCatalog::AlterIn(
+  EntrySet& set, duckdb::CatalogTransaction transaction,
+  duckdb::AlterInfo& info) {
+  DeclareModified(transaction, *this,
+                  duckdb::DatabaseModificationType::ALTER_TABLE);
+  const auto& name = info.GetQualifiedName().Name();
+  auto entry = set.Get(transaction, name);
+  if (!entry) {
+    if (info.if_not_found == duckdb::OnEntryNotFound::THROW_EXCEPTION) {
+      ThrowMissingEntry(info.GetCatalogType(), name);
+    }
+    return {};
+  }
+  return {entry, AlterEntry(transaction, set, *entry, info)};
+}
+
 EntrySet& BaseCatalog::Set(duckdb::CatalogType type) {
   auto* set = FindSet(type);
   if (!set) {

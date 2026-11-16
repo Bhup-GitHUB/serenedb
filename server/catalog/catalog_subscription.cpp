@@ -764,16 +764,7 @@ void SereneDBCatalog::AlterSubscription(duckdb::CatalogTransaction transaction,
                                         duckdb::AlterInfo& info) {
   const auto& name = info.GetQualifiedName().Name();
   if (info.type != duckdb::AlterType::ALTER_SUBSCRIPTION) {
-    DeclareModified(transaction, *this,
-                    duckdb::DatabaseModificationType::ALTER_TABLE);
-    auto subscription = FindSubscription(
-      *this, transaction, name,
-      info.if_not_found == duckdb::OnEntryNotFound::RETURN_NULL);
-    if (!subscription) {
-      return;
-    }
-    auto altered =
-      catalog::AlterEntry(transaction, _subscriptions, *subscription, info);
+    const auto altered = AlterIn(_subscriptions, transaction, info).after;
     if (altered && transaction.HasContext() &&
         info.bind_mode == duckdb::AlterBindMode::BIND_ON_ALTER &&
         info.type == duckdb::AlterType::ALTER_PERMISSIONS) {

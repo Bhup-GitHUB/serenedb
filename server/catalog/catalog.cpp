@@ -297,24 +297,11 @@ void SereneDBCatalog::Alter(duckdb::CatalogTransaction transaction,
     return;
   }
   if (info.GetCatalogType() == duckdb::CatalogType::FOREIGN_SERVER_ENTRY) {
-    DeclareModified(transaction, *this,
-                    duckdb::DatabaseModificationType::ALTER_TABLE);
-    const auto& name = info.GetQualifiedName().Name();
-    auto entry = _servers.Get(transaction, name);
-    if (!entry) {
-      if (info.if_not_found == duckdb::OnEntryNotFound::RETURN_NULL) {
-        return;
-      }
-      THROW_SQL_ERROR(
-        ERR_CODE(ERRCODE_UNDEFINED_OBJECT),
-        ERR_MSG("server \"", name.GetIdentifierName(), "\" does not exist"));
-    }
-    const auto previous_owner = entry->permissions.owner;
-    auto altered = catalog::AlterEntry(transaction, _servers, *entry, info);
+    const auto [server, altered] = AlterIn(_servers, transaction, info);
     if (altered && transaction.HasContext() &&
         info.bind_mode == duckdb::AlterBindMode::BIND_ON_ALTER) {
       altered->Cast<ForeignServerCatalogEntry>().FollowOwner(
-        transaction.GetContext(), previous_owner);
+        transaction.GetContext(), server->permissions.owner);
     }
     return;
   }
