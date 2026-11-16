@@ -606,6 +606,7 @@ void Transactions::Commit(SessionTransaction& transaction,
       catalogs.push_back(catalog);
     }
   }
+  SDB_PARK_ONCE_ON_FAILURE("pause_commit_before_on_commit");
   for (auto* catalog : catalogs) {
     catalog->OnCommit();
   }
@@ -799,6 +800,7 @@ void Transactions::Publish(duckdb::transaction_t commit, bool catalog,
                                  version, next, std::memory_order_release,
                                  std::memory_order_relaxed)) {
       }
+      SDB_PARK_ONCE_ON_FAILURE("pause_publish_after_catalog_version");
     }
     if (_last_commit.compare_exchange_weak(published, next,
                                            std::memory_order_seq_cst)) {

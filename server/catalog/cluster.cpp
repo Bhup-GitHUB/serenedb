@@ -390,13 +390,14 @@ void ClusterCatalog::OnCommit() { PublishSecurity(); }
 
 void ClusterCatalog::PublishSecurity() {
   auto& db = GetDatabase();
-  const auto version = Transactions::Get().CatalogVersion();
-  if (db.SecurityCurrent(version)) {
+  auto& transactions = Transactions::Get();
+  if (db.SecurityCurrent(transactions.CatalogVersion())) {
     return;
   }
   const CommittedView view;
   db.PublishSecurity(
-    duckdb::SecuritySnapshot::Build(*this, view.Transaction(db)), version);
+    duckdb::SecuritySnapshot::Build(*this, view.Transaction(db)),
+    transactions.CatalogEpoch(view.Snapshot()));
 }
 
 void ClusterCatalog::Bootstrap(duckdb::ClientContext& context,

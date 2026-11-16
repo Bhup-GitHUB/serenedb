@@ -1,0 +1,77 @@
+statement ok
+CREATE ROLE sspr_lead;
+
+
+statement ok
+GRANT SELECT (rolname) ON pg_catalog.pg_authid TO sspr_lead;
+
+
+query
+SELECT has_column_privilege('sspr_lead', 'pg_catalog.pg_authid', 'rolname', 'SELECT') AS lead;
+----
+lead
+t
+
+
+statement ok
+SET sdb_faults = 'pause_commit_before_on_commit';
+
+
+connection creator
+statement async ok
+CREATE ROLE sspr_other;
+
+
+connection default
+statement ok retry 40 backoff 250ms
+SET sdb_faults = '-pause_commit_before_on_commit:parked';
+
+
+connection default
+statement ok
+SET sdb_faults = 'pause_publish_after_catalog_version';
+
+
+connection revoker
+statement async ok
+REVOKE SELECT (rolname) ON pg_catalog.pg_authid FROM sspr_lead;
+
+
+connection default
+statement ok retry 40 backoff 250ms
+SET sdb_faults = '-pause_publish_after_catalog_version:parked';
+
+
+connection default
+statement ok
+SET sdb_faults = 'pause_commit_before_on_commit:release';
+
+
+connection creator
+statement ok
+SELECT 1;
+
+
+connection default
+statement ok
+SET sdb_faults = 'pause_publish_after_catalog_version:release';
+
+
+connection revoker
+wait
+
+
+connection default
+query
+SELECT has_column_privilege('sspr_lead', 'pg_catalog.pg_authid', 'rolname', 'SELECT') AS lead;
+----
+lead
+f
+
+
+statement ok
+DROP ROLE sspr_other;
+
+
+statement ok
+DROP ROLE sspr_lead;
