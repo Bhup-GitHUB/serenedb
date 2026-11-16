@@ -766,7 +766,8 @@ struct ForeignDataWrapperPrivileges
       auto& wrapper = scope.wrappers[i];
       wrapper.owner = kRootUser;
       if (database) {
-        const auto acl = database->permissions.ForeignDataWrapperAcl(
+        const auto acl = database->permissions.RowAcl(
+          duckdb::CatalogType::FOREIGN_DATA_WRAPPER_ENTRY,
           kForeignDataWrappers[i].oid);
         wrapper.acl.assign(acl.begin(), acl.end());
       }
@@ -830,8 +831,8 @@ struct LanguagePrivileges : ObjectPrivileges<LanguagePrivileges> {
       auto& language = scope.languages[i];
       language.owner = kRootUser;
       if (database) {
-        const auto acl =
-          database->permissions.LanguageAcl(kSystemLanguages[i].oid);
+        const auto acl = database->permissions.RowAcl(
+          duckdb::CatalogType::LANGUAGE_ENTRY, kSystemLanguages[i].oid);
         language.acl.assign(acl.begin(), acl.end());
       }
     }
@@ -875,7 +876,8 @@ struct ParameterPrivileges : ObjectPrivileges<ParameterPrivileges> {
     const auto root =
       cluster.LookupOid(cluster.GetCatalogTransaction(context), kRootUser);
     if (root) {
-      for (const auto& row : root->permissions.Rows().parameters) {
+      for (const auto& row : root->permissions.Rows().OfKind(
+             duckdb::CatalogType::PARAMETER_ENTRY)) {
         scope.parameters.push_back(
           {row.name, duckdb::Permissions{.owner = kRootUser, .acl = row.acl}});
       }

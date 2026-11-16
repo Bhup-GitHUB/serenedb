@@ -54,7 +54,9 @@ class PgForeignDataWrapper final
     }
     for (const auto& wrapper : kForeignDataWrappers) {
       Emit<kWrapper>(
-        {wrapper, database.permissions.ForeignDataWrapperAcl(wrapper.oid)});
+        {wrapper,
+         database.permissions.RowAcl(
+           duckdb::CatalogType::FOREIGN_DATA_WRAPPER_ENTRY, wrapper.oid)});
     }
   }
 };

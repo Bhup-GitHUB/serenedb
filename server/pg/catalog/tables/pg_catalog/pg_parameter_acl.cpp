@@ -27,7 +27,7 @@ namespace {
 
 struct Parameter {
   duckdb::idx_t oid;
-  const duckdb::NamedAcl& acl;
+  const duckdb::GrantRow& row;
 };
 
 class PgParameterAcl final : public SystemTableScan<kPgParameterAclSql> {
@@ -39,15 +39,18 @@ class PgParameterAcl final : public SystemTableScan<kPgParameterAclSql> {
 
   static constexpr auto kParameter = Shape<kSql, const Parameter>(
     Col<"oid">(&Parameter::oid),
-    Col<"parname">([](const auto& row) -> const auto& { return row.acl.name; }),
-    Col<"paracl">([](const auto& row) -> const auto& { return row.acl.acl; }));
+    Col<"parname">(
+      [](const auto& parameter) -> const auto& { return parameter.row.name; }),
+    Col<"paracl">(
+      [](const auto& parameter) -> const auto& { return parameter.row.acl; }));
 
   void Row(const catalog::RoleCatalogEntry& role) {
     if (role.oid != kRootUser) {
       return;
     }
     duckdb::idx_t oid = 0;
-    for (const auto& row : role.permissions.Rows().parameters) {
+    for (const auto& row :
+         role.permissions.Rows().OfKind(duckdb::CatalogType::PARAMETER_ENTRY)) {
       Emit<kParameter>({++oid, row});
     }
   }

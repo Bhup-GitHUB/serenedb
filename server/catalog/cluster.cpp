@@ -82,7 +82,7 @@ struct PredefinedRole {
 
 #include "pg/catalog/generated/predefined_roles.gen.inc"
 
-void RefuseDependents(duckdb::ClientContext& context,
+void RefuseDependents(duckdb::ClientContext& context, ClusterCatalog& cluster,
                       const duckdb::CatalogEntry& role) {
   std::vector<std::string> lines;
   std::vector<std::pair<duckdb::idx_t, size_t>> remote;
@@ -103,6 +103,19 @@ void RefuseDependents(duckdb::ClientContext& context,
         absl::StrCat(reference.deptype == 'o' ? "owner of " : "privileges for ",
                      describe()));
     });
+  cluster.Set(duckdb::CatalogType::ROLE_ENTRY)
+    .Scan(
+      cluster.GetCatalogTransaction(context),
+      [&](duckdb::CatalogEntry& member) {
+        for (const auto& edge : member.Cast<RoleCatalogEntry>().MemberOf()) {
+          if (edge.grantor == role.oid) {
+            lines.push_back(absl::StrCat("privileges for membership of role ",
+                                         member.name.GetIdentifierName(),
+                                         " in role ",
+                                         RolesOf(&context)->NameOf(edge.role)));
+          }
+        }
+      });
   const auto databases =
     SereneDBDatabases(duckdb::DatabaseManager::Get(context));
   for (const auto& [dbid, count] : remote) {
@@ -597,7 +610,7 @@ void ClusterCatalog::DropRole(duckdb::CatalogTransaction transaction,
     ApplyAlter(transaction, alter);
   }
   for (const auto& name : names) {
-    RefuseDependents(context, *_roles.Get(transaction, name));
+    RefuseDependents(context, *this, *_roles.Get(transaction, name));
   }
   for (const auto& name : names) {
     _roles.Drop(transaction, name);

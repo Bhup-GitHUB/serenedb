@@ -55,7 +55,8 @@ class PgLanguage final : public SystemTableScan<kPgLanguageSql> {
     }
     for (const auto& language : kSystemLanguages) {
       Emit<kLanguage>(
-        {language, database.permissions.LanguageAcl(language.oid)});
+        {language, database.permissions.RowAcl(
+                     duckdb::CatalogType::LANGUAGE_ENTRY, language.oid)});
     }
   }
 };

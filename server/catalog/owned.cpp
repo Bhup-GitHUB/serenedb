@@ -167,6 +167,23 @@ void ReassignShared(ClusterCatalog& cluster, duckdb::ClientContext& context,
     });
 }
 
+duckdb::idx_t RowOwner(const duckdb::DBConfig& config,
+                       const duckdb::GrantRow& row) {
+  const auto owner = [&](const auto& registry) -> duckdb::idx_t {
+    const auto found = absl::c_find_if(
+      registry, [&](const auto& it) { return it.second.oid == row.oid; });
+    return found == registry.end() ? 0 : found->second.owner;
+  };
+  switch (row.kind) {
+    case duckdb::CatalogType::FOREIGN_DATA_WRAPPER_ENTRY:
+      return owner(config.foreign_data_wrappers);
+    case duckdb::CatalogType::LANGUAGE_ENTRY:
+      return owner(config.languages);
+    default:
+      return config.bootstrap_role;
+  }
+}
+
 void RevokeShared(ClusterCatalog& cluster, duckdb::ClientContext& context,
                   const duckdb::DropOwnedInfo& info,
                   duckdb::optional_ptr<const duckdb::Identifier> local,
@@ -192,64 +209,22 @@ void RevokeShared(ClusterCatalog& cluster, duckdb::ClientContext& context,
         if (!local || entry.name != *local) {
           continue;
         }
-        const auto& rows = permissions.Rows();
-        for (const auto& row : rows.foreign_data_wrappers) {
-          if (!GrantsTo(row.acl, role)) {
-            continue;
-          }
-          const auto wrapper = absl::c_find_if(
-            config.foreign_data_wrappers,
-            [&](const auto& it) { return it.second.oid == row.oid; });
-          auto& alter =
-            database(role, duckdb::CatalogType::FOREIGN_DATA_WRAPPER_ENTRY);
-          alter.foreign_data_wrapper_id = row.oid;
-          alter.object_owner_id = wrapper == config.foreign_data_wrappers.end()
-                                    ? 0
-                                    : wrapper->second.owner;
-        }
-        for (const auto& row : rows.languages) {
-          if (!GrantsTo(row.acl, role)) {
-            continue;
-          }
-          const auto language = absl::c_find_if(
-            config.languages,
-            [&](const auto& it) { return it.second.oid == row.oid; });
-          auto& alter = database(role, duckdb::CatalogType::LANGUAGE_ENTRY);
-          alter.language_id = row.oid;
-          alter.object_owner_id =
-            language == config.languages.end() ? 0 : language->second.owner;
-        }
-        for (const auto& row : rows.relations) {
-          if (!GrantsTo(row.acl, role) &&
-              absl::c_none_of(row.columns,
-                              [&](const duckdb::ColumnAcl& column) {
-                                return GrantsTo(column.acl, role);
-                              })) {
-            continue;
-          }
-          auto& alter = database(role, duckdb::CatalogType::TABLE_ENTRY);
-          alter.relation_id = row.oid;
-          alter.object_owner_id = bootstrap;
-        }
-        for (const auto& row : rows.schemas) {
-          if (GrantsTo(row.acl, role)) {
-            auto& alter = database(role, duckdb::CatalogType::SCHEMA_ENTRY);
-            alter.schema_id = row.oid;
-            alter.object_owner_id = bootstrap;
-          }
-        }
-        for (const auto& row : rows.functions) {
-          if (GrantsTo(row.acl, role)) {
-            auto& alter = database(role, duckdb::CatalogType::MACRO_ENTRY);
-            alter.functions = {duckdb::NamedAcl{row.name, {}}};
-            alter.object_owner_id = bootstrap;
-          }
-        }
-        for (const auto& row : rows.types) {
-          if (GrantsTo(row.acl, role)) {
-            auto& alter = database(role, duckdb::CatalogType::TYPE_ENTRY);
-            alter.type_id = row.oid;
-            alter.object_owner_id = bootstrap;
+        using enum duckdb::CatalogType;
+        for (const auto kind :
+             {FOREIGN_DATA_WRAPPER_ENTRY, LANGUAGE_ENTRY, TABLE_ENTRY,
+              SCHEMA_ENTRY, MACRO_ENTRY, TYPE_ENTRY}) {
+          for (const auto& row : permissions.Rows().OfKind(kind)) {
+            if (!GrantsTo(row.acl, role) &&
+                absl::c_none_of(row.columns,
+                                [&](const duckdb::ColumnAcl& column) {
+                                  return GrantsTo(column.acl, role);
+                                })) {
+              continue;
+            }
+            auto& alter = database(role, kind);
+            alter.database_rows = {
+              duckdb::GrantRow{row.kind, row.oid, row.name, {}, {}}};
+            alter.object_owner_id = RowOwner(config, row);
           }
         }
         if (absl::c_any_of(permissions.defaults,
@@ -277,12 +252,14 @@ void RevokeShared(ClusterCatalog& cluster, duckdb::ClientContext& context,
       if (member.oid != bootstrap) {
         return;
       }
-      for (const auto& row : member.permissions.Rows().parameters) {
+      for (const auto& row : member.permissions.Rows().OfKind(
+             duckdb::CatalogType::PARAMETER_ENTRY)) {
         for (const auto role : info.role_ids) {
           if (GrantsTo(row.acl, role)) {
             auto& alter = AddRevoke(alters, cluster, transaction, member, role,
                                     duckdb::CatalogType::PARAMETER_ENTRY, info);
-            alter.parameter = row.name;
+            alter.database_rows = {
+              duckdb::GrantRow{row.kind, row.oid, row.name, {}, {}}};
             alter.object_owner_id = bootstrap;
           }
         }

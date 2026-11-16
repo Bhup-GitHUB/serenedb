@@ -44,7 +44,6 @@
 #include "catalog/base_catalog.h"
 #include "catalog/catalog.h"
 #include "catalog/cluster.h"
-#include "catalog/entry/role.h"
 #include "catalog/schema.h"
 #include "pg/catalog/engine/builtin_functions.h"
 #include "pg/catalog/engine/registry.h"
@@ -267,48 +266,32 @@ void VisitDatabaseGrants(duckdb::ClientContext& context,
       return item.grantee == role || item.grantor == role;
     });
   };
-  const auto& rows = database.permissions.Rows();
-  for (const auto& wrapper : rows.foreign_data_wrappers) {
-    if (names(wrapper.acl)) {
-      visitor({kPgForeignDataWrapperTable, wrapper.oid, 0});
-    }
-  }
-  for (const auto& language : rows.languages) {
-    if (names(language.acl)) {
-      visitor({kPgLanguageTable, language.oid, 0});
-    }
-  }
-  for (const auto& schema : rows.schemas) {
-    if (names(schema.acl)) {
-      visitor({kPgNamespaceTable, schema.oid, 0});
-    }
-  }
+  using enum duckdb::CatalogType;
   std::shared_ptr<const BuiltinFunctions> builtins;
-  for (const auto& function : rows.functions) {
-    if (!names(function.acl)) {
-      continue;
-    }
-    if (!builtins) {
-      builtins = GetBuiltinFunctions(context);
-    }
-    const auto* builtin = builtins->FindByKey(function.name);
-    visitor({kPgProcTable, builtin ? builtin->oid : kInvalidOid, 0});
-  }
-  for (const auto& type : rows.types) {
-    if (names(type.acl)) {
-      visitor({kPgTypeTable, type.oid, 0});
-    }
-  }
-  for (const auto& relation : rows.relations) {
-    if (names(relation.acl)) {
-      visitor({kPgClassTable, relation.oid, 0});
-    }
-    const auto* system = FindSystemTable(relation.oid);
-    for (const auto& column : relation.columns) {
-      if (system && names(column.acl) &&
-          system->Columns().ColumnExists(column.column)) {
-        visitor({kPgClassTable, relation.oid,
-                 Attnum(system->Columns().GetColumn(column.column))});
+  const auto& rows = database.permissions.Rows();
+  for (const auto kind : {FOREIGN_DATA_WRAPPER_ENTRY, LANGUAGE_ENTRY,
+                          SCHEMA_ENTRY, MACRO_ENTRY, TYPE_ENTRY, TABLE_ENTRY}) {
+    const auto classid = CatalogClassOid(kind);
+    for (const auto& row : rows.OfKind(kind)) {
+      if (names(row.acl)) {
+        auto objid = row.oid;
+        if (kind == MACRO_ENTRY) {
+          if (!builtins) {
+            builtins = GetBuiltinFunctions(context);
+          }
+          const auto* builtin = builtins->FindByKey(row.name);
+          objid = builtin ? builtin->oid : kInvalidOid;
+        }
+        visitor({classid, objid, 0});
+      }
+      const auto* system =
+        row.columns.empty() ? nullptr : FindSystemTable(row.oid);
+      for (const auto& column : row.columns) {
+        if (system && names(column.acl) &&
+            system->Columns().ColumnExists(column.column)) {
+          visitor({classid, row.oid,
+                   Attnum(system->Columns().GetColumn(column.column))});
+        }
       }
     }
   }
@@ -331,7 +314,6 @@ void VisitRoleReferences(
     }
     return names(permissions.acl) ? 'a' : '\0';
   };
-  const auto roles = catalog::RolesOf(&context);
   auto& cluster = catalog::ClusterOf(context);
   const auto cluster_transaction = cluster.GetCatalogTransaction(context);
   for (const auto& db :
@@ -405,9 +387,10 @@ void VisitRoleReferences(
           return;
         }
         visitor({record->oid, kPgDefaultAclTable, oid, 0, deptype}, [&] {
-          auto object = absl::StrCat(
-            "default privileges on new ", DefaultAclObjects(row.objtype),
-            " belonging to role ", roles->NameOf(row.role));
+          auto object =
+            absl::StrCat("default privileges on new ",
+                         DefaultAclObjects(row.objtype), " belonging to role ",
+                         catalog::RolesOf(&context)->NameOf(row.role));
           if (row.scope != kInvalidOid) {
             absl::StrAppend(&object, " in schema ",
                             database.LookupOid(transaction, row.scope)
@@ -432,27 +415,18 @@ void VisitRoleReferences(
         });
       }
     });
-  cluster.Set(ROLE_ENTRY)
-    .Scan(cluster_transaction, [&](duckdb::CatalogEntry& member) {
-      for (const auto& edge :
-           member.Cast<catalog::RoleCatalogEntry>().MemberOf()) {
-        if (edge.grantor == role) {
-          visitor({kInvalidOid, kInvalidOid, 0, 0, 'a'}, [&] {
-            return absl::StrCat("membership of role ",
-                                member.name.GetIdentifierName(), " in role ",
-                                roles->NameOf(edge.role));
-          });
-        }
-      }
-      duckdb::idx_t oid = 0;
-      for (const auto& row : member.permissions.Rows().parameters) {
-        ++oid;
-        if (names(row.acl)) {
-          visitor({kInvalidOid, kPgParameterAclTable, oid, 0, 'a'},
-                  [&] { return absl::StrCat("parameter ", row.name); });
-        }
-      }
-    });
+  const auto holder = cluster.LookupOid(cluster_transaction, kRootUser);
+  if (!holder) {
+    return;
+  }
+  duckdb::idx_t oid = 0;
+  for (const auto& row : holder->permissions.Rows().OfKind(PARAMETER_ENTRY)) {
+    ++oid;
+    if (names(row.acl)) {
+      visitor({kInvalidOid, kPgParameterAclTable, oid, 0, 'a'},
+              [&] { return absl::StrCat("parameter ", row.name); });
+    }
+  }
 }
 
 }  // namespace sdb::pg

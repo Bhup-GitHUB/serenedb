@@ -260,8 +260,12 @@ void AlterAllInSchema(Schema& schema, duckdb::CatalogTransaction transaction,
   for (const auto& relation : system_relations) {
     auto grant = info.Copy();
     auto& relation_grant = grant->Cast<duckdb::AlterPermissionsInfo>();
-    relation_grant.relation_id = relation.get().oid;
-    relation_grant.builtin_acl = relation.get().permissions.acl;
+    relation_grant.database_rows = {
+      duckdb::GrantRow{duckdb::CatalogType::TABLE_ENTRY,
+                       relation.get().oid,
+                       {},
+                       relation.get().permissions.acl,
+                       {}}};
     relation_grant.object_owner_id = relation.get().permissions.owner;
     GrantOnDatabase(context, schema, std::move(grant));
   }
@@ -277,7 +281,7 @@ void AlterAllInSchema(Schema& schema, duckdb::CatalogTransaction transaction,
   }
   auto grant = info.Copy();
   auto& function_grant = grant->Cast<duckdb::AlterPermissionsInfo>();
-  function_grant.functions = std::move(rows);
+  function_grant.database_rows = std::move(rows);
   function_grant.object_owner_id = config.bootstrap_role;
   GrantOnDatabase(context, schema, std::move(grant));
 }

@@ -72,6 +72,10 @@ duckdb::idx_t CatalogClassOid(duckdb::CatalogType type) {
       return kPgTsDictTable;
     case SUBSCRIPTION_ENTRY:
       return kPgSubscriptionTable;
+    case FOREIGN_DATA_WRAPPER_ENTRY:
+      return kPgForeignDataWrapperTable;
+    case LANGUAGE_ENTRY:
+      return kPgLanguageTable;
     default:
       return kInvalidOid;
   }
