@@ -386,8 +386,9 @@ template<typename F>
 struct ObjectPrivileges {
   using Scope = ObjectScope;
 
-  static ObjectScope Begin(duckdb::ClientContext& context) {
-    return {MakeSession(&context), catalog::RolesOf(&context)};
+  static ObjectScope Begin(duckdb::ClientContext& context,
+                           duckdb::optional_idx caller) {
+    return {MakeSession(&context, caller), catalog::RolesOf(&context)};
   }
 
   static duckdb::idx_t Role(const ObjectScope& scope, duckdb::string_t name) {
@@ -779,8 +780,9 @@ struct ForeignDataWrapperPrivileges
     std::array<duckdb::Permissions, kForeignDataWrappers.size()> wrappers;
   };
 
-  static Scope Begin(duckdb::ClientContext& context) {
-    Scope scope{ObjectPrivileges::Begin(context)};
+  static Scope Begin(duckdb::ClientContext& context,
+                     duckdb::optional_idx caller) {
+    Scope scope{ObjectPrivileges::Begin(context, caller)};
     const auto database = FindDatabase(
       context,
       duckdb::DatabaseManager::GetDefaultDatabase(context).GetIdentifierName());
@@ -844,8 +846,9 @@ struct LanguagePrivileges : ObjectPrivileges<LanguagePrivileges> {
     std::array<duckdb::Permissions, kSystemLanguages.size()> languages;
   };
 
-  static Scope Begin(duckdb::ClientContext& context) {
-    Scope scope{ObjectPrivileges::Begin(context)};
+  static Scope Begin(duckdb::ClientContext& context,
+                     duckdb::optional_idx caller) {
+    Scope scope{ObjectPrivileges::Begin(context, caller)};
     const auto database = FindDatabase(
       context,
       duckdb::DatabaseManager::GetDefaultDatabase(context).GetIdentifierName());
@@ -892,8 +895,9 @@ struct ParameterPrivileges : ObjectPrivileges<ParameterPrivileges> {
     std::vector<Parameter> parameters;
   };
 
-  static Scope Begin(duckdb::ClientContext& context) {
-    Scope scope{ObjectPrivileges::Begin(context)};
+  static Scope Begin(duckdb::ClientContext& context,
+                     duckdb::optional_idx caller) {
+    Scope scope{ObjectPrivileges::Begin(context, caller)};
     auto& cluster = catalog::ClusterOf(context);
     const auto root =
       cluster.LookupOid(cluster.GetCatalogTransaction(context), kRootUser);
@@ -936,9 +940,9 @@ struct LargeObjectPrivileges : ObjectPrivileges<LargeObjectPrivileges> {
 
 class ObjectAcls final : public duckdb::FunctionLocalState {
  public:
-  explicit ObjectAcls(duckdb::ClientContext& context)
-    : _wrappers{ForeignDataWrapperPrivileges::Begin(context)},
-      _languages{LanguagePrivileges::Begin(context)} {}
+  ObjectAcls(duckdb::ClientContext& context, duckdb::optional_idx caller)
+    : _wrappers{ForeignDataWrapperPrivileges::Begin(context, caller)},
+      _languages{LanguagePrivileges::Begin(context, caller)} {}
 
   std::span<const duckdb::AclItem> Of(uint64_t classid, uint64_t objid,
                                       int32_t objsubid) const {
@@ -1004,9 +1008,9 @@ class ObjectAcls final : public duckdb::FunctionLocalState {
 };
 
 duckdb::unique_ptr<duckdb::FunctionLocalState> InitObjectAcls(
-  duckdb::ExpressionState& state, const duckdb::BoundFunctionExpression&,
+  duckdb::ExpressionState& state, const duckdb::BoundFunctionExpression& expr,
   duckdb::FunctionData*) {
-  return duckdb::make_uniq<ObjectAcls>(state.GetContext());
+  return duckdb::make_uniq<ObjectAcls>(state.GetContext(), expr.CallerRole());
 }
 
 void PgGetAclFunction(duckdb::DataChunk& args, duckdb::ExpressionState& state,
@@ -1060,7 +1064,7 @@ struct RolePrivileges {
     mutable duckdb::RoleMemberships memberships;
   };
 
-  static Scope Begin(duckdb::ClientContext& context) {
+  static Scope Begin(duckdb::ClientContext& context, duckdb::optional_idx) {
     return {.roles = catalog::RolesOf(&context)};
   }
 
@@ -1154,8 +1158,8 @@ duckdb::LogicalType PrivilegeArgument() {
 template<typename F>
 class PrivilegeCheck final : public duckdb::FunctionLocalState {
  public:
-  explicit PrivilegeCheck(duckdb::ClientContext& context)
-    : _scope{F::Begin(context)} {}
+  PrivilegeCheck(duckdb::ClientContext& context, duckdb::optional_idx caller)
+    : _scope{F::Begin(context, caller)} {}
 
   PrivilegeCheck& ForChunk() {
     _named.reset();
@@ -1273,9 +1277,10 @@ class PrivilegeCheck final : public duckdb::FunctionLocalState {
 
 template<typename F>
 duckdb::unique_ptr<duckdb::FunctionLocalState> InitPrivilegeCheck(
-  duckdb::ExpressionState& state, const duckdb::BoundFunctionExpression&,
+  duckdb::ExpressionState& state, const duckdb::BoundFunctionExpression& expr,
   duckdb::FunctionData*) {
-  return duckdb::make_uniq<PrivilegeCheck<F>>(state.GetContext());
+  return duckdb::make_uniq<PrivilegeCheck<F>>(state.GetContext(),
+                                              expr.CallerRole());
 }
 
 template<typename F, typename Role, typename... Object>
@@ -1300,11 +1305,12 @@ duckdb::ScalarFunction PrivilegeFunction() {
         check.Prefetch(args.data[std::is_void_v<Role> ? 0 : 1]);
       }
       if constexpr (std::is_void_v<Role>) {
-        const auto& caller =
-          state.expr.Cast<duckdb::BoundFunctionExpression>().BindInfo();
+        const auto caller =
+          state.expr.Cast<duckdb::BoundFunctionExpression>().CallerRole();
         const auto role =
-          caller ? caller->Cast<CallerRole>().role
-                 : ConnectionContext::Get(state.GetContext()).GetRoleId();
+          caller.IsValid()
+            ? caller.GetIndex()
+            : ConnectionContext::Get(state.GetContext()).GetRoleId();
         duckdb::VariadicExecutor::Execute<bool, Object..., duckdb::string_t>(
           args, result, [&](Object... object, duckdb::string_t text) {
             return check.Answer(role, text, object...);
@@ -1318,7 +1324,7 @@ duckdb::ScalarFunction PrivilegeFunction() {
           });
       }
     },
-    std::is_void_v<Role> ? BindCallerRole : nullptr,
+    nullptr,
     nullptr,
     InitPrivilegeCheck<F>};
 }

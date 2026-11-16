@@ -30,6 +30,7 @@
 #include <duckdb/main/database.hpp>
 #include <duckdb/main/extension/extension_loader.hpp>
 #include <duckdb/parser/parsed_expression.hpp>
+#include <duckdb/planner/expression/bound_function_expression.hpp>
 #include <duckdb/planner/planner_extension.hpp>
 #include <span>
 #include <string>
@@ -71,29 +72,13 @@ void RegisterTable(duckdb::ExtensionLoader& loader, std::string_view schema,
 duckdb::unique_ptr<duckdb::Expression> BindNull(
   duckdb::FunctionBindExpressionInput& input);
 
-struct CallerRole final : duckdb::FunctionData {
-  explicit CallerRole(duckdb::idx_t role) : role{role} {}
-
-  duckdb::unique_ptr<duckdb::FunctionData> Copy() const final {
-    return duckdb::make_uniq<CallerRole>(role);
-  }
-
-  bool Equals(const duckdb::FunctionData& other) const final {
-    return role == other.Cast<CallerRole>().role;
-  }
-
-  duckdb::idx_t role;
-};
-
-duckdb::unique_ptr<duckdb::FunctionData> BindCallerRole(
-  duckdb::BindScalarFunctionInput& input);
-
 duckdb::RoleAccess CallerAccess(duckdb::ExpressionState& state);
 
 inline duckdb::unique_ptr<duckdb::FunctionLocalState> InitSession(
-  duckdb::ExpressionState& state, const duckdb::BoundFunctionExpression&,
+  duckdb::ExpressionState& state, const duckdb::BoundFunctionExpression& expr,
   duckdb::FunctionData*) {
-  return duckdb::make_uniq<SessionState>(&state.GetContext());
+  return duckdb::make_uniq<SessionState>(&state.GetContext(),
+                                         expr.CallerRole());
 }
 
 inline const Session& SessionOf(duckdb::ExpressionState& state) {

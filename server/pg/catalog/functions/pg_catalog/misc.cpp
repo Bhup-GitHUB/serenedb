@@ -499,12 +499,13 @@ void CurrentSetting2Function(duckdb::DataChunk& args,
 void CurrentUserFunction(duckdb::DataChunk& args,
                          duckdb::ExpressionState& state,
                          duckdb::Vector& result) {
-  if (const auto& bind_info =
-        state.expr.Cast<duckdb::BoundFunctionExpression>().BindInfo()) {
-    result.Reference(duckdb::Value{std::string{
-                       catalog::RolesOf(&state.GetContext())
-                         ->NameOf(bind_info->Cast<CallerRole>().role)}},
-                     duckdb::count_t(args.size()));
+  if (const auto caller =
+        state.expr.Cast<duckdb::BoundFunctionExpression>().CallerRole();
+      caller.IsValid()) {
+    result.Reference(
+      duckdb::Value{std::string{
+        catalog::RolesOf(&state.GetContext())->NameOf(caller.GetIndex())}},
+      duckdb::count_t(args.size()));
     return;
   }
   auto value = duckdb::Value(
@@ -1627,12 +1628,10 @@ void RegisterMiscFunctions(duckdb::ExtensionLoader& loader) {
   ExtendScalar(loader, "pg_xact_status", VOLATILE, nullptr,
                {duckdb::ScalarFunction{{XID8()}, text, NotSupportedFunction}});
 
-  ExtendScalar(
-    loader, "current_user", CONSISTENT_WITHIN_QUERY, nullptr,
-    {duckdb::ScalarFunction{{}, text, CurrentUserFunction, BindCallerRole}});
-  ExtendScalar(
-    loader, "current_role", CONSISTENT_WITHIN_QUERY, nullptr,
-    {duckdb::ScalarFunction{{}, text, CurrentUserFunction, BindCallerRole}});
+  ExtendScalar(loader, "current_user", CONSISTENT_WITHIN_QUERY, nullptr,
+               {duckdb::ScalarFunction{{}, text, CurrentUserFunction}});
+  ExtendScalar(loader, "current_role", CONSISTENT_WITHIN_QUERY, nullptr,
+               {duckdb::ScalarFunction{{}, text, CurrentUserFunction}});
   ExtendScalar(loader, "session_user", CONSISTENT_WITHIN_QUERY, nullptr,
                {duckdb::ScalarFunction{{}, text, SessionUserFunction}});
 

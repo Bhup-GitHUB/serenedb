@@ -224,19 +224,18 @@ void RegisterSequenceFunctions(duckdb::ExtensionLoader& loader) {
   const auto int8 = duckdb::LogicalType::BIGINT;
   const auto boolean = duckdb::LogicalType::BOOLEAN;
   duckdb::ScalarFunction last_value{
-    {REGCLASS()}, int8, PgSequenceLastValueFunction, BindCallerRole};
+    {REGCLASS()}, int8, PgSequenceLastValueFunction};
   last_value.SetFallible();
   RegisterScalar(loader, pg_catalog, "pg_sequence_last_value", VOLATILE,
                  InitSession, {last_value});
-  duckdb::ScalarFunction lastval{{}, int8, LastvalFunction, BindCallerRole};
+  duckdb::ScalarFunction lastval{{}, int8, LastvalFunction};
   lastval.SetFallible();
   RegisterScalar(loader, pg_catalog, "lastval", VOLATILE, InitSession,
                  {lastval});
   duckdb::ScalarFunction sequence_data{
     {REGCLASS()},
     duckdb::LogicalType::STRUCT({{"last_value", int8}, {"is_called", boolean}}),
-    PgGetSequenceDataFunction,
-    BindCallerRole};
+    PgGetSequenceDataFunction};
   sequence_data.GetSignature().SetRecordResult();
   RegisterScalar(loader, pg_catalog, "pg_get_sequence_data", VOLATILE,
                  InitSession, {sequence_data});
@@ -250,8 +249,7 @@ void RegisterSequenceFunctions(duckdb::ExtensionLoader& loader) {
                                       {"cache_size", int8},
                                       {"data_type", OID()},
                                     }),
-                                    PgSequenceParametersFunction,
-                                    BindCallerRole};
+                                    PgSequenceParametersFunction};
   parameters.SetFallible();
   parameters.GetSignature().SetRecordResult();
   RegisterScalar(loader, pg_catalog, "pg_sequence_parameters",

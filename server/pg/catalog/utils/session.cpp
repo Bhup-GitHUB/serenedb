@@ -35,9 +35,11 @@
 
 namespace sdb::pg {
 
-Session MakeSession(duckdb::ClientContext* context) {
+Session MakeSession(duckdb::ClientContext* context,
+                    duckdb::optional_idx caller) {
   Session session{
     .context = context,
+    .role = context ? context->CallerAccess(caller) : duckdb::RoleAccess{},
     .database =
       context ? catalog::DefaultSereneDBCatalog(*context).get() : nullptr,
     .transaction = std::nullopt,
@@ -64,7 +66,7 @@ Session MakeSession(duckdb::ClientContext* context) {
                        *session.transaction, duckdb::Identifier{name},
                        duckdb::OnEntryNotFound::RETURN_NULL)
                    : nullptr;
-    if (entry && !duckdb::CanUseSchema(context->CurrentRole(), *entry)) {
+    if (entry && !duckdb::CanUseSchema(session.role, *entry)) {
       return;
     }
     session.search_path.emplace_back(
