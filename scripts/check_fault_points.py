@@ -44,7 +44,14 @@ DUCKDB_PARK_FAULTS = frozenset(
     }
 )
 DUCKDB_TEST_DIR = "third_party/duckdb/test"
-DUCKDB_TESTED_FAULTS = frozenset({"async_write_failure_completed"})
+DUCKDB_TESTED_FAULTS = frozenset(
+    {
+        "async_write_failure_completed",
+        "block_load_before_loaded",
+        "block_unload_before_temporary_write",
+        "remote_write_cache_block",
+    }
+)
 TEST_DIR = "tests"
 
 TEST_EXTS = (".test", ".test_slow")

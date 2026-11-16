@@ -12,6 +12,8 @@ import pytest
 from fake_s3 import FakeS3
 from test_tablespaces import _create_secret, _Server, _Store, pytestmark  # noqa: F401
 
+ONE_ROUND_LATENCY = 0.5
+
 
 def _one_round(log: list[dict], extension: str) -> list[dict]:
     reads = [entry for entry in log if entry["key"].endswith(extension)]
@@ -59,7 +61,7 @@ def test_cold_top_k_reads_postings_and_columns_in_one_round(
                 conn.execute("SET GLOBAL threads = 2")
                 conn.execute("SET GLOBAL enable_external_file_cache = false")
                 conn.execute("SET GLOBAL enable_external_file_cache = true")
-                fake.latency = 0.1
+                fake.latency = ONE_ROUND_LATENCY
                 fake.log = []
                 rows = conn.execute(
                     "SELECT id FROM docs_body WHERE body @@ to_tsquery('alpha beta') "
@@ -99,7 +101,7 @@ def test_cold_late_materialization_reads_columns_in_one_round(
                 conn.execute("SET GLOBAL enable_external_file_cache = false")
                 conn.execute("SET GLOBAL enable_external_file_cache = true")
                 conn.execute(query.replace("*", "b", 1)).fetchall()
-                fake.latency = 0.1
+                fake.latency = ONE_ROUND_LATENCY
                 fake.log = []
                 rows = conn.execute(query).fetchall()
                 log, fake.log = fake.log, None
@@ -132,7 +134,7 @@ def test_cold_column_scan_reads_its_columns_in_one_round(
                 expected = conn.execute(query).fetchall()
                 conn.execute("SET GLOBAL enable_external_file_cache = false")
                 conn.execute("SET GLOBAL enable_external_file_cache = true")
-                fake.latency = 0.1
+                fake.latency = ONE_ROUND_LATENCY
                 fake.log = []
                 rows = conn.execute(query).fetchall()
                 log, fake.log = fake.log, None
@@ -366,7 +368,7 @@ def test_cold_count_reads_its_postings_in_one_round(tmp_path: Path) -> None:
                         f"FROM range({segment * 1000}, {(segment + 1) * 1000}) t(i)")
                     conn.execute("VACUUM (FLUSH_TABLE) docs")
                 conn.execute("SET GLOBAL threads = 2")
-                fake.latency = 0.1
+                fake.latency = ONE_ROUND_LATENCY
 
                 def cold_count(query: str) -> tuple[int, list[dict]]:
                     conn.execute("SET GLOBAL enable_external_file_cache = false")
