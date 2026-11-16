@@ -39,7 +39,9 @@
 #include <duckdb/catalog/catalog_entry/schema_catalog_entry.hpp>
 #include <duckdb/catalog/catalog_entry/table_catalog_entry.hpp>
 #include <duckdb/catalog/catalog_entry_retriever.hpp>
+#include <duckdb/catalog/permissions.hpp>
 #include <duckdb/common/enums/database_modification_type.hpp>
+#include <duckdb/common/enums/entry_use.hpp>
 #include <duckdb/common/enums/statement_type.hpp>
 #include <duckdb/common/types/timestamp.hpp>
 #include <duckdb/common/types/uuid.hpp>
@@ -468,7 +470,8 @@ void EsDropIndexExecute(duckdb::ClientContext& context,
     THROW_SQL_ERROR(ERR_CODE(ERRCODE_UNDEFINED_TABLE),
                     ERR_MSG("no such index [", data.index, "]"));
   }
-  duckdb::RequireDropOwner(context, context.CurrentRole(), *table, nullptr);
+  duckdb::RequireUse(context, context.CurrentRole(), *table,
+                     duckdb::EntryUse::DROP);
   duckdb::DropInfo drop;
   drop.type = duckdb::CatalogType::TABLE_ENTRY;
   drop.SetQualifiedName(qname);

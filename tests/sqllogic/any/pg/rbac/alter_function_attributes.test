@@ -248,7 +248,7 @@ connection c_user user=afa_user password=afa_pw
 statement error
 ALTER FUNCTION lower(text) STABLE;
 ----
-db error: ERROR: permission denied for scalar function lower
+db error: ERROR: must be owner of scalar function lower
 
 
 statement ok

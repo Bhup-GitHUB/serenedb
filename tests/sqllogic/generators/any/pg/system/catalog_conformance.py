@@ -1870,7 +1870,7 @@ pgonly("CREATE POLICY parent_reader ON pgonly.parent FOR SELECT TO conf_reader U
 pgonly("COMMENT ON SCHEMA pgonly IS 'Objects SereneDB cannot create yet'", "Adding comments to schemas is not implemented")
 pgonly("COMMENT ON CONSTRAINT identity_tab_qty_check ON pgonly.identity_tab IS 'Allowed quantities'",
        'syntax error at or near "CONSTRAINT"')
-pgonly("COMMENT ON FUNCTION pgonly.touch() IS 'Trigger function'", "Macro Function with name touch does not exist!")
+pgonly("COMMENT ON FUNCTION pgonly.touch() IS 'Trigger function'", r"function touch\(\) does not exist")
 pgonly("CREATE FOREIGN DATA WRAPPER conf_fdw", 'syntax error at or near "FOREIGN"')
 pgonly("CREATE SERVER conf_srv FOREIGN DATA WRAPPER conf_fdw", 'foreign-data wrapper "conf_fdw" does not exist')
 

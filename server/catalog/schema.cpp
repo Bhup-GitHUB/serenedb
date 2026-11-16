@@ -130,29 +130,30 @@ const duckdb::MacroFunction& RenamedOverload(
                                            : **overload;
 }
 
-bool MoveOverload(Schema& schema, duckdb::CatalogTransaction transaction,
-                  EntrySet& set, duckdb::CatalogEntry& entry,
-                  const duckdb::RenameScalarFunctionInfo& info) {
-  if (!info.overload_oid || !IsMacro(entry)) {
+bool MoveOverload(Schema& schema, Schema& target_schema,
+                  duckdb::CatalogTransaction transaction,
+                  duckdb::CatalogEntry& entry, duckdb::idx_t overload_oid,
+                  const duckdb::Identifier& new_name) {
+  if (!overload_oid || !IsMacro(entry)) {
     return false;
   }
   const auto& function = entry.Cast<duckdb::MacroCatalogEntry>();
-  auto target = set.Get(transaction, info.new_name);
+  auto target = target_schema.Set(entry.type).Get(transaction, new_name);
   if (function.macros.size() == 1 && !target) {
     return false;
   }
   if (target && target->type != entry.type) {
-    ThrowEntryExists(entry.type, info.new_name);
+    ThrowEntryExists(entry.type, new_name);
   }
   auto source = function.GetSerializedInfo();
   auto& source_macros = source->Cast<duckdb::CreateMacroInfo>().macros;
   const auto source_it = absl::c_find_if(source_macros, [&](const auto& macro) {
-    return function.OverloadOid(*macro) == info.overload_oid;
+    return function.OverloadOid(*macro) == overload_oid;
   });
   if (source_it == source_macros.end()) {
     THROW_SQL_ERROR(
       ERR_CODE(ERRCODE_UNDEFINED_FUNCTION),
-      ERR_MSG("function with OID ", info.overload_oid, " does not exist"));
+      ERR_MSG("function with OID ", overload_oid, " does not exist"));
   }
   auto moved = std::move(*source_it);
   source_macros.erase(source_it);
@@ -167,14 +168,14 @@ bool MoveOverload(Schema& schema, duckdb::CatalogTransaction transaction,
     if (absl::c_any_of(macros, [&](const auto& macro) {
           return macro->HasParameterTypes(types);
         })) {
-      ThrowFunctionExists(schema, info.new_name, *moved);
+      ThrowFunctionExists(target_schema, new_name, *moved);
     }
     macros.push_back(std::move(moved));
     destination->on_conflict = duckdb::OnCreateConflict::ALTER_ON_CONFLICT;
   } else {
     destination = function.GetInfo();
     auto& macro_info = destination->Cast<duckdb::CreateMacroInfo>();
-    macro_info.SetFunctionName(info.new_name);
+    macro_info.SetQualifiedName(target_schema.GetQualifiedName(new_name));
     macro_info.permissions = moved->permissions;
     macro_info.comment = moved->comment;
     moved->permissions = duckdb::Permissions{};
@@ -189,8 +190,8 @@ bool MoveOverload(Schema& schema, duckdb::CatalogTransaction transaction,
     schema.CreateFunction(transaction,
                           source->Cast<duckdb::CreateFunctionInfo>());
   }
-  schema.CreateFunction(transaction,
-                        destination->Cast<duckdb::CreateFunctionInfo>());
+  target_schema.CreateFunction(transaction,
+                               destination->Cast<duckdb::CreateFunctionInfo>());
   return true;
 }
 
@@ -1072,10 +1073,12 @@ void Schema::Alter(duckdb::CatalogTransaction transaction,
     info.type == duckdb::AlterType::ALTER_SCALAR_FUNCTION &&
     info.Cast<duckdb::AlterScalarFunctionInfo>().alter_scalar_function_type ==
       duckdb::AlterScalarFunctionType::RENAME_SCALAR_FUNCTION;
-  if (rename_function &&
-      MoveOverload(*this, transaction, set, *entry,
-                   info.Cast<duckdb::RenameScalarFunctionInfo>())) {
-    return;
+  if (rename_function) {
+    const auto& rename = info.Cast<duckdb::RenameScalarFunctionInfo>();
+    if (MoveOverload(*this, *this, transaction, *entry, rename.overload_oid,
+                     rename.new_name)) {
+      return;
+    }
   }
   if (const auto new_schema = info.GetNewSchema()) {
     if (type == duckdb::CatalogType::VIEW_ENTRY &&
@@ -1107,7 +1110,11 @@ void Schema::Alter(duckdb::CatalogTransaction transaction,
     }
     DeclareModified(transaction, catalog,
                     duckdb::DatabaseModificationType::ALTER_TABLE);
-    Move(transaction, set, type, *entry, target->Cast<Schema>(), info);
+    if (!MoveOverload(*this, target->Cast<Schema>(), transaction, *entry,
+                      info.Cast<duckdb::SetSchemaInfo>().overload_oid,
+                      entry->name)) {
+      Move(transaction, set, type, *entry, target->Cast<Schema>(), info);
+    }
     return;
   }
   if (entry->type == duckdb::CatalogType::TABLE_ENTRY &&

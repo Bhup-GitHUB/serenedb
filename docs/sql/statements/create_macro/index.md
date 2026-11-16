@@ -128,15 +128,19 @@ An `OUT` parameter is a column of the result and an `INOUT` parameter is both an
 
 ### Moving to Another Schema
 
-`ALTER FUNCTION`, `ALTER PROCEDURE` or `ALTER MACRO ... SET SCHEMA` moves a function, procedure or macro, scalar or table, to another schema:
+`ALTER FUNCTION`, `ALTER PROCEDURE`, `ALTER ROUTINE` or `ALTER MACRO ... SET SCHEMA` moves a function, procedure or macro, scalar or table, to another schema:
 
 <SqlLogicTest id="sql/statements/create_macro/index/example_048" />
 
-The move needs ownership of the function and the `CREATE` privilege on the target schema, which must not already hold a function or macro of that name. The statement takes no argument list, so a name with several overloads fails with `function name "..." is not unique`. Moving a function into the schema it is already in changes nothing. A function that another object depends on can't be moved.
+An argument list after the name moves that overload alone, and the function's only overload when the list is left out; with several overloads and no list, the statement fails with `function name "..." is not unique`. The move needs ownership of the overload and the `CREATE` privilege on the target schema, which must not already hold a function or procedure with the same name and arguments. Moving a function into the schema it is already in changes nothing. A function that another object depends on can't be moved.
 
 ## Overloading
 
 It is possible to overload a macro based on the types or the number of its parameters; this works for both scalar and table macros.
+
+Functions and procedures share one set of signatures: `CREATE`, `RENAME TO` and `SET SCHEMA` refuse to give a function the name and arguments of a procedure in the same schema, and the other way round.
+
+`DROP`, `ALTER`, `COMMENT ON`, `GRANT` and `REVOKE` name the kind of routine they act on: the `PROCEDURE` forms refuse a function with `name(...) is not a procedure`, the `FUNCTION` forms refuse a procedure with `name(...) is not a function`, and the `ROUTINE` forms take either. A routine that doesn't exist is reported as `function name(...) does not exist`, or `could not find a function named "..."` when the statement gives no argument list, with `procedure` for the `PROCEDURE` forms.
 
 `ALTER FUNCTION`, `ALTER PROCEDURE` and `ALTER ROUTINE` rename a function with `RENAME TO` and change its owner with `OWNER TO`, for the overload the argument list after the name names, or for the function's only overload when the list is left out; with several overloads and no list, the statement fails with `function name "..." is not unique`. A renamed overload joins the overloads of its new name, and `RENAME TO` fails with `function name(...) already exists in schema "..."` when the new name has an overload with the same arguments. The only overload of a name renamed to an unused name keeps its `oid`; an overload renamed away from other overloads of its name, or to a name that has overloads, gets a new `oid`.
 

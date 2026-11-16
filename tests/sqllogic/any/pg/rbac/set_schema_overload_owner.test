@@ -98,11 +98,61 @@ f	ssoo_src	ssoo_bob
 
 
 statement ok
+SET ROLE ssoo_bob;
+
+
+onlyif postgres
+statement error
+ALTER FUNCTION f(int) SET SCHEMA ssoo_dst;
+----
+db error: ERROR: must be owner of function f
+
+
+skipif postgres
+statement error
+ALTER FUNCTION f(int) SET SCHEMA ssoo_dst;
+----
+db error: ERROR: must be owner of macro function f
+
+
+statement ok
+SET ROLE ssoo_alice;
+
+
+statement ok
+ALTER FUNCTION f(int) SET SCHEMA ssoo_dst;
+
+
+statement ok
+RESET ROLE;
+
+
+query
+SELECT p.oid::regprocedure::text AS f, r.rolname
+FROM pg_proc p
+JOIN pg_namespace n ON n.oid = p.pronamespace
+JOIN pg_roles r ON r.oid = p.proowner
+WHERE p.proname = 'f' AND n.nspname IN ('ssoo_src', 'ssoo_dst')
+ORDER BY 1;
+----
+f	rolname
+f(text)	ssoo_bob
+ssoo_dst.f(integer)	ssoo_alice
+
+
+query
+SELECT ssoo_dst.f(1) AS moved, ssoo_src.f('a') AS kept;
+----
+moved	kept
+1	a
+
+
+statement ok
 RESET search_path;
 
 
 statement ok
-DROP FUNCTION ssoo_src.f(int);
+DROP FUNCTION ssoo_dst.f(int);
 
 
 statement ok
