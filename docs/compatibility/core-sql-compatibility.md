@@ -820,7 +820,7 @@ The `jsonb` type is a `json` value that keeps its text as written (see [`jsonb`]
 | obj_description                    | Yes           | Also `col_description`. Built-in types, functions and schemas have no description, so they return `NULL` |
 | shobj_description                  | Partial       | Always `NULL`: comments on databases and roles are not stored |
 | pg_describe_object                 | Partial       | Also `pg_identify_object`. Tables, views, indexes, sequences, composite types and their columns, functions, types, schemas, roles, constraints, column defaults, view rules, triggers, databases, collations, languages, access methods and tablespaces; other object classes return `NULL` |
-| pg_get_acl                         | Partial       | Tables, views, sequences and their columns, functions, types and schemas; other object classes return `NULL` |
+| pg_get_acl                         | Yes           |  |
 | pg_relation_is_updatable           | Yes           | Also `pg_column_is_updatable`. Tables are updatable, views are not |
 | pg_sequence_last_value             | Yes           |  |
 | pg_sequence_parameters             | Yes           | Also `pg_get_sequence_data`. `data_type` is always `bigint` |

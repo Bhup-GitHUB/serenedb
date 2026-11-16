@@ -28,6 +28,7 @@
 #include <bitset>
 #include <duckdb/catalog/catalog.hpp>
 #include <duckdb/catalog/catalog_entry/aggregate_function_catalog_entry.hpp>
+#include <duckdb/catalog/catalog_entry/function_entry.hpp>
 #include <duckdb/catalog/catalog_entry/macro_catalog_entry.hpp>
 #include <duckdb/catalog/catalog_entry/pragma_function_catalog_entry.hpp>
 #include <duckdb/catalog/catalog_entry/scalar_function_catalog_entry.hpp>
@@ -184,6 +185,9 @@ void VisitBuiltinOverloads(duckdb::ClientContext& context, Visit&& visit) {
                                const duckdb::CatalogEntry* system_entry,
                                const duckdb::CreateMacroInfo* macro,
                                std::string_view macro_kind) {
+    const auto capability =
+      macro ? macro->required_capability
+            : system_entry->Cast<duckdb::FunctionEntry>().required_capability;
     const auto emit = [&](std::string_view kind_name, std::string parameters,
                           bool exact, char kind, duckdb::idx_t rettype,
                           std::vector<duckdb::idx_t> argtypes, bool retset,
@@ -204,7 +208,8 @@ void VisitBuiltinOverloads(duckdb::ClientContext& context, Visit&& visit) {
           .argtypes = std::move(argtypes),
           .retset = retset,
           .strict = strict,
-          .volatility = volatility}});
+          .volatility = volatility,
+          .capability = capability}});
     };
     const auto emit_macros =
       [&](std::string_view kind_name,
@@ -405,14 +410,20 @@ std::string BuiltinFunctionKey(const duckdb::CatalogEntry& function,
                      OverloadArgTypes(function, overload));
 }
 
-duckdb::optional_ptr<const duckdb::Permissions> BuiltinFunctionGrant(
+const duckdb::Permissions& BuiltinFunctionPermissions(
   duckdb::ClientContext& context, const BuiltinFunction& function) {
-  const auto grants = duckdb::BuiltinFunctionGrants(context);
-  if (!grants) {
-    return nullptr;
+  static const duckdb::Permissions kPublic{.owner = kRootUser};
+  static const duckdb::Permissions kOwner{
+    .owner = kRootUser,
+    .acl = {duckdb::AclItem{kRootUser, kRootUser, duckdb::AclMode::Execute,
+                            duckdb::AclMode::NoRights}}};
+  if (const auto grants = duckdb::BuiltinFunctionGrants(context)) {
+    if (const auto row = grants->find(BuiltinFunctionKey(function));
+        row != grants->end()) {
+      return row->second;
+    }
   }
-  const auto row = grants->find(BuiltinFunctionKey(function));
-  return row == grants->end() ? nullptr : &row->second;
+  return function.capability == duckdb::RoleCapability::None ? kPublic : kOwner;
 }
 
 std::string BuiltinSignatureKey(

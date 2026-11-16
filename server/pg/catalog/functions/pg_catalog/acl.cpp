@@ -35,6 +35,7 @@
 #include <duckdb/catalog/catalog_entry/type_catalog_entry.hpp>
 #include <duckdb/catalog/catalog_entry/view_catalog_entry.hpp>
 #include <duckdb/common/vector/vector_iterator.hpp>
+#include <duckdb/common/vector/vector_writer.hpp>
 #include <duckdb/common/vector_operations/variadic_executor.hpp>
 #include <duckdb/function/table_function.hpp>
 #include <duckdb/main/database_manager.hpp>
@@ -42,6 +43,7 @@
 #include <iresearch/utils/pg/errcodes.hpp>
 #include <iresearch/utils/pg/sql_exception_macro.hpp>
 #include <iresearch/utils/static_strings.hpp>
+#include <limits>
 #include <optional>
 #include <ranges>
 #include <span>
@@ -295,6 +297,7 @@ struct ObjectTarget {
   bool owner_only;
   const duckdb::ColumnList* any_column;
   AclMode rights = ~AclMode::NoRights;
+  duckdb::RoleCapability capability = duckdb::RoleCapability::None;
 };
 
 bool Holds(const duckdb::RoleAccess& closure, CatalogType type,
@@ -314,7 +317,9 @@ bool Holds(const duckdb::RoleAccess& closure, CatalogType type,
     return closure.is_superuser;
   }
   if (modes.privs != AclMode::NoRights &&
-      closure.CanAny(type, permissions, modes.privs)) {
+      ((target.capability != duckdb::RoleCapability::None &&
+        closure.Has(target.capability)) ||
+       closure.CanAny(type, permissions, modes.privs))) {
     return true;
   }
   if (modes.privs != AclMode::NoRights) {
@@ -648,8 +653,9 @@ struct FunctionPrivileges : ObjectPrivileges<FunctionPrivileges> {
     if (!builtin) {
       return std::nullopt;
     }
-    const auto granted = BuiltinFunctionGrant(*session.context, *builtin);
-    return ObjectTarget{granted ? granted.get() : &kBuiltinPermissions};
+    return ObjectTarget{
+      .permissions = &BuiltinFunctionPermissions(*session.context, *builtin),
+      .capability = builtin->capability};
   }
 };
 
@@ -666,6 +672,18 @@ struct TypePrivileges : ObjectPrivileges<TypePrivileges> {
   static std::optional<ObjectTarget> Find(
     const Session& session, uint64_t oid,
     duckdb::optional_ptr<duckdb::CatalogEntry> entry) {
+    return Type(session, oid, entry, true);
+  }
+
+  static std::optional<ObjectTarget> Row(
+    const Session& session, uint64_t oid,
+    duckdb::optional_ptr<duckdb::CatalogEntry> entry) {
+    return Type(session, oid, entry, false);
+  }
+
+  static std::optional<ObjectTarget> Type(
+    const Session& session, uint64_t oid,
+    duckdb::optional_ptr<duckdb::CatalogEntry> entry, bool element_of_array) {
     if (entry) {
       if (entry->type != CatalogType::TYPE_ENTRY) {
         return std::nullopt;
@@ -684,14 +702,18 @@ struct TypePrivileges : ObjectPrivileges<TypePrivileges> {
       if (element == kInvalidOid) {
         return std::nullopt;
       }
-      return Find(session, element, EntryByOid(session, element));
+      if (!element_of_array) {
+        return ObjectTarget{&kBuiltinPermissions};
+      }
+      return Type(session, element, EntryByOid(session, element), true);
     }
     const auto* builtin = FindBuiltinType(static_cast<int32_t>(oid));
     if (!builtin) {
       return std::nullopt;
     }
     const auto granted = duckdb::BuiltinTypeGrant(
-      *session.context, builtin->IsArray() ? builtin->elem : builtin->oid);
+      *session.context,
+      element_of_array && builtin->IsArray() ? builtin->elem : builtin->oid);
     return ObjectTarget{granted ? granted.get() : &kBuiltinPermissions};
   }
 };
@@ -909,6 +931,117 @@ struct LargeObjectPrivileges : ObjectPrivileges<LargeObjectPrivileges> {
     SDB_UNREACHABLE();
   }
 };
+
+#include "pg/catalog/generated/object_classes.gen.inc"
+
+class ObjectAcls final : public duckdb::FunctionLocalState {
+ public:
+  explicit ObjectAcls(duckdb::ClientContext& context)
+    : _wrappers{ForeignDataWrapperPrivileges::Begin(context)},
+      _languages{LanguagePrivileges::Begin(context)} {}
+
+  std::span<const duckdb::AclItem> Of(uint64_t classid, uint64_t objid,
+                                      int32_t objsubid) const {
+    const bool column = classid == kPgClassTable && objsubid != 0;
+    const auto target = Find(classid, objid, column ? objsubid : 0);
+    if (!target || target->owner_only) {
+      return {};
+    }
+    if (!column) {
+      return target->permissions->acl;
+    }
+    return target->columns.empty() ? std::span<const duckdb::AclItem>{}
+                                   : target->columns.front();
+  }
+
+  const duckdb::SecuritySnapshot& Roles() const { return *_wrappers.roles; }
+
+ private:
+  std::optional<ObjectTarget> Find(uint64_t classid, uint64_t objid,
+                                   int32_t objsubid) const {
+    const Session& session = _wrappers;
+    if (classid == kPgClassTable) {
+      if (objsubid == 0) {
+        return TablePrivileges::Find(session, objid,
+                                     EntryByOid(session, objid));
+      }
+      if (objsubid < 1 || objsubid > std::numeric_limits<int16_t>::max()) {
+        return std::nullopt;
+      }
+      return ColumnPrivileges::Find(session, objid, EntryByOid(session, objid),
+                                    static_cast<int16_t>(objsubid));
+    }
+    if (classid == kPgProcTable) {
+      return FunctionPrivileges::Find(session, objid,
+                                      EntryByOid(session, objid));
+    }
+    if (classid == kPgTypeTable) {
+      return TypePrivileges::Row(session, objid, EntryByOid(session, objid));
+    }
+    if (classid == kPgNamespaceTable) {
+      return SchemaPrivileges::Find(session, objid);
+    }
+    if (classid == kPgDatabaseTable) {
+      return DatabasePrivileges::Find(session, objid);
+    }
+    if (classid == kPgForeignServerTable) {
+      return ServerPrivileges::Find(session, objid, EntryByOid(session, objid));
+    }
+    if (classid == kPgForeignDataWrapperTable) {
+      return ForeignDataWrapperPrivileges::Find(_wrappers, objid);
+    }
+    if (classid == kPgLanguageTable) {
+      return LanguagePrivileges::Find(_languages, objid);
+    }
+    if (classid == kPgTablespaceTable) {
+      return TablespacePrivileges::Find(session, objid);
+    }
+    return std::nullopt;
+  }
+
+  ForeignDataWrapperPrivileges::Scope _wrappers;
+  LanguagePrivileges::Scope _languages;
+};
+
+duckdb::unique_ptr<duckdb::FunctionLocalState> InitObjectAcls(
+  duckdb::ExpressionState& state, const duckdb::BoundFunctionExpression&,
+  duckdb::FunctionData*) {
+  return duckdb::make_uniq<ObjectAcls>(state.GetContext());
+}
+
+void PgGetAclFunction(duckdb::DataChunk& args, duckdb::ExpressionState& state,
+                      duckdb::Vector& result) {
+  const auto& acls =
+    duckdb::ExecuteFunctionState::GetFunctionState(state)->Cast<ObjectAcls>();
+  const auto classids = args.data[0].Values<int64_t>();
+  const auto objids = args.data[1].Values<int64_t>();
+  const auto objsubids = args.data[2].Values<int32_t>();
+  auto writer =
+    duckdb::FlatVector::Writer<duckdb::VectorListType<duckdb::string_t>>(
+      result, args.size());
+  std::string text;
+  for (duckdb::idx_t row = 0; row < args.size(); ++row) {
+    const auto classid = classids[row];
+    const auto objid = objids[row];
+    const auto objsubid = objsubids[row];
+    if (!classid.IsValid() || !objid.IsValid() || !objsubid.IsValid()) {
+      writer.WriteNull();
+      continue;
+    }
+    const auto oid = static_cast<uint64_t>(classid.GetValue());
+    if (!absl::c_linear_search(kAclClasses, oid)) {
+      THROW_SQL_ERROR(ERR_CODE(ERRCODE_INTERNAL_ERROR),
+                      ERR_MSG("unrecognized class ID: ", oid));
+    }
+    const auto acl = acls.Of(oid, static_cast<uint64_t>(objid.GetValue()),
+                             objsubid.GetValue());
+    if (acl.empty()) {
+      writer.WriteNull();
+      continue;
+    }
+    WriteAclTexts(writer, acl, acls.Roles(), text);
+  }
+}
 
 struct RolePrivMask {
   bool usage = false;
@@ -1270,6 +1403,12 @@ void RegisterAclFunctions(duckdb::ExtensionLoader& loader) {
   RegisterScalar(loader, pg_catalog, "makeaclitem",
                  duckdb::FunctionStability::CONSISTENT_WITHIN_QUERY, nullptr,
                  {make_aclitem});
+  RegisterScalar(
+    loader, pg_catalog, "pg_get_acl",
+    duckdb::FunctionStability::CONSISTENT_WITHIN_QUERY, InitObjectAcls,
+    {duckdb::ScalarFunction{{OID(), OID(), duckdb::LogicalType::INTEGER},
+                            duckdb::LogicalType::LIST(ACLITEM()),
+                            PgGetAclFunction}});
 }
 
 }  // namespace sdb::pg

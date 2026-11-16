@@ -23,6 +23,7 @@
 #include <duckdb/catalog/catalog_entry.hpp>
 #include <duckdb/catalog/permissions.hpp>
 #include <duckdb/common/constants.hpp>
+#include <duckdb/common/enums/role_capability.hpp>
 #include <duckdb/common/types.hpp>
 #include <duckdb/main/client_context.hpp>
 #include <iresearch/utils/containers/flat_hash_map.hpp>
@@ -47,6 +48,7 @@ struct BuiltinFunction {
   bool strict;
   char volatility;
   std::string_view src;
+  duckdb::RoleCapability capability = duckdb::RoleCapability::None;
 };
 
 class BuiltinFunctions {
@@ -76,7 +78,7 @@ std::shared_ptr<const BuiltinFunctions> GetBuiltinFunctions(
   duckdb::ClientContext& context);
 
 std::string BuiltinFunctionKey(const BuiltinFunction& function);
-duckdb::optional_ptr<const duckdb::Permissions> BuiltinFunctionGrant(
+const duckdb::Permissions& BuiltinFunctionPermissions(
   duckdb::ClientContext& context, const BuiltinFunction& function);
 std::string BuiltinFunctionKey(const duckdb::CatalogEntry& function,
                                duckdb::idx_t overload);

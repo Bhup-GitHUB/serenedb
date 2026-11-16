@@ -31,7 +31,6 @@
 #include <duckdb/catalog/catalog_entry/table_catalog_entry.hpp>
 #include <duckdb/catalog/catalog_entry/trigger_catalog_entry.hpp>
 #include <duckdb/catalog/catalog_entry/type_catalog_entry.hpp>
-#include <duckdb/catalog/permissions.hpp>
 #include <duckdb/common/vector/vector_iterator.hpp>
 #include <duckdb/common/vector/vector_writer.hpp>
 #include <duckdb/main/config.hpp>
@@ -77,14 +76,6 @@ struct ObjectAddress {
 
 ObjectIdentity Missing(std::string type) {
   return ObjectIdentity{.type = std::move(type)};
-}
-
-duckdb::optional_ptr<duckdb::CatalogEntry> ObjectEntry(const Session& session,
-                                                       uint64_t oid) {
-  if (!session.database || oid == kInvalidOid) {
-    return nullptr;
-  }
-  return session.database->LookupOid(*session.transaction, oid);
 }
 
 std::string_view RelationKind(const RelationAccess& relation) {
@@ -452,61 +443,6 @@ std::optional<ObjectIdentity> IdentifyObject(const Session& session,
   return std::nullopt;
 }
 
-std::optional<std::span<const duckdb::AclItem>> ObjectAcl(
-  const Session& session, const ObjectAddress& address) {
-  using enum duckdb::CatalogType;
-  const auto [classid, objid, objsubid] = address;
-  if (!absl::c_linear_search(kAclClasses, classid)) {
-    THROW_SQL_ERROR(ERR_CODE(ERRCODE_INTERNAL_ERROR),
-                    ERR_MSG("unrecognized class ID: ", classid));
-  }
-  if (classid == kPgClassTable) {
-    const auto relation = RelationByOid(session, objid);
-    if (!relation || relation->key ||
-        (relation->entry && (relation->entry->type == INDEX_ENTRY ||
-                             relation->entry->type == TYPE_ENTRY))) {
-      return std::nullopt;
-    }
-    if (objsubid == 0) {
-      return relation->permissions->acl;
-    }
-    if (const auto* column = TableColumn(*relation, objsubid)) {
-      return ColumnAclOf(*relation, *column);
-    }
-    return std::nullopt;
-  }
-  if (classid == kPgProcTable) {
-    if (objid < kMaxSystem) {
-      const auto builtins = GetBuiltinFunctions(*session.context);
-      const auto* builtin = builtins->Find(objid);
-      if (const auto granted =
-            builtin ? BuiltinFunctionGrant(*session.context, *builtin)
-                    : nullptr) {
-        return granted->acl;
-      }
-      return std::nullopt;
-    }
-    if (const auto found = FindMacro(session, objid); found.entry) {
-      return found.entry->OverloadPermissions(*found.macro).acl;
-    }
-    return std::nullopt;
-  }
-  if (classid == kPgTypeTable && objid < kMaxSystem) {
-    if (const auto granted =
-          duckdb::BuiltinTypeGrant(*session.context, objid)) {
-      return granted->acl;
-    }
-    return std::nullopt;
-  }
-  if (classid == kPgTypeTable || classid == kPgNamespaceTable) {
-    if (const auto entry = ObjectEntry(session, objid);
-        entry && CatalogClassOid(entry->type) == classid) {
-      return duckdb::EffectivePermissions(*session.context, *entry).acl;
-    }
-  }
-  return std::nullopt;
-}
-
 template<typename Write>
 void ForEachObject(duckdb::DataChunk& args, Write&& write) {
   const auto classids = args.data[0].Values<int64_t>();
@@ -574,24 +510,6 @@ void PgIdentifyObjectFunction(duckdb::DataChunk& args,
                                : std::nullopt);
       put(id, identity->identity);
     });
-  });
-}
-
-void PgGetAclFunction(duckdb::DataChunk& args, duckdb::ExpressionState& state,
-                      duckdb::Vector& result) {
-  const auto& session = SessionOf(state);
-  const auto roles = catalog::RolesOf(&state.GetContext());
-  auto writer =
-    duckdb::FlatVector::Writer<duckdb::VectorListType<duckdb::string_t>>(
-      result, args.size());
-  std::string text;
-  ForEachObject(args, [&](const std::optional<ObjectAddress>& object) {
-    const auto acl = object ? ObjectAcl(session, *object) : std::nullopt;
-    if (!acl || acl->empty()) {
-      writer.WriteNull();
-      return;
-    }
-    WriteAclTexts(writer, *acl, *roles, text);
   });
 }
 
@@ -679,11 +597,6 @@ void RegisterObjectAddressFunctions(duckdb::ExtensionLoader& loader) {
   identify_object.GetSignature().SetRecordResult();
   RegisterScalar(loader, pg_catalog, "pg_identify_object",
                  CONSISTENT_WITHIN_QUERY, InitSession, {identify_object});
-  RegisterScalar(loader, pg_catalog, "pg_get_acl", CONSISTENT_WITHIN_QUERY,
-                 InitSession,
-                 {duckdb::ScalarFunction{{oid, oid, int4},
-                                         duckdb::LogicalType::LIST(ACLITEM()),
-                                         PgGetAclFunction}});
 }
 
 }  // namespace sdb::pg

@@ -178,9 +178,7 @@ class PgProc final : public SystemTableScan<kPgProcSql> {
       return function.src.empty() ? function.name : function.src;
     }),
     Col<"proacl">([](const auto& function, SystemScan& scan) -> const auto& {
-      static const duckdb::vector<duckdb::AclItem> kDefault;
-      const auto granted = BuiltinFunctionGrant(scan.Context(), function);
-      return granted ? granted->acl : kDefault;
+      return BuiltinFunctionPermissions(scan.Context(), function).acl;
     }));
 
   static constexpr auto kMacro = Shape<kSql, const Macro>(
