@@ -53,13 +53,12 @@ uint64_t TopFileSegment(const IndexDir& dir) {
 
 irs::CompositeReader Open(const IndexDir& dir,
                           const irs::IndexReaderOptions& options) {
-  const auto committed = dir.Committed();
-  const auto reader_options = dir.ReaderOptions(options);
+  const auto committed = dir.CommittedSegments();
   std::vector<irs::SegmentReader> readers;
   readers.reserve(committed.size());
-  for (const auto& meta : committed) {
+  for (const auto& [meta, files] : committed) {
     readers.emplace_back(irs::SegmentReaderImpl::Open(
-      dir.Db(), dir.Fs(), dir.Root(), meta, reader_options));
+      dir.Db(), dir.Fs(), dir.Root(), meta, options, files));
   }
   return {std::move(readers), /*stats=*/true};
 }
@@ -180,7 +179,7 @@ bool IndexWriter::Transaction::Commit() {
     for (const auto& flushed : _native.FlushSegments(true)) {
       auto meta = flushed.meta;
       AddRemoved(meta, flushed.docs_mask);
-      change.added.push_back(std::move(meta));
+      change.added.push_back({.meta = std::move(meta), .files = flushed.files});
     }
     _native.Abort();
   }
@@ -249,7 +248,10 @@ IndexWriter::IndexWriter(const IndexDir& dir, OpenMode mode,
     _hnsw_bases = std::make_unique<irs::HnswBases>();
     options.reader_options.hnsw_bases = _hnsw_bases.get();
   }
-  options.reader_options = dir.ReaderOptions(std::move(options.reader_options));
+  if (!options.released) {
+    options.released = dir.Released();
+  }
+  options.pack = options.pack || dir.Kind() == StorageKind::Memory;
   _reader_options = options.reader_options;
   if (!(mode & kOmAppend)) {
     dir.Publish({});
@@ -302,7 +304,8 @@ void IndexWriter::FlushFree() {
         AddRemoved(meta, entry.docs_mask);
         flushed.starts.push_back(at);
         at += meta.docs_count;
-        flushed.metas.push_back(std::move(meta));
+        flushed.segments.push_back(
+          {.meta = std::move(meta), .files = entry.files});
       }
       std::move(lost).Cancel();
       SDB_ASSERT(at == 0 || at == segment->docs);
@@ -317,26 +320,30 @@ void IndexWriter::FlushFree() {
   }
 }
 
-std::vector<irs::SegmentMeta> IndexWriter::Apply(
-  std::vector<irs::SegmentMeta> segments, std::span<const Change> changes,
+std::vector<CommittedSegment> IndexWriter::Apply(
+  std::vector<CommittedSegment> segments, std::span<const Change> changes,
   std::span<const Flushed* const> flushed,
   std::span<irs::IndexWriter::Merged> merges) const {
   struct Unit {
     irs::SegmentMeta meta;
+    std::shared_ptr<const irs::FileTracker> files;
     uint64_t seq = 0;
     const Flushed* flushed = nullptr;
     uint64_t start = 0;
     irs::DocumentMaskBuilder removed;
   };
   std::vector<Unit> units;
-  for (auto& meta : segments) {
-    units.push_back({.meta = std::move(meta)});
+  for (auto& [meta, files] : segments) {
+    units.push_back({.meta = std::move(meta), .files = std::move(files)});
   }
   const auto base = units.size();
   for (const auto* entry : flushed) {
-    for (size_t i = 0; i < entry->metas.size(); ++i) {
-      auto& unit = units.emplace_back(Unit{
-        .meta = entry->metas[i], .flushed = entry, .start = entry->starts[i]});
+    for (size_t i = 0; i < entry->segments.size(); ++i) {
+      const auto& segment = entry->segments[i];
+      auto& unit = units.emplace_back(Unit{.meta = segment.meta,
+                                           .files = segment.files,
+                                           .flushed = entry,
+                                           .start = entry->starts[i]});
       const auto end = unit.start + unit.meta.docs_count;
       unit.seq = std::numeric_limits<uint64_t>::max();
       for (const auto& span : entry->spans) {
@@ -356,8 +363,9 @@ std::vector<irs::SegmentMeta> IndexWriter::Apply(
   }
   for (const auto& change : changes) {
     uint64_t start = 0;
-    for (const auto& meta : change.added) {
-      units.push_back({.meta = meta, .seq = change.seq, .start = start});
+    for (const auto& [meta, files] : change.added) {
+      units.push_back(
+        {.meta = meta, .files = files, .seq = change.seq, .start = start});
       start += meta.docs_count;
     }
   }
@@ -372,8 +380,9 @@ std::vector<irs::SegmentMeta> IndexWriter::Apply(
       std::vector<irs::SegmentReader> readers;
       readers.reserve(units.size());
       for (const auto& unit : units) {
-        readers.emplace_back(irs::SegmentReaderImpl::Open(
-          _dir.Db(), _dir.Fs(), _dir.Root(), unit.meta, _reader_options));
+        readers.emplace_back(
+          irs::SegmentReaderImpl::Open(_dir.Db(), _dir.Fs(), _dir.Root(),
+                                       unit.meta, _reader_options, unit.files));
       }
       current.emplace(std::move(readers), /*stats=*/false);
     }
@@ -427,14 +436,16 @@ std::vector<irs::SegmentMeta> IndexWriter::Apply(
     units.begin() + static_cast<ptrdiff_t>(base), units.end(),
     [](const Unit& lhs, const Unit& rhs) { return lhs.seq < rhs.seq; });
   segments.clear();
-  std::vector<irs::SegmentMeta> added;
+  std::vector<CommittedSegment> added;
   for (size_t i = 0; i < units.size(); ++i) {
     auto& unit = units[i];
     AddRemoved(unit.meta, std::move(unit.removed));
     if (i < base) {
-      segments.push_back(std::move(unit.meta));
+      segments.push_back(
+        {.meta = std::move(unit.meta), .files = std::move(unit.files)});
     } else if (unit.meta.live_docs_count != 0) {
-      added.push_back(std::move(unit.meta));
+      added.push_back(
+        {.meta = std::move(unit.meta), .files = std::move(unit.files)});
     }
   }
 
@@ -442,8 +453,8 @@ std::vector<irs::SegmentMeta> IndexWriter::Apply(
     const auto& candidates = merged.claim.candidates;
     std::vector<size_t> found;
     for (const auto* candidate : candidates) {
-      const auto it = absl::c_find_if(segments, [&](const auto& meta) {
-        return meta.name == candidate->Meta().name;
+      const auto it = absl::c_find_if(segments, [&](const auto& segment) {
+        return segment.meta.name == candidate->Meta().name;
       });
       if (it == segments.end()) {
         break;
@@ -456,7 +467,7 @@ std::vector<irs::SegmentMeta> IndexWriter::Apply(
     auto meta = merged.meta;
     irs::DocumentMaskBuilder carried;
     for (size_t i = 0; i < candidates.size(); ++i) {
-      const auto& now = segments[found[i]];
+      const auto& now = segments[found[i]].meta;
       if (!now.docs_mask) {
         continue;
       }
@@ -479,10 +490,11 @@ std::vector<irs::SegmentMeta> IndexWriter::Apply(
     for (const auto position : found) {
       segments.erase(segments.begin() + static_cast<ptrdiff_t>(position));
     }
-    segments.push_back(std::move(meta));
+    segments.push_back(
+      {.meta = std::move(meta), .files = merged.reader->Files()});
   }
-  std::erase_if(segments, [](const irs::SegmentMeta& meta) {
-    return meta.live_docs_count == 0;
+  std::erase_if(segments, [](const CommittedSegment& segment) {
+    return segment.meta.live_docs_count == 0;
   });
   absl::c_move(added, std::back_inserter(segments));
   return segments;
@@ -536,8 +548,8 @@ bool IndexWriter::RefreshBegin() {
   if (ready == 0 && staged.merges == 0 && flushed.empty()) {
     return false;
   }
-  staged.segments =
-    Apply(_dir.Committed(), std::span{_pending}.first(ready), flushed, _merges);
+  staged.segments = Apply(_dir.CommittedSegments(),
+                          std::span{_pending}.first(ready), flushed, _merges);
   _staged = std::move(staged);
   return true;
 }

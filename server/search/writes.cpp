@@ -184,10 +184,9 @@ void ForEachRowKey(duckdb::ClientContext& context, duckdb::idx_t table_id,
       return;
     }
     chunk.Reset();
-    const auto take =
-      std::min<uint64_t>(STANDARD_VECTOR_SIZE, docs_count - window);
-    const auto scanned = scanner.Filter(window, take, chunk, &rows, count);
-    scanner.Project(window, take, scanned, chunk);
+    const auto scanned = scanner.Scan(
+      window, std::min<uint64_t>(STANDARD_VECTOR_SIZE, docs_count - window),
+      chunk, &rows, count);
     chunk.SetCardinality(scanned);
     auto values = encoder.Encode(chunk, column_ids).Values<duckdb::string_t>();
     for (duckdb::idx_t row = 0; row != scanned; ++row) {

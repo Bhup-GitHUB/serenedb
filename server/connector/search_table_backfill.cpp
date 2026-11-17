@@ -265,7 +265,7 @@ void AppendReplacements(const Slice& slice,
                         std::vector<irs::IndexWriter::Replacement>& out) {
   const auto first = out.size();
   for (const auto& flushed : slice.flushed) {
-    out.push_back({.meta = flushed.meta});
+    out.push_back({.meta = flushed.meta, .files = flushed.files});
   }
   size_t i = 0;
   uint64_t used = 0;

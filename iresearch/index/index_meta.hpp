@@ -27,7 +27,6 @@
 #include <vector>
 
 #include "iresearch/index/document_mask.hpp"
-#include "iresearch/index/segment_hold.hpp"
 #include "iresearch/utils/resource_manager.hpp"
 #include "iresearch/utils/string.hpp"
 #include "iresearch/utils/type_limits.hpp"
@@ -55,7 +54,6 @@ struct SegmentMeta : SegmentInfo {
 
   uint8_t kinds = 0;
   std::shared_ptr<const DocumentMask> docs_mask;
-  std::shared_ptr<const SegmentHold> hold;
 };
 
 inline doc_id_t RemovalCount(const SegmentMeta& meta) noexcept {

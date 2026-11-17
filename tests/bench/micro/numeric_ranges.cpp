@@ -265,15 +265,12 @@ void Write(std::string_view root, const Terms& terms, Ladder ladder,
            uint64_t rows) {
   auto& db = irs::DuckDBEngine::Instance().instance();
   auto& fs = duckdb::FileSystem::GetFileSystem(db);
-  irs::FileTracker tracker;
+  irs::FileTracker tracker{fs, root, "segment"};
   const irs::FlushState state{
-    .fs = fs,
-    .root = root,
     .tracker = tracker,
-    .name = "segment",
     .doc_count = rows,
   };
-  irs::IdxWriter idx{fs, root, tracker, "segment"};
+  irs::IdxWriter idx{tracker};
   irs::term_dict::FieldWriter writer{false};
   writer.SetIdxWriter(idx);
   writer.prepare(state, 1);

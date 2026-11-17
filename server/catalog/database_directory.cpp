@@ -184,7 +184,6 @@ const std::shared_ptr<std::atomic_uint64_t>& SegmentIds() {
 }
 
 void RemoveStorage(absl::AnyInvocable<bool()> remove_files) {
-  BeginStorageWork();
   RunRemoval(std::move(remove_files));
 }
 

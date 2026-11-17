@@ -140,7 +140,7 @@ TEST_P(Columnstore2TestCase, reader_ctor) {
 TEST_P(Columnstore2TestCase, empty_columnstore) {
   constexpr std::string_view kSegment = "empty_cs";
   {
-    irs::ColWriter w{Db(), _dir.Fs(), _dir.Root(), _dir.Tracker(), kSegment};
+    irs::ColWriter w{Db(), _dir.Tracker(kSegment)};
     w.Commit(/*target_row=*/0);
   }
   // (a) First open: no file was written, so no reader.

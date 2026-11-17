@@ -107,7 +107,8 @@ bool RecoverSearchStorages(
   auto& scheduler = duckdb::TaskScheduler::GetScheduler(db);
   context.RunFunctionInTransaction([&] {
     duckdb::TaskExecutor replays{scheduler};
-    duckdb::TaskExecutor remote_opens{scheduler, scheduler.AsyncPool()};
+    duckdb::TaskExecutor remote_opens{scheduler,
+                                      duckdb::TaskSchedulerType::ASYNC};
     for (auto& table : tables) {
       table->ScheduleRecovery(context, replays,
                               table->Remote() ? remote_opens : replays);

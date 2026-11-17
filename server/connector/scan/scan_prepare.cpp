@@ -31,7 +31,7 @@ namespace sdb::connector {
 const irs::QueryBuilder& EnsureSegmentQuery(ScanGlobalState& g,
                                             ScanLocalState* l,
                                             uint32_t seg_idx) {
-  g.Segment(seg_idx).prepare.Call(g.remote, [&] {
+  g.Segment(seg_idx).prepare.Call([&] {
     irs::PrepareCollector* collector = nullptr;
     if (g.collector) {
       SDB_ASSERT(l);

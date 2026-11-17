@@ -40,9 +40,9 @@
 #include <iresearch/formats/hnsw/hnsw_bases.hpp>
 #include <iresearch/index/doc_removal.hpp>
 #include <iresearch/index/index_writer.hpp>
-#include <iresearch/index/segment_hold.hpp>
 #include <iresearch/search/scorers/scorer.hpp>
 #include <iresearch/search/scorers/scorer_options.hpp>
+#include <iresearch/store/storage.hpp>
 #include <iresearch/utils/async.hpp>
 #include <limits>
 #include <memory>
@@ -162,7 +162,8 @@ class Store final : public std::enable_shared_from_this<Store>,
   irs::IndexWriter& Writer() noexcept { return *_writer; }
   std::vector<OwnSegment> OpenFlushed(
     std::span<const irs::IndexWriter::FlushedSegment> flushed) const;
-  OwnSegment OpenOwn(irs::SegmentMeta meta) const;
+  OwnSegment OpenOwn(irs::SegmentMeta meta,
+                     std::shared_ptr<const irs::FileTracker> files) const;
 
   struct Piece {
     irs::IndexWriter::Transaction trx;

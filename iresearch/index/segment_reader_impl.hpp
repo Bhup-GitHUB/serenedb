@@ -36,6 +36,7 @@
 #include "iresearch/formats/piece_fields.hpp"
 #include "iresearch/index/index_meta.hpp"
 #include "iresearch/index/index_reader.hpp"
+#include "iresearch/store/storage.hpp"
 #include "iresearch/utils/containers/flat_hash_map.hpp"
 #include "iresearch/utils/hash_utils.hpp"
 
@@ -59,7 +60,8 @@ class SegmentReaderImpl final : public SubReader {
 
   static std::shared_ptr<const SegmentReaderImpl> Open(
     duckdb::DatabaseInstance& db, duckdb::FileSystem& fs, std::string_view root,
-    const SegmentMeta& meta, const IndexReaderOptions& options);
+    const SegmentMeta& meta, const IndexReaderOptions& options,
+    std::shared_ptr<const FileTracker> files);
 
   static std::shared_ptr<const SegmentReaderImpl> OpenInMemory(
     const SegmentMeta& meta, uint64_t id, std::unique_ptr<ColReader> columns);
@@ -85,8 +87,8 @@ class SegmentReaderImpl final : public SubReader {
 
   uint64_t Id() const noexcept { return _id; }
   uint64_t PatchTick() const noexcept { return _patch_tick; }
-  const std::shared_ptr<const SegmentHold>& Hold() const noexcept {
-    return _hold;
+  const std::shared_ptr<const FileTracker>& Files() const noexcept {
+    return _files;
   }
 
   lead::Node::ptr docs_iterator() const final;
@@ -133,7 +135,7 @@ class SegmentReaderImpl final : public SubReader {
               const IndexReaderOptions& options);
   };
 
-  std::shared_ptr<const SegmentHold> _hold;
+  std::shared_ptr<const FileTracker> _files;
   SegmentInfo _info;
   std::shared_ptr<const DocumentMask> _docs_mask;
   uint64_t _id = 0;

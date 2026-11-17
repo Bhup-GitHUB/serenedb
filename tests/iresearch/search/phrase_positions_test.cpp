@@ -648,18 +648,11 @@ TEST(PhrasePositionsTest, positions_left_in_cache_blocks) {
     writer->RefreshCommit();
   }
   TestEnv::ClearFaultPoints();
-  for (const auto& meta : dir.Committed()) {
-    for (const auto& file : irs::SegmentFiles(meta.name, meta.kinds)) {
-      if (!file.ends_with(".pos")) {
-        dir.Compact(file);
-      }
-    }
-  }
   const auto reader =
     tests::OpenReader(dir, irs::tests::DefaultReaderOptions());
   ASSERT_EQ(1, reader.size());
   const auto handles = reader[0].field(kField)->Handles();
-  ASSERT_TRUE(handles.doc->IsMapped());
+  ASSERT_FALSE(handles.doc->IsMapped());
   ASSERT_FALSE(handles.pos->IsMapped());
   ASSERT_LT(4 * duckdb::ExternalFileCache::DEFAULT_BLOCK_SIZE,
             handles.pos->GetSize());

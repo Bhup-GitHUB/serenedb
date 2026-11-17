@@ -273,7 +273,8 @@ TEST_P(MergeWriterTestCase, test_merge_writer_add_segments) {
     ASSERT_TRUE(irs::GetReady(writer.Flush(index_segment)));
 
     auto segment = irs::SegmentReaderImpl::Open(
-      dir.Db(), dir.Fs(), dir.Root(), index_segment, dir.ReaderOptions());
+      dir.Db(), dir.Fs(), dir.Root(), index_segment, irs::IndexReaderOptions{},
+      nullptr);
     ASSERT_EQ(33, segment->docs_count());
     ASSERT_EQ(33, segment->field(kNameId)->docs_count());
     ASSERT_EQ(33, segment->field(kSeqId, kNumeric)->docs_count());
@@ -329,7 +330,8 @@ TEST_P(MergeWriterTestCase, test_merge_writer_flush_progress) {
     ASSERT_EQ(2, index_segment.live_docs_count);
 
     auto segment = irs::SegmentReaderImpl::Open(
-      dir.Db(), dir.Fs(), dir.Root(), index_segment, dir.ReaderOptions());
+      dir.Db(), dir.Fs(), dir.Root(), index_segment, irs::IndexReaderOptions{},
+      nullptr);
     ASSERT_EQ(2, segment->docs_count());
   }
 
@@ -375,7 +377,8 @@ TEST_P(MergeWriterTestCase, test_merge_writer_flush_progress) {
     ASSERT_EQ(2, index_segment.live_docs_count);
 
     auto segment = irs::SegmentReaderImpl::Open(
-      dir.Db(), dir.Fs(), dir.Root(), index_segment, dir.ReaderOptions());
+      dir.Db(), dir.Fs(), dir.Root(), index_segment, irs::IndexReaderOptions{},
+      nullptr);
     ASSERT_EQ(2, segment->docs_count());
   }
 
@@ -1164,9 +1167,9 @@ TEST_P(MergeWriterTestCase, test_merge_writer) {
   writer.Reset(reader.begin(), reader.end());
   ASSERT_TRUE(irs::GetReady(writer.Flush(index_segment)));
 
-  auto segment = irs::SegmentReaderImpl::Open(
-    dir.Db(), dir.Fs(), dir.Root(), index_segment,
-    dir.ReaderOptions(irs::tests::DefaultReaderOptions()));
+  auto segment =
+    irs::SegmentReaderImpl::Open(dir.Db(), dir.Fs(), dir.Root(), index_segment,
+                                 irs::tests::DefaultReaderOptions(), nullptr);
 
   ASSERT_EQ(3, segment->docs_count());  // doc4 removed during merge
 
@@ -2199,8 +2202,9 @@ TEST_P(MergeWriterTestCase, merges_every_dictionary_of_a_layout) {
   irs::MergeWriter writer(dir.Db(), dir.Fs(), dir.Root(), options);
   writer.Reset(reader.begin(), reader.end());
   ASSERT_TRUE(irs::GetReady(writer.Flush(index_segment)));
-  auto segment = irs::SegmentReaderImpl::Open(
-    dir.Db(), dir.Fs(), dir.Root(), index_segment, dir.ReaderOptions());
+  auto segment =
+    irs::SegmentReaderImpl::Open(dir.Db(), dir.Fs(), dir.Root(), index_segment,
+                                 irs::IndexReaderOptions{}, nullptr);
   ASSERT_EQ(2 * kDocs - 1, segment->docs_count());
 
   const auto docs_of = [&](irs::field_id id, irs::DictRef dict) {
@@ -2305,8 +2309,9 @@ TEST_P(MergeWriterTestCase, merges_every_member_of_a_json_list) {
   irs::MergeWriter writer(dir.Db(), dir.Fs(), dir.Root(), options);
   writer.Reset(reader.begin(), reader.end());
   ASSERT_TRUE(irs::GetReady(writer.Flush(index_segment)));
-  auto segment = irs::SegmentReaderImpl::Open(
-    dir.Db(), dir.Fs(), dir.Root(), index_segment, dir.ReaderOptions());
+  auto segment =
+    irs::SegmentReaderImpl::Open(dir.Db(), dir.Fs(), dir.Root(), index_segment,
+                                 irs::IndexReaderOptions{}, nullptr);
   ASSERT_EQ(2 * kDocs, segment->docs_count());
 
   const auto dicts = segment->fields(kField);

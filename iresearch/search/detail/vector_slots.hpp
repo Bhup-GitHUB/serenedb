@@ -76,23 +76,32 @@ class VectorBlockReader {
     _in.ReadAheadUntil(_base + records * _record_size);
   }
 
-  std::span<const byte_type> Read(size_t index, size_t count) {
+  std::span<const byte_type> Read(size_t index, size_t count, size_t group) {
     const uint64_t offset = _base + static_cast<uint64_t>(index) * _record_size;
-    const size_t bytes = count * size_t{_record_size};
+    size_t bytes = count * size_t{_record_size};
     _in.Seek(offset);
     const auto* view = _in.Peek(bytes);
     if (!view) {
-      _scratch.resize(bytes);
-      _in.ReadData(_scratch.data(), bytes);
-      view = _scratch.data();
+      bytes = std::min(count, group) * size_t{_record_size};
+      view = _in.Peek(bytes);
+      if (view) {
+        bytes = _in.Available() / bytes * bytes;
+      } else {
+        _pin = _in.Pin(offset, bytes);
+        view = _pin.Ptr();
+      }
     }
     SDB_ASSERT(reinterpret_cast<uintptr_t>(view) % _alignment == 0);
     return {view, bytes};
   }
 
+  uint32_t Records(std::span<const byte_type> block) const noexcept {
+    return static_cast<uint32_t>(block.size() / _record_size);
+  }
+
  private:
   duckdb::InputFileReader _in;
-  std::vector<byte_type> _scratch;
+  duckdb::FilePin _pin;
   uint64_t _base = 0;
   uint32_t _record_size;
   uint32_t _alignment;
@@ -456,7 +465,7 @@ class VectorCluster {
       const uint32_t gs = _setting.group_size;
       const uint32_t first = lane / gs * gs;
       const uint32_t records = GroupRecords(first);
-      ScoreBlock(_pay.Read(first, records), records, _cache.data(),
+      ScoreBlock(_pay.Read(first, records, gs), records, _cache.data(),
                  _cache.data() + gs);
       _cached_first = first;
       _cached_end = first + std::min<uint32_t>(records, _end - first);
@@ -481,18 +490,21 @@ class VectorCluster {
       err += take;
       len -= take;
     }
-    if (const uint32_t full = len / gs * gs; full != 0) {
-      ScoreBlock(_pay.Read(lane, full), full, out, err);
-      lane += full;
-      out += full;
-      err += full;
-      len -= full;
+    for (uint32_t full = len / gs * gs; full != 0;) {
+      const auto block = _pay.Read(lane, full, gs);
+      const uint32_t records = _pay.Records(block);
+      ScoreBlock(block, records, out, err);
+      lane += records;
+      out += records;
+      err += records;
+      len -= records;
+      full -= records;
     }
     if (len == 0) {
       return;
     }
     if (const uint32_t records = GroupRecords(lane); records == len) {
-      ScoreBlock(_pay.Read(lane, records), records, out, err);
+      ScoreBlock(_pay.Read(lane, records, gs), records, out, err);
       return;
     }
     ServeGroup(lane, len, out, err);

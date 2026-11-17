@@ -52,7 +52,7 @@ std::vector<float> NormalizedQuery(std::span<const float> query,
 }  // namespace
 
 std::shared_ptr<const HnswData> HnswIndex::Load() const {
-  _load.Call(!_file.IsMapped(), [&] {
+  _load.Call([&] {
     duckdb::InputFileReader in{_file};
     in.Seek(_meta.offset);
     auto data = std::make_shared<HnswData>();

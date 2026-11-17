@@ -33,19 +33,15 @@
 
 namespace irs {
 
-IdxWriter::IdxWriter(duckdb::FileSystem& fs, std::string_view root,
-                     FileTracker& tracker, std::string_view segment_name)
-  : _fs{fs},
-    _root{root},
-    _tracker{tracker},
-    _filename{FileName(segment_name, kIdxFormatExt)} {}
+IdxWriter::IdxWriter(FileTracker& tracker)
+  : _tracker{tracker}, _filename{FileName(tracker.Name(), kIdxFormatExt)} {}
 
 void IdxWriter::EnsureOut() {
   if (_out) {
     return;
   }
-  _out = format_utils::OpenOutput(_fs, _root, _filename);
-  _tracker.kinds |= kIdxFile;
+  _out = format_utils::OpenOutput(_tracker.Fs(), _tracker.Root(), _filename);
+  _tracker.Add(kIdxFile);
 }
 
 duckdb::WriteStream& IdxWriter::BlocksOut() {
@@ -112,7 +108,7 @@ void IdxWriter::Commit() {
                                  term_dict::WriteTerms(terms, _terms);
                                });
   });
-  _tracker.bytes += _out->Position();
+  _tracker.Written(_out->Position());
   _out->Close();
   _out.reset();
 }

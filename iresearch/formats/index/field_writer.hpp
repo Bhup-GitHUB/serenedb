@@ -109,8 +109,7 @@ class FieldWriter final : public FieldSink {
   void Reset() noexcept;
 
   PostingsWriter _pw;
-  std::array<byte_type, kMaxRecordBytes> _record_bytes;
-  duckdb::MemoryStream _record{_record_bytes.data(), _record_bytes.size()};
+  RecordOutput _record;
   BlockBuilder _block;
   RangeWriter _ranges;
   bstring _inline;

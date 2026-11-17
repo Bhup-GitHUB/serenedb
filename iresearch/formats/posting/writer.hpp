@@ -360,8 +360,6 @@ inline void PostingsWriter::AddBlock(const PostingMeta& meta, doc_id_t last) {
 }
 
 inline void PostingsWriter::Prepare(const FlushState& state) {
-  SDB_ASSERT(!IsNull(state.name));
-
   _tracker = &state.tracker;
 
   // Prepare document stream
@@ -774,7 +772,7 @@ inline void PostingsWriter::CloseOutput(
   std::unique_ptr<duckdb::BufferedFileWriter>& out) {
   block_io::WriteSlack(*out);
   format_utils::WriteFooter(*out);
-  _tracker->bytes += out->Position();
+  _tracker->Written(out->Position());
   out->Close();
   out.reset();
 }

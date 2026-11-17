@@ -85,6 +85,10 @@ struct IndexWriterOptions : public SegmentOptions {
 
   std::shared_ptr<std::atomic_uint64_t> segment_ids;
 
+  std::shared_ptr<ReleasedSegments> released;
+
+  bool pack = false;
+
   IndexWriterOptions() {}
 };
 
@@ -101,6 +105,7 @@ class IndexWriter : private util::Noncopyable {
   struct FlushedSegment {
     SegmentMeta meta;
     DocumentMaskBuilder docs_mask;
+    std::shared_ptr<const FileTracker> files;
   };
 
   class Document : private util::Noncopyable {
@@ -318,6 +323,7 @@ class IndexWriter : private util::Noncopyable {
 
   struct Replacement {
     SegmentMeta meta;
+    std::shared_ptr<const FileTracker> files;
     std::vector<DocMap> absorbed;
   };
 
@@ -399,8 +405,6 @@ class IndexWriter : private util::Noncopyable {
                   const MergeWriter::FlushProgress& progress,
                   const AnnBuildEnv* env) -> yaclib::Future<Merged>;
 
-  std::shared_ptr<const SegmentHold> Hold(const SegmentMeta& meta) const;
-
   ScorerPtr _topk_scorer;
   duckdb::DatabaseInstance& _db;
   duckdb::FileSystem& _fs;
@@ -417,6 +421,8 @@ class IndexWriter : private util::Noncopyable {
     uint64_t floor = 0;
   } _compacting;
   IndexReaderOptions _reader_options;
+  std::shared_ptr<ReleasedSegments> _released;
+  bool _pack = false;
   SegmentLimits _segment_limits;
   SegmentPool _segment_writer_pool;
   std::shared_ptr<std::atomic_uint64_t> _seg_counter;

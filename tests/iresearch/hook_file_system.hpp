@@ -51,7 +51,7 @@ class HookFileSystem : public duckdb::FileSystem {
   duckdb::unique_ptr<duckdb::FileWriter> OpenFileWriter(
     const std::string& path,
     duckdb::optional_ptr<duckdb::FileOpener> opener = nullptr) override;
-  void Compact(const std::string& path) override;
+  void Compact(const duckdb::vector<std::string>& paths) override;
 
   void Read(duckdb::FileHandle& handle, void* buffer, int64_t nr_bytes,
             duckdb::idx_t location) override;

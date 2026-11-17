@@ -20,19 +20,82 @@
 
 #pragma once
 
+#include <absl/base/thread_annotations.h>
+#include <absl/functional/any_invocable.h>
 #include <absl/functional/function_ref.h>
+#include <absl/synchronization/mutex.h>
 
+#include <atomic>
+#include <cstdint>
 #include <duckdb/common/file_system.hpp>
 #include <duckdb/common/numeric_utils.hpp>
 #include <duckdb/common/query_context.hpp>
 #include <duckdb/main/database.hpp>
+#include <memory>
 #include <span>
 #include <string>
 #include <string_view>
+#include <vector>
 
-#include "iresearch/index/segment_hold.hpp"
+#include "iresearch/utils/noncopyable.hpp"
 
 namespace irs {
+
+struct ReleasedSegment {
+  std::string name;
+  uint8_t kinds = 0;
+};
+
+class ReleasedSegments {
+ public:
+  using Released = absl::AnyInvocable<void() const noexcept>;
+  using Dropped =
+    absl::AnyInvocable<void(std::vector<ReleasedSegment>) noexcept>;
+
+  void Acquire() noexcept { _held.fetch_add(1, std::memory_order_relaxed); }
+  void Release(std::string name, uint8_t kinds);
+
+  std::vector<ReleasedSegment> Take();
+  void Return(std::vector<ReleasedSegment> segments);
+  bool Empty() const;
+  void Close();
+  void Drop(Dropped dropped);
+  void OnRelease(Released released);
+
+ private:
+  std::atomic<uint64_t> _held{0};
+  mutable absl::Mutex _mutex;
+  std::vector<ReleasedSegment> _segments ABSL_GUARDED_BY(_mutex);
+  std::shared_ptr<const Released> _released ABSL_GUARDED_BY(_mutex);
+  Dropped _dropped ABSL_GUARDED_BY(_mutex);
+  bool _closed ABSL_GUARDED_BY(_mutex) = false;
+};
+
+class FileTracker : private util::Noncopyable {
+ public:
+  explicit FileTracker(duckdb::FileSystem& fs, std::string_view root,
+                       std::string_view name, uint8_t kinds = 0,
+                       std::shared_ptr<ReleasedSegments> released = nullptr);
+  ~FileTracker();
+
+  duckdb::FileSystem& Fs() const noexcept { return _fs; }
+  std::string_view Root() const noexcept { return _root; }
+  std::string_view Name() const noexcept { return _name; }
+  uint8_t Kinds() const noexcept { return _kinds; }
+  uint64_t Bytes() const noexcept { return _bytes; }
+
+  void Add(uint8_t kind) noexcept { _kinds |= kind; }
+  void Written(uint64_t bytes) noexcept { _bytes += bytes; }
+  void Remove() noexcept;
+
+ private:
+  duckdb::FileSystem& _fs;
+  std::string _root;
+  std::string _name;
+  std::shared_ptr<ReleasedSegments> _released;
+  uint64_t _bytes = 0;
+  uint8_t _kinds = 0;
+};
 
 duckdb::unique_ptr<duckdb::FileHandle> OpenWhole(duckdb::FileSystem& fs,
                                                  const std::string& path);

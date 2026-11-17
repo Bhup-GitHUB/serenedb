@@ -64,10 +64,7 @@ class Format10TestCase : public tests::FormatTestCase {
     // write postings for field
     {
       irs::FlushState state{
-        .fs = dir->Fs(),
-        .root = dir->Root(),
-        .tracker = dir->Tracker(),
-        .name = "segment_name",
+        .tracker = dir->Tracker("segment_name"),
         .doc_count = docs.back().first + 1,
         .index_features = field.index_features,
       };
@@ -264,10 +261,7 @@ TEST_P(Format10TestCase, postings_read_write_single_doc) {
   // write postings
   {
     irs::FlushState state{
-      .fs = dir().Fs(),
-      .root = dir().Root(),
-      .tracker = dir().Tracker(),
-      .name = "segment_name",
+      .tracker = dir().Tracker("segment_name"),
       .doc_count = 100,
       .index_features = field.index_features,
     };
@@ -424,10 +418,7 @@ TEST_P(Format10TestCase, postings_read_write) {
   // write postings
   {
     irs::FlushState state{
-      .fs = dir().Fs(),
-      .root = dir().Root(),
-      .tracker = dir().Tracker(),
-      .name = "segment_name",
+      .tracker = dir().Tracker("segment_name"),
       .doc_count = 150,
       .index_features = field.index_features,
     };
@@ -573,16 +564,14 @@ TEST_P(Format10TestCase, postings_writer_reuse) {
     field.index_features = kFeatures;
 
     irs::FlushState state{
-      .fs = dir().Fs(),
-      .root = dir().Root(),
-      .tracker = dir().Tracker(),
-      .name = "0",
+      .tracker = dir().Tracker("0"),
       .doc_count = 10000,
       // all possible features in segment
       .index_features = field.index_features,
     };
 
-    auto out = dir().Create(std::string("postings") + state.name.data());
+    auto out =
+      dir().Create(std::string("postings") + std::string{state.tracker.Name()});
     ASSERT_FALSE(!out);
 
     TestPostings docs(docs0);
@@ -605,16 +594,14 @@ TEST_P(Format10TestCase, postings_writer_reuse) {
     field.index_features = kFeatures;
 
     irs::FlushState state{
-      .fs = dir().Fs(),
-      .root = dir().Root(),
-      .tracker = dir().Tracker(),
-      .name = "1",
+      .tracker = dir().Tracker("1"),
       .doc_count = 10000,
       // all possible features in segment
       .index_features = field.index_features,
     };
 
-    auto out = dir().Create(std::string("postings") + state.name.data());
+    auto out =
+      dir().Create(std::string("postings") + std::string{state.tracker.Name()});
     ASSERT_FALSE(!out);
 
     TestPostings docs(docs0);
@@ -636,16 +623,14 @@ TEST_P(Format10TestCase, postings_writer_reuse) {
     field.index_features = kFeatures;
 
     irs::FlushState state{
-      .fs = dir().Fs(),
-      .root = dir().Root(),
-      .tracker = dir().Tracker(),
-      .name = "2",
+      .tracker = dir().Tracker("2"),
       .doc_count = 10000,
       // all possible features in segment
       .index_features = field.index_features,
     };
 
-    auto out = dir().Create(std::string("postings") + state.name.data());
+    auto out =
+      dir().Create(std::string("postings") + std::string{state.tracker.Name()});
     ASSERT_FALSE(!out);
 
     TestPostings docs(docs0);
@@ -667,16 +652,14 @@ TEST_P(Format10TestCase, postings_writer_reuse) {
     field.index_features = kFeatures;
 
     irs::FlushState state{
-      .fs = dir().Fs(),
-      .root = dir().Root(),
-      .tracker = dir().Tracker(),
-      .name = "3",
+      .tracker = dir().Tracker("3"),
       .doc_count = 10000,
       // all possible features in segment
       .index_features = field.index_features,
     };
 
-    auto out = dir().Create(std::string("postings") + state.name.data());
+    auto out =
+      dir().Create(std::string("postings") + std::string{state.tracker.Name()});
     ASSERT_FALSE(!out);
 
     TestPostings docs(docs0);
@@ -697,16 +680,14 @@ TEST_P(Format10TestCase, postings_writer_reuse) {
     field.index_features = kFeatures;
 
     irs::FlushState state{
-      .fs = dir().Fs(),
-      .root = dir().Root(),
-      .tracker = dir().Tracker(),
-      .name = "4",
+      .tracker = dir().Tracker("4"),
       .doc_count = 10000,
       // all possible features in segment
       .index_features = field.index_features,
     };
 
-    auto out = dir().Create(std::string("postings") + state.name.data());
+    auto out =
+      dir().Create(std::string("postings") + std::string{state.tracker.Name()});
     ASSERT_FALSE(!out);
 
     TestPostings docs(docs0);
@@ -727,14 +708,12 @@ TEST_P(Format10TestCase, postings_writer_reuse) {
     field.index_features = kFeatures;
 
     irs::FlushState state{
-      .fs = dir().Fs(),
-      .root = dir().Root(),
-      .tracker = dir().Tracker(),
-      .name = "5",
+      .tracker = dir().Tracker("5"),
       .doc_count = 10000,
     };
 
-    auto out = dir().Create(std::string("postings") + state.name.data());
+    auto out =
+      dir().Create(std::string("postings") + std::string{state.tracker.Name()});
     ASSERT_FALSE(!out);
 
     TestPostings docs(docs0);
@@ -769,10 +748,7 @@ TEST_P(Format10TestCase, ires336) {
     terms.begin(), terms.end(), docs.begin(), docs.end());
 
   irs::FlushState flush_state{
-    .fs = dir->Fs(),
-    .root = dir->Root(),
-    .tracker = dir->Tracker(),
-    .name = segment_name,
+    .tracker = dir->Tracker(segment_name),
     .doc_count = 10000,
   };
 
@@ -780,7 +756,7 @@ TEST_P(Format10TestCase, ires336) {
   field_meta.id = kFieldId;
   {
     tests::MockTermReader term_reader{trms, field_meta};
-    irs::IdxWriter idx{dir->Fs(), dir->Root(), dir->Tracker(), segment_name};
+    irs::IdxWriter idx{dir->Tracker(segment_name)};
     irs::term_dict::FieldWriter fw{/*compaction=*/true};
     fw.SetIdxWriter(idx);
     fw.prepare(flush_state, 1);
@@ -971,10 +947,7 @@ TEST_P(Format10TestCase, position_reset_with_offsets) {
       // write postings
       {
         irs::FlushState state{
-          .fs = dir->Fs(),
-          .root = dir->Root(),
-          .tracker = dir->Tracker(),
-          .name = "segment_name",
+          .tracker = dir->Tracker("segment_name"),
           .doc_count = docs.back().first + 1,
           .index_features = field.index_features,
         };

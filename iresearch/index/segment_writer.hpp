@@ -124,7 +124,8 @@ class SegmentWriter final : public NormProvider, util::Noncopyable {
     _valid = false;
   }
 
-  void flush(SegmentMeta& meta, DocumentMaskBuilder& docs_mask);
+  std::shared_ptr<const FileTracker> flush(SegmentMeta& meta,
+                                           DocumentMaskBuilder& docs_mask);
 
   std::shared_ptr<const SegmentReaderImpl> SealPiece(uint64_t id);
 
@@ -280,9 +281,10 @@ class SegmentWriter final : public NormProvider, util::Noncopyable {
   // keeps.
   void ResetState() noexcept;
 
-  FileTracker _tracker;
+  std::shared_ptr<FileTracker> _tracker;
   duckdb::FileSystem& _fs;
   std::string _root;
+  std::shared_ptr<ReleasedSegments> _released;
   ScorerPtr _scorer;
   std::unique_ptr<ColReader> _col_reader;
   size_t _docs = 0;

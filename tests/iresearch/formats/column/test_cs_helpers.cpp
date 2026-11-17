@@ -35,8 +35,7 @@ namespace irs::tests {
 std::unique_ptr<ColWriter> MakeCsWriter(const ::tests::IndexDir& dir,
                                         std::string_view segment_name) {
   return std::make_unique<ColWriter>(::irs::DuckDBEngine::Instance().instance(),
-                                     dir.Fs(), dir.Root(), dir.Tracker(),
-                                     segment_name);
+                                     dir.Tracker(segment_name));
 }
 
 std::unique_ptr<ColReader> MakeCsReader(const ::tests::IndexDir& dir,

@@ -261,9 +261,9 @@ void RangeWriter::Release(size_t level) {
   } else if (piece.meta.inline_size != 0) {
     piece.meta.inline_data = piece.inline_bytes.data();
   }
-  _record.Rewind();
+  _record.Clear();
   _pw->EncodeAbsolute(_record, piece.meta);
-  range.records.append(Written(_record));
+  range.records.append(_record.View());
   range.records.append(piece.meta.Inline());
   range.ends.push_back(static_cast<uint32_t>(range.records.size()));
   range.starts.append(piece.key);

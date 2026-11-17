@@ -86,8 +86,6 @@ class DocumentMask final {
 
   friend bool operator==(const DocumentMask& lhs, const DocumentMask& rhs);
 
-  static std::shared_ptr<byte_type> AllocateFrozen(uint64_t size);
-
   static DocumentMask ReadFrozen(bytes_view bytes);
 
   static DocumentMask Union(const std::shared_ptr<const DocumentMask>& base,

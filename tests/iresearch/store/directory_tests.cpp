@@ -35,7 +35,6 @@
 #include <iresearch/formats/index/idx_writer.hpp>
 #include <iresearch/index/file_names.hpp>
 #include <iresearch/index/index_writer.hpp>
-#include <iresearch/index/segment_hold.hpp>
 #include <iresearch/search/filters/term_filter.hpp>
 #include <iresearch/store/storage.hpp>
 #include <iresearch/utils/duckdb_engine.hpp>
@@ -115,6 +114,10 @@ TEST_P(DirectoryTestCase, rename) {
 
   ASSERT_TRUE(_dir->Has("foo"));
   ASSERT_TRUE(_dir->Has("bar"));
+  if (_dir->Kind() == ::tests::StorageKind::Memory) {
+    ASSERT_THROW(_dir->Rename("foo", "foo1"), duckdb::NotImplementedException);
+    return;
+  }
 
   _dir->Rename("foo", "foo1");
   _dir->Rename("bar", "bar1");
@@ -4499,6 +4502,11 @@ TEST_P(DirectoryTestCase, write_whole) {
   const auto read = [&] {
     return irs::ReadWhole<std::string>(duckdb::QueryContext{}, fs, path);
   };
+  if (_dir->Kind() == ::tests::StorageKind::Memory) {
+    ASSERT_THROW(irs::WriteWhole(fs, path, "file", false),
+                 duckdb::NotImplementedException);
+    return;
+  }
 
   irs::WriteWhole(fs, path, std::string(1000, 'a'), false);
   EXPECT_EQ(std::string(1000, 'a'), read());
@@ -4573,25 +4581,22 @@ TEST_P(DirectoryTestCase, remove_released) {
   const auto all = SortedFiles(dir);
   ASSERT_EQ(5, all.size());
 
-  const auto released = dir.ReaderOptions().released;
+  const auto& released = dir.Released();
   EXPECT_EQ(0, dir.RemoveReleased());
 
-  auto hold_first =
-    std::make_shared<const irs::SegmentHold>(released, first, kKinds);
-  auto hold_second =
-    std::make_shared<const irs::SegmentHold>(released, second, kKinds);
+  auto hold_first = std::make_shared<const irs::FileTracker>(
+    dir.Fs(), dir.Root(), first, kKinds, released);
+  auto hold_second = std::make_shared<const irs::FileTracker>(
+    dir.Fs(), dir.Root(), second, kKinds, released);
   auto shared_second = hold_second;
-  EXPECT_EQ(2, released->Held());
   EXPECT_EQ(0, dir.RemoveReleased());
   EXPECT_EQ(all, SortedFiles(dir));
 
   hold_second.reset();
-  EXPECT_EQ(2, released->Held());
   EXPECT_TRUE(released->Empty());
   EXPECT_EQ(0, dir.RemoveReleased());
 
   shared_second.reset();
-  EXPECT_EQ(1, released->Held());
   EXPECT_FALSE(released->Empty());
   EXPECT_EQ(2, dir.RemoveReleased());
   EXPECT_TRUE(released->Empty());
@@ -4603,7 +4608,6 @@ TEST_P(DirectoryTestCase, remove_released) {
   }
 
   hold_first.reset();
-  EXPECT_EQ(0, released->Held());
   EXPECT_EQ(2, dir.RemoveReleased());
   EXPECT_EQ(std::vector<std::string>{"dummy.file"}, SortedFiles(dir));
   EXPECT_EQ(0, dir.RemoveReleased());
@@ -4651,32 +4655,33 @@ TEST_P(DirectoryTestCase, file_tracker) {
   auto& dir = this->dir();
 
   {
-    irs::FileTracker tracker;
-    irs::IdxWriter idx{dir.Fs(), dir.Root(), tracker, "empty"};
+    irs::FileTracker tracker{dir.Fs(), dir.Root(), "empty"};
+    irs::IdxWriter idx{tracker};
     idx.Commit();
-    ASSERT_EQ(0, tracker.kinds);
-    ASSERT_EQ(0, tracker.bytes);
+    ASSERT_EQ(0, tracker.Kinds());
+    ASSERT_EQ(0, tracker.Bytes());
     ASSERT_TRUE(dir.Files().empty());
   }
 
-  irs::FileTracker tracker;
+  irs::FileTracker tracker{dir.Fs(), dir.Root(), "seg"};
   {
-    irs::IdxWriter idx{dir.Fs(), dir.Root(), tracker, "seg"};
+    irs::IdxWriter idx{tracker};
     idx.BlocksOut().Write<irs::byte_type>(42);
-    ASSERT_EQ(irs::kIdxFile, tracker.kinds);
-    ASSERT_EQ(0, tracker.bytes);
+    ASSERT_EQ(irs::kIdxFile, tracker.Kinds());
+    ASSERT_EQ(0, tracker.Bytes());
     idx.Commit();
   }
-  const auto files = irs::SegmentFiles("seg", tracker.kinds);
+  const auto files = irs::SegmentFiles("seg", tracker.Kinds());
   ASSERT_EQ(std::vector<std::string>{irs::FileName("seg", irs::kIdxFormatExt)},
             files);
   ASSERT_EQ(dir.Files(), files);
   ASSERT_EQ(
     dir.Open(files.front(), duckdb::MappedFileAccess::NORMAL)->GetSize(),
-    tracker.bytes);
-  ASSERT_GT(tracker.bytes, 1);
+    tracker.Bytes());
+  ASSERT_GT(tracker.Bytes(), 1);
 
-  ASSERT_TRUE(irs::RemoveIndexFiles(dir.Fs(), dir.Root(), files));
+  tracker.Remove();
+  ASSERT_EQ(0, tracker.Kinds());
   ASSERT_TRUE(dir.Files().empty());
 }
 
@@ -4847,14 +4852,11 @@ TEST(DirectoryTest, private_memory) {
   EXPECT_EQ(data, Bytes(other_stable));
   EXPECT_EQ(data, Bytes(stable));
 
-  files.Rename("file", "renamed");
+  ASSERT_THROW(files.Rename("file", "renamed"),
+               duckdb::NotImplementedException);
+  ASSERT_TRUE(files.Remove("file"));
   ASSERT_FALSE(files.Has("file"));
-  ASSERT_TRUE(files.Has("renamed"));
-  EXPECT_EQ(data.size(),
-            files.Open("renamed", duckdb::MappedFileAccess::NORMAL)->GetSize());
-  ASSERT_TRUE(files.Remove("renamed"));
-  ASSERT_FALSE(files.Has("renamed"));
-  ASSERT_FALSE(files.Remove("renamed"));
+  ASSERT_FALSE(files.Remove("file"));
 }
 
 TEST(DirectoryTest, private_memory_open_missing_file) {
@@ -4969,11 +4971,11 @@ TEST_F(DirectoryHookTest, file_tracker_failures) {
   ASSERT_NE(nullptr, local);
   auto hooked = local->Over(fs);
 
-  irs::FileTracker tracker;
-  irs::IdxWriter idx{hooked.Fs(), hooked.Root(), tracker, "seg"};
+  irs::FileTracker tracker{hooked.Fs(), hooked.Root(), "seg"};
+  irs::IdxWriter idx{tracker};
   ASSERT_THROW(idx.BlocksOut(), duckdb::IOException);
-  ASSERT_EQ(0, tracker.kinds);
-  ASSERT_EQ(0, tracker.bytes);
+  ASSERT_EQ(0, tracker.Kinds());
+  ASSERT_EQ(0, tracker.Bytes());
 }
 
 TEST_F(DirectoryHookTest, remove_failures) {
@@ -5004,9 +5006,10 @@ TEST_F(DirectoryHookTest, remove_failures) {
   ASSERT_THROW(hooked.Remove(fs.failing), duckdb::IOException);
   ASSERT_TRUE(local->Has(fs.failing));
 
-  const auto released = hooked.ReaderOptions().released;
+  const auto& released = hooked.Released();
   for (const uint64_t id : {1, 2, 3}) {
-    const irs::SegmentHold hold{released, irs::FileName(id), irs::kColFile};
+    const irs::FileTracker hold{hooked.Fs(), hooked.Root(), irs::FileName(id),
+                                irs::kColFile, released};
   }
   EXPECT_EQ(2, hooked.RemoveReleased());
   EXPECT_TRUE(local->Has(file_of(1)));
@@ -5069,8 +5072,8 @@ TEST_F(DirectoryHookTest, failed_object_removal_is_retried) {
   const auto file = irs::SegmentFiles(segment, irs::kColFile).front();
   store->Create(file)->Close();
   {
-    const irs::SegmentHold hold{store->ReaderOptions().released, segment,
-                                irs::kColFile};
+    const irs::FileTracker hold{store->Fs(), store->Root(), segment,
+                                irs::kColFile, store->Released()};
   }
 
   if (!TestEnv::ArmFaultPoint("object_store_delete_fails")) {
@@ -5086,16 +5089,20 @@ TEST_F(DirectoryHookTest, failed_object_removal_is_retried) {
 }
 
 TEST(DirectoryTest, released_segments_notify_until_closed) {
+  auto& fs = ::tests::DatabaseFileSystem();
   const auto released = std::make_shared<irs::ReleasedSegments>();
   size_t notified = 0;
   released->OnRelease([&notified]() noexcept { ++notified; });
   {
-    const irs::SegmentHold hold{released, irs::FileName(1), irs::kColFile};
-    EXPECT_EQ(1, released->Held());
+    const irs::FileTracker hold{fs, "root", irs::FileName(1), irs::kColFile,
+                                released};
     EXPECT_EQ(0, notified);
   }
   EXPECT_EQ(1, notified);
-  EXPECT_EQ(0, released->Held());
+  {
+    const irs::FileTracker unwritten{fs, "root", irs::FileName(3), 0, released};
+  }
+  EXPECT_EQ(1, notified);
 
   auto taken = released->Take();
   ASSERT_EQ(1, taken.size());
@@ -5108,11 +5115,48 @@ TEST(DirectoryTest, released_segments_notify_until_closed) {
 
   released->Close();
   {
-    const irs::SegmentHold hold{released, irs::FileName(2), irs::kColFile};
+    const irs::FileTracker hold{fs, "root", irs::FileName(2), irs::kColFile,
+                                released};
   }
   EXPECT_EQ(1, notified);
   EXPECT_TRUE(released->Empty());
-  EXPECT_EQ(0, released->Held());
+}
+
+TEST(DirectoryTest, dropped_segments_go_with_their_last_hold) {
+  auto& fs = ::tests::DatabaseFileSystem();
+  std::vector<irs::ReleasedSegment> dropped;
+  size_t drops = 0;
+  const auto drop = [&](std::vector<irs::ReleasedSegment> segments) noexcept {
+    ++drops;
+    dropped = std::move(segments);
+  };
+
+  const auto released = std::make_shared<irs::ReleasedSegments>();
+  {
+    const irs::FileTracker hold{fs, "root", irs::FileName(1), irs::kColFile,
+                                released};
+  }
+  auto held = std::make_unique<irs::FileTracker>(fs, "root", irs::FileName(2),
+                                                 irs::kDocFile, released);
+  released->Drop(drop);
+  EXPECT_EQ(0, drops);
+  held.reset();
+  ASSERT_EQ(1, drops);
+  ASSERT_EQ(2, dropped.size());
+  EXPECT_EQ(irs::FileName(1), dropped[0].name);
+  EXPECT_EQ(irs::FileName(2), dropped[1].name);
+  EXPECT_EQ(irs::kDocFile, dropped[1].kinds);
+  EXPECT_TRUE(released->Empty());
+
+  const auto idle = std::make_shared<irs::ReleasedSegments>();
+  {
+    const irs::FileTracker hold{fs, "root", irs::FileName(3), irs::kColFile,
+                                idle};
+  }
+  idle->Drop(drop);
+  ASSERT_EQ(2, drops);
+  ASSERT_EQ(1, dropped.size());
+  EXPECT_EQ(irs::FileName(3), dropped[0].name);
 }
 
 }  // namespace

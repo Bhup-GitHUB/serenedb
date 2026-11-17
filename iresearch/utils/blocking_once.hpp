@@ -25,7 +25,6 @@
 #include <atomic>
 #include <cstdint>
 #include <duckdb/parallel/task_scheduler.hpp>
-#include <optional>
 #include <utility>
 
 namespace irs {
@@ -33,7 +32,7 @@ namespace irs {
 class BlockingOnce {
  public:
   template<typename F>
-  void Call(bool free_slots, F&& f) {
+  void Call(F&& f) {
     auto state = _state.load(std::memory_order_acquire);
     while (state != kDone) {
       if (state == kIdle && _state.compare_exchange_strong(
@@ -49,10 +48,7 @@ class BlockingOnce {
         return;
       }
       if (state == kRunning) {
-        std::optional<duckdb::TaskScheduler::BlockingScope> blocking;
-        if (free_slots) {
-          blocking.emplace();
-        }
+        const duckdb::TaskScheduler::BlockingScope blocking;
         _state.wait(kRunning, std::memory_order_acquire);
         state = _state.load(std::memory_order_acquire);
       }

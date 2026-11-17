@@ -108,6 +108,7 @@ TEST_F(DatabaseDirectoryTest, ARemovedStorageLeavesTheFilesOfOthers) {
   CreateDirectory(StoreDirOf(_root.string()));
   std::ofstream{_root / "store" / "0000000000000007.col"} << "rows";
   std::ofstream{_root / "store" / "0000000000000008.col"} << "rows";
+  BeginStorageWork();
   RemoveStorage([this] {
     return std::filesystem::remove(_root / "store" / "0000000000000007.col");
   });
@@ -120,6 +121,7 @@ TEST_F(DatabaseDirectoryTest, AStorageWhoseFilesStayIsKept) {
   CreateDirectory(StoreDirOf(_root.string()));
   std::ofstream{_root / "store" / "0000000000000007.col"} << "rows";
   std::atomic_bool tried{false};
+  BeginStorageWork();
   RemoveStorage([&] {
     tried.store(true);
     return false;
@@ -133,6 +135,7 @@ TEST_F(DatabaseDirectoryTest, RemovalsWaitWhileTheyAreDeferred) {
   const auto file = _root / "0000000000000007.col";
   std::ofstream{file} << "rows";
   DeferRemovals();
+  BeginStorageWork();
   RemoveStorage([&] { return std::filesystem::remove(file); });
   std::this_thread::sleep_for(std::chrono::milliseconds{50});
   EXPECT_TRUE(std::filesystem::exists(file));

@@ -138,8 +138,7 @@ inline SeekPostings::ptr MakeSeekPostings(const irs::PostingMeta& meta,
       });
   }
   return irs::ResolveInput(
-    *handles.doc, *handles.pos, handles.pay,
-    [&]<typename Input> -> SeekPostings::ptr {
+    *handles.doc, [&]<typename Input> -> SeekPostings::ptr {
       return irs::detail::ResolveBounds(
         has_score_bounds, [&]<bool Bounds> -> SeekPostings::ptr {
           if (irs::IndexFeatures::None !=

@@ -16,7 +16,6 @@ target_sources(
         iterators.cpp
         merge_writer.cpp
         norm.cpp
-        segment_hold.cpp
         segment_reader.cpp
         segment_list.cpp
         segment_reader_impl.cpp

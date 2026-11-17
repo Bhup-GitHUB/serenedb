@@ -151,8 +151,10 @@ std::unique_ptr<duckdb::BufferedFileWriter> OpenOutput(duckdb::FileSystem& fs,
 
 std::unique_ptr<duckdb::BufferedFileWriter> PrepareOutput(
   const FlushState& state, std::string_view ext, uint8_t kind) {
-  auto out = OpenOutput(state.fs, state.root, FileName(state.name, ext));
-  state.tracker.kinds |= kind;
+  auto& tracker = state.tracker;
+  auto out =
+    OpenOutput(tracker.Fs(), tracker.Root(), FileName(tracker.Name(), ext));
+  tracker.Add(kind);
   return out;
 }
 

@@ -26,7 +26,7 @@
 #include <array>
 #include <bit>
 #include <cstdint>
-#include <duckdb/common/serializer/memory_stream.hpp>
+#include <duckdb/common/serializer/write_stream.hpp>
 #include <limits>
 #include <string_view>
 
@@ -60,9 +60,24 @@ constexpr uint32_t ColumnWidth(uint32_t max) noexcept {
 
 inline constexpr size_t kMaxRecordBytes = 128;
 
-inline bytes_view Written(const duckdb::MemoryStream& stream) noexcept {
-  return {stream.GetData(), stream.GetPosition()};
-}
+class RecordOutput final : public duckdb::WriteStream {
+ public:
+  RecordOutput() noexcept { Clear(); }
+  RecordOutput(const RecordOutput&) = delete;
+  RecordOutput& operator=(const RecordOutput&) = delete;
+
+  bytes_view View() const noexcept { return {_bytes.data(), WindowSize()}; }
+  void Clear() noexcept { SetWindow(_bytes.data(), _bytes.size()); }
+
+ private:
+  void Overflow(duckdb::const_data_ptr_t, duckdb::idx_t) final {
+    THROW_SQL_ERROR(ERR_CODE(ERRCODE_INTERNAL_ERROR),
+                    ERR_MSG("term dictionary: posting record exceeds ",
+                            kMaxRecordBytes, " bytes"));
+  }
+
+  std::array<byte_type, kMaxRecordBytes> _bytes;
+};
 
 constexpr uint64_t RecordGroups(uint64_t count) noexcept {
   return (count + kRecordInterval - 1) / kRecordInterval;

@@ -173,6 +173,9 @@ ConnectionContext::~ConnectionContext() {
       Destroy();
     } catch (...) {
     }
+    if (_progress->client_backend) {
+      client_data->temporary_objects->OnDetach(*this);
+    }
   }
   ConsumeNotices([](auto&) {});
   backup::BackupSession::Instance().AbortIfOwnedBy(this);

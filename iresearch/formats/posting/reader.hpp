@@ -241,11 +241,7 @@ inline TermPostings::ptr PostingsReader::Postings(
                                              _pay_file.get(), has_score_bounds);
         return std::move(reuse);
       };
-      if constexpr (IteratorTraits::Position()) {
-        return ResolveInput(*_doc_file, *_pos_file, _pay_file.get(), make);
-      } else {
-        return ResolveInput(*_doc_file, make);
-      }
+      return ResolveInput(*_doc_file, make);
     });
 }
 

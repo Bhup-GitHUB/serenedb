@@ -66,7 +66,8 @@ CompositeReader OpenSegmentList(duckdb::DatabaseInstance& db,
                                 const IndexReaderOptions& options) {
   std::vector<SegmentReader> readers;
   for (const auto& meta : ReadSegmentList(text)) {
-    readers.emplace_back(SegmentReaderImpl::Open(db, fs, root, meta, options));
+    readers.emplace_back(
+      SegmentReaderImpl::Open(db, fs, root, meta, options, nullptr));
   }
   return {std::move(readers), /*stats=*/true};
 }

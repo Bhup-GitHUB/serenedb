@@ -135,8 +135,8 @@ std::unique_ptr<Seg> BuildSeg(Shape shape, bool nullable) {
   seg->rows = Rows();
   const auto type = TypeOf(shape);
   {
-    irs::FileTracker tracker;
-    irs::ColWriter w{CsDb(), seg->fs, kRoot, tracker, kSeg};
+    irs::FileTracker tracker{seg->fs, kRoot, kSeg};
+    irs::ColWriter w{CsDb(), tracker};
     auto& cw = w.OpenColumn(kField, type);
     uint64_t pos = 0;
     while (pos < seg->rows) {
@@ -265,8 +265,8 @@ void IrsWriteSeal(benchmark::State& state, Shape shape, bool nullable) {
   const uint64_t n = Rows();
   for (auto _ : state) {
     duckdb::MemoryFileSystem fs;
-    irs::FileTracker tracker;
-    irs::ColWriter w{CsDb(), fs, kRoot, tracker, kSeg};
+    irs::FileTracker tracker{fs, kRoot, kSeg};
+    irs::ColWriter w{CsDb(), tracker};
     auto& cw = w.OpenColumn(kField, type);
     uint64_t pos = 0;
     while (pos < n) {

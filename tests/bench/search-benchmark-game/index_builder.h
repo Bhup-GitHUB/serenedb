@@ -27,6 +27,8 @@
 #include <iresearch/analysis/text_tokenizer.hpp>
 #include <iresearch/index/index_meta.hpp>
 #include <iresearch/index/index_reader_options.hpp>
+#include <iresearch/store/storage.hpp>
+#include <iresearch/utils/containers/flat_hash_map.hpp>
 #include <iresearch/utils/type_limits.hpp>
 #include <memory>
 #include <span>
@@ -101,9 +103,14 @@ class IndexBuilder {
   duckdb::FileSystem& _fs;
   std::string _root;
   irs::IndexReaderOptions _reader_options;
+  std::shared_ptr<irs::ReleasedSegments> _released =
+    std::make_shared<irs::ReleasedSegments>();
   irs::IndexWriter::ptr _writer;
   absl::Mutex _mutex;
   std::vector<irs::SegmentMeta> _segments ABSL_GUARDED_BY(_mutex);
+  irs::containers::FlatHashMap<std::string,
+                               std::shared_ptr<const irs::FileTracker>>
+    _files ABSL_GUARDED_BY(_mutex);
 };
 
 inline constexpr auto kTextIndexFeatures =

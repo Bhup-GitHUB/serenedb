@@ -83,15 +83,8 @@ void SerializeNormColumn(duckdb::BinarySerializer& s,
 
 }  // namespace
 
-ColWriter::ColWriter(duckdb::DatabaseInstance& db, duckdb::FileSystem& fs,
-                     std::string_view root, FileTracker& tracker,
-                     std::string_view segment_name)
-  : _fs{fs},
-    _root{root},
-    _tracker{tracker},
-    _segment_name{segment_name},
-    _filename{FileName(segment_name)},
-    _db{&db} {}
+ColWriter::ColWriter(duckdb::DatabaseInstance& db, FileTracker& tracker)
+  : _tracker{tracker}, _filename{FileName(tracker.Name())}, _db{&db} {}
 
 ColWriter::~ColWriter() {
   if (_out && !_committed) {
@@ -103,8 +96,8 @@ void ColWriter::EnsureOut() {
   if (_out) {
     return;
   }
-  _out = format_utils::OpenOutput(_fs, _root, _filename);
-  _tracker.kinds |= kColFile;
+  _out = format_utils::OpenOutput(_tracker.Fs(), _tracker.Root(), _filename);
+  _tracker.Add(kColFile);
   _write_ctx = std::make_unique<WriteContext>(
     *_db, *_out,
     _field_options ? _field_options->block_size : DEFAULT_BLOCK_ALLOC_SIZE);
@@ -359,7 +352,7 @@ bool ColWriter::Commit(uint64_t target_row,
                                               _write_ctx->GetBlockAllocSize(),
                                               DEFAULT_BLOCK_ALLOC_SIZE);
   });
-  _tracker.bytes += _out->Position();
+  _tracker.Written(_out->Position());
   _out->Close();
   _out.reset();
   _committed = true;
@@ -387,9 +380,9 @@ yaclib::Task<bool> ColWriter::ComputeAnn(const AnnBuildEnv* env,
 
 std::unique_ptr<ColReader> ColWriter::OpenReader() const {
   SDB_ASSERT(_committed);
-  return std::make_unique<ColReader>(*_db, _fs, _root, _segment_name,
-                                     static_cast<bool>(_write_ctx),
-                                     duckdb::MappedFileAccess::SEQUENTIAL);
+  return std::make_unique<ColReader>(
+    *_db, _tracker.Fs(), _tracker.Root(), _tracker.Name(),
+    static_cast<bool>(_write_ctx), duckdb::MappedFileAccess::SEQUENTIAL);
 }
 
 }  // namespace irs

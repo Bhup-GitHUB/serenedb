@@ -22,10 +22,7 @@
 
 #pragma once
 
-#include <memory>
-
 #include "iresearch/formats/hnsw/hnsw_bases.hpp"
-#include "iresearch/index/segment_hold.hpp"
 #include "iresearch/search/scorers/scorer.hpp"
 
 namespace irs {
@@ -36,7 +33,6 @@ using ScorerPtr = const Scorer*;
 struct IndexReaderOptions {
   ScorerPtr scorer = nullptr;
   HnswBases* hnsw_bases = nullptr;
-  std::shared_ptr<ReleasedSegments> released;
 };
 
 }  // namespace irs

@@ -93,15 +93,6 @@ auto ResolveInput(const duckdb::InputFile& file, F&& f) {
   return f.template operator()<duckdb::InputFileReader>();
 }
 
-template<typename F>
-auto ResolveInput(const duckdb::InputFile& doc, const duckdb::InputFile& pos,
-                  const duckdb::InputFile* pay, F&& f) {
-  if (doc.IsMapped() && pos.IsMapped() && (!pay || pay->IsMapped())) {
-    return f.template operator()<duckdb::MemoryReader>();
-  }
-  return f.template operator()<duckdb::InputFileReader>();
-}
-
 template<typename Input>
 void SkipScoreBounds(bool has_score_bounds, Input& in) {
   if (has_score_bounds) {

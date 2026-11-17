@@ -83,8 +83,7 @@ class RangeWriter final {
 
   std::array<Level, kMaxRangeLevels> _levels;
   PostingsWriter* _pw = nullptr;
-  std::array<byte_type, kMaxRecordBytes> _record_bytes;
-  duckdb::MemoryStream _record{_record_bytes.data(), _record_bytes.size()};
+  RecordOutput _record;
   uint64_t _heavy = 0;
   size_t _height = 0;
 };

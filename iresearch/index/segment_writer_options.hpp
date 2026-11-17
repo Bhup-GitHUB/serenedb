@@ -22,8 +22,11 @@
 
 #pragma once
 
+#include <memory>
+
 #include "iresearch/formats/hnsw/hnsw_bases.hpp"
 #include "iresearch/index/index_reader_options.hpp"
+#include "iresearch/store/storage.hpp"
 
 namespace irs {
 
@@ -38,6 +41,7 @@ struct SegmentWriterOptions {
   // Non-owning. Null builds the segment's ANN graph on the flushing thread.
   const AnnBuildEnv* ann_env = nullptr;
   HnswBases* hnsw_bases = nullptr;
+  std::shared_ptr<ReleasedSegments> released;
 };
 
 }  // namespace irs

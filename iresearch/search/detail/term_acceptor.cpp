@@ -178,7 +178,7 @@ class FuzzySource final : public TermAcceptorSource {
   bool ok() const noexcept final { return true; }
 
   SeekTermIterator::ptr Iterator(const TermReader& reader) const final {
-    _once.Call(false, [this] {
+    _once.Call([this] {
       if (_fuzzy->LowerBound().empty()) {
         _dfa = FuzzyConjunction::Make(_fuzzy);
       }

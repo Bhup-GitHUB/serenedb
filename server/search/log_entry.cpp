@@ -40,11 +40,12 @@ namespace sdb::search {
 namespace {
 
 std::string Frozen(const irs::DocumentMask& mask) {
-  const auto size = mask.FrozenSize();
-  const auto aligned = irs::DocumentMask::AllocateFrozen(size);
-  auto* data = reinterpret_cast<char*>(aligned.get());
-  mask.WriteFrozen(data);
-  return std::string{data, size};
+  std::string frozen;
+  frozen.resize_and_overwrite(mask.FrozenSize(), [&](char* data, size_t size) {
+    mask.WriteFrozen(data);
+    return size;
+  });
+  return frozen;
 }
 
 std::shared_ptr<const irs::DocumentMask> Thawed(std::string_view bytes) {

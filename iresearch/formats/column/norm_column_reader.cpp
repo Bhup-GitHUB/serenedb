@@ -22,7 +22,9 @@
 
 #include <algorithm>
 #include <bit>
+#include <span>
 
+#include "iresearch/utils/containers/small_vector.hpp"
 #include "iresearch/utils/pg/sql_exception_macro.hpp"
 
 namespace irs {
@@ -71,7 +73,7 @@ NormColumnReader::NormColumnReader(field_id id, const NormColumnMeta& meta,
                                    const duckdb::InputFile& file)
   : _file{&file}, _id{id}, _row_count{meta.row_count}, _paged{file.IsPaged()} {
   const bool blocks = !file.IsMapped();
-  std::vector<duckdb::FileRange> ranges;
+  containers::SmallVector<duckdb::FileRange, 16> ranges;
   for (const auto& m : meta.regions) {
     if (m.bits == 0) {
       continue;
@@ -87,7 +89,7 @@ NormColumnReader::NormColumnReader(field_id id, const NormColumnMeta& meta,
                                       sizeof(uint32_t)});
     }
   }
-  file.Prefetch(ranges);
+  file.Prefetch(std::span{ranges.data(), ranges.size()});
   _regions.reserve(meta.regions.size());
   _stats.reserve(meta.regions.size());
   auto first = doc_limits::min();

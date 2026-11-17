@@ -382,7 +382,7 @@ void FieldWriter::EndSlot(field_id id, const PostingMeta& meta) {
   if (meta.docs_count == 0) {
     return;
   }
-  _record.Rewind();
+  _record.Clear();
   _pw.Encode(_record, meta);
   _heads.push_back({
     .id = id,
@@ -390,7 +390,7 @@ void FieldWriter::EndSlot(field_id id, const PostingMeta& meta) {
     .member = _dict.member,
     .term_count = 1,
     .doc_count = meta.docs_count,
-    .record = std::string{ViewCast<char>(Written(_record))},
+    .record = std::string{ViewCast<char>(_record.View())},
     .record_inline = std::move(record_inline),
   });
 }
@@ -499,7 +499,7 @@ void FieldWriter::Commit(bytes_view term, const PostingMeta& meta) {
     _first_block = _blocks;
     _first_entry = static_cast<uint32_t>(_block.ends.size() - 1);
     _first_record =
-      static_cast<uint32_t>(_block.records.size() - _record.GetPosition());
+      static_cast<uint32_t>(_block.records.size() - _record.View().size());
   }
 }
 
@@ -510,13 +510,13 @@ bool FieldWriter::Append(bytes_view term, const PostingMeta& meta) {
     _pw.BeginBlock();
     _group_inline = false;
   }
-  _record.Rewind();
+  _record.Clear();
   _pw.Encode(_record, meta);
   if (meta.inline_size != 0 && !_group_inline) {
     _record.WriteVarint<uint64_t>(_inline.size());
     _group_inline = true;
   }
-  const auto record = Written(_record);
+  const auto record = _record.View();
   const uint64_t records = block.records.size() + record.size();
   const auto at = block.keys.size();
   block.keys.append(_key_prefix);
@@ -689,9 +689,9 @@ void FieldWriter::EndField(field_id id, const FieldProperties& props,
   head.width = _width;
   head.min = ViewCast<char>(bytes_view{_min});
   if (_terms == 1) {
-    _record.Rewind();
+    _record.Clear();
     _pw.Encode(_record, _single);
-    head.record = ViewCast<char>(Written(_record));
+    head.record = ViewCast<char>(_record.View());
     head.record_inline = ViewCast<char>(_single.Inline());
     return;
   }

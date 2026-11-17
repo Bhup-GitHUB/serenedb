@@ -20,7 +20,7 @@
 
 #include "iresearch/search/queries/posting_heads.hpp"
 
-#include <vector>
+#include <span>
 
 #include "iresearch/formats/posting/common.hpp"
 #include "iresearch/formats/term_reader.hpp"
@@ -28,7 +28,8 @@
 #include "iresearch/search/queries/phrase_state.hpp"
 #include "iresearch/search/queries/prepared_state_visitor.hpp"
 #include "iresearch/search/queries/term_state.hpp"
-#include "iresearch/utils/containers/flat_hash_map.hpp"
+#include "iresearch/utils/assert.hpp"
+#include "iresearch/utils/containers/small_vector.hpp"
 
 namespace irs {
 namespace {
@@ -67,12 +68,29 @@ class PostingHeads final : public PreparedStateVisitor {
     if (_lists < min_lists) {
       return;
     }
-    for (auto& [file, extents] : _extents) {
-      file->Prefetch(extents);
-    }
+    _doc.Prefetch();
+    _pos.Prefetch();
   }
 
  private:
+  // The heads of the posting lists in one of the segment's files
+  struct Heads {
+    void Add(const duckdb::InputFile& in, uint64_t offset) {
+      SDB_ASSERT(!file || file == &in);
+      file = &in;
+      extents.push_back(
+        {.offset = offset, .size = duckdb::PageResidency::PAGE_SIZE});
+    }
+    void Prefetch() {
+      if (file) {
+        file->Prefetch(std::span{extents.data(), extents.size()});
+      }
+    }
+
+    const duckdb::InputFile* file = nullptr;
+    containers::SmallVector<duckdb::FileRange, 16> extents;
+  };
+
   void AddAll(const PostingsState& state) {
     for (const auto& meta : state.metas) {
       Add(state.reader, meta, true);
@@ -86,24 +104,19 @@ class PostingHeads final : public PreparedStateVisitor {
     const auto handles = reader->Handles();
     if (handles.doc && DocExtent(meta) != 0) {
       ++_lists;
-      auto& extents = _extents[handles.doc];
-      extents.push_back(
-        {.offset = meta.doc_start, .size = duckdb::PageResidency::PAGE_SIZE});
+      _doc.Add(*handles.doc, meta.doc_start);
       if (meta.docs_count > doc_limits::kBlockSize) {
-        extents.push_back({.offset = meta.doc_start + meta.doc_delta,
-                           .size = duckdb::PageResidency::PAGE_SIZE});
+        _doc.Add(*handles.doc, meta.doc_start + meta.doc_delta);
       }
     }
     if (positions && handles.pos && meta.docs_count != 0) {
       ++_lists;
-      _extents[handles.pos].push_back(
-        {.offset = meta.pos_start, .size = duckdb::PageResidency::PAGE_SIZE});
+      _pos.Add(*handles.pos, meta.pos_start);
     }
   }
 
-  containers::FlatHashMap<const duckdb::InputFile*,
-                          std::vector<duckdb::FileRange>>
-    _extents;
+  Heads _doc;
+  Heads _pos;
   uint32_t _lists = 0;
 };
 

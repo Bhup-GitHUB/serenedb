@@ -258,6 +258,7 @@ class Table final {
  public:
   Table(duckdb::FileSystem& fs, std::string root,
         irs::IndexReaderOptions options,
+        std::shared_ptr<irs::ReleasedSegments> released,
         std::shared_ptr<const catalog::InvertedIndexConfig> config);
   ~Table();
 
@@ -376,6 +377,7 @@ class Table final {
   duckdb::FileSystem& _fs;
   std::string _root;
   irs::IndexReaderOptions _options;
+  std::shared_ptr<irs::ReleasedSegments> _released;
   mutable absl::Mutex _state_mutex;
   std::shared_ptr<const catalog::InvertedIndexConfig> _config
     ABSL_GUARDED_BY(_state_mutex);

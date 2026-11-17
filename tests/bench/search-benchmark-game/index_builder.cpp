@@ -29,7 +29,6 @@
 #include <duckdb/common/serializer/write_stream.hpp>
 #include <duckdb/main/database.hpp>
 #include <iresearch/index/file_names.hpp>
-#include <iresearch/index/segment_hold.hpp>
 #include <iresearch/index/segment_list.hpp>
 #include <iresearch/index/segment_reader_impl.hpp>
 #include <iresearch/search/scorers/bm25.hpp>
@@ -51,8 +50,6 @@ static irs::IndexWriterOptions MakeWriterOptions(irs::ScorerPtr scorer_ptr,
                                                  uint32_t segment_docs_max) {
   irs::IndexWriterOptions writer_opts;
   writer_opts.reader_options.scorer = scorer_ptr;
-  writer_opts.reader_options.released =
-    std::make_shared<irs::ReleasedSegments>();
   writer_opts.segment_pool_size = segment_pool_size;
   writer_opts.segment_memory_max = segment_mem_max;
   writer_opts.segment_docs_max = segment_docs_max;
@@ -86,6 +83,7 @@ IndexBuilder::IndexBuilder(std::string_view path,
     MakeWriterOptions(_scorer_ptr, opts.indexer_threads, config.segment_mem_max,
                       opts.row_group_size, opts.segment_docs_max);
   _reader_options = options.reader_options;
+  options.released = _released;
   _writer = irs::IndexWriter::Make(::irs::DuckDBEngine::Instance().instance(),
                                    _fs, _root, std::move(options));
 }
@@ -95,9 +93,9 @@ irs::CompositeReader IndexBuilder::GetReader() {
   absl::MutexLock lock{&_mutex};
   readers.reserve(_segments.size());
   for (const auto& meta : _segments) {
-    readers.emplace_back(
-      irs::SegmentReaderImpl::Open(::irs::DuckDBEngine::Instance().instance(),
-                                   _fs, _root, meta, _reader_options));
+    readers.emplace_back(irs::SegmentReaderImpl::Open(
+      ::irs::DuckDBEngine::Instance().instance(), _fs, _root, meta,
+      _reader_options, _files[meta.name]));
   }
   return {std::move(readers), /*stats=*/true};
 }
@@ -127,6 +125,7 @@ void IndexBuilder::Add(
   for (const auto& segment : flushed) {
     SDB_ASSERT(segment.docs_mask.Empty());
     _segments.push_back(segment.meta);
+    _files[segment.meta.name] = segment.files;
   }
 }
 
@@ -151,10 +150,12 @@ void IndexBuilder::Compact(const irs::CompactionPolicy& policy) {
       std::erase_if(_segments, [&](const auto& meta) {
         return meta.name == candidate->Meta().name;
       });
+      _files.erase(candidate->Meta().name);
     }
     _segments.push_back(merged.meta);
+    _files[merged.meta.name] = merged.reader->Files();
   }
-  irs::RemoveReleased(_fs, _root, *_reader_options.released);
+  irs::RemoveReleased(_fs, _root, *_released);
 }
 
 void IndexBuilder::WriteSegmentList() {

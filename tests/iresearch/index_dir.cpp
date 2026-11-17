@@ -93,7 +93,7 @@ void IndexDir::Sync(std::span<const std::string_view> names) const {
 }
 
 void IndexDir::Compact(std::string_view name) const {
-  Fs().Compact(Fs().JoinPath(Root(), name));
+  Fs().Compact({Fs().JoinPath(Root(), name)});
 }
 
 std::vector<std::string> IndexDir::Files() const {
@@ -108,28 +108,49 @@ std::vector<std::string> IndexDir::Files() const {
   return files;
 }
 
-irs::IndexReaderOptions IndexDir::ReaderOptions(
-  irs::IndexReaderOptions options) const {
-  if (!options.released) {
-    options.released = _state->segments->released;
+irs::FileTracker& IndexDir::Tracker(std::string_view segment) const {
+  absl::MutexLock lock{&_state->trackers_mutex};
+  auto& tracker = _state->trackers[segment];
+  if (!tracker) {
+    tracker = std::make_unique<irs::FileTracker>(Fs(), Root(), segment);
   }
-  return options;
+  return *tracker;
+}
+
+std::shared_ptr<const irs::FileTracker> IndexDir::Files(
+  const irs::SegmentMeta& meta) const {
+  absl::MutexLock lock{&_state->segments->mutex};
+  for (const auto& segment : _state->segments->committed) {
+    if (segment.meta.name == meta.name) {
+      return segment.files;
+    }
+  }
+  return nullptr;
 }
 
 std::vector<irs::SegmentMeta> IndexDir::Committed() const {
+  std::vector<irs::SegmentMeta> metas;
+  absl::MutexLock lock{&_state->segments->mutex};
+  for (const auto& segment : _state->segments->committed) {
+    metas.push_back(segment.meta);
+  }
+  return metas;
+}
+
+std::vector<CommittedSegment> IndexDir::CommittedSegments() const {
   absl::MutexLock lock{&_state->segments->mutex};
   return _state->segments->committed;
 }
 
-void IndexDir::Publish(std::vector<irs::SegmentMeta> segments) const {
+void IndexDir::Publish(std::vector<CommittedSegment> segments) const {
   absl::MutexLock lock{&_state->segments->mutex};
   auto& published = _state->segments->published;
-  for (const auto& meta : segments) {
-    if (meta.hold && absl::c_none_of(published, [&](const Published& known) {
+  for (const auto& [meta, files] : segments) {
+    if (files && absl::c_none_of(published, [&](const Published& known) {
           return known.segment.name == meta.name;
         })) {
-      published.push_back({.segment = {.name = meta.name, .kinds = meta.kinds},
-                           .hold = meta.hold});
+      published.push_back(
+        {.segment = {.name = meta.name, .kinds = meta.kinds}, .files = files});
     }
   }
   _state->segments->committed.swap(segments);
@@ -140,7 +161,7 @@ std::vector<std::string> IndexDir::HeldFiles() const {
   absl::MutexLock lock{&_state->segments->mutex};
   auto& published = _state->segments->published;
   std::erase_if(published,
-                [](const Published& known) { return known.hold.expired(); });
+                [](const Published& known) { return known.files.expired(); });
   for (const auto& known : published) {
     absl::c_move(irs::SegmentFiles(known.segment.name, known.segment.kinds),
                  std::back_inserter(files));
@@ -150,7 +171,7 @@ std::vector<std::string> IndexDir::HeldFiles() const {
 
 size_t IndexDir::RemoveReleased() const {
   const auto before = Files();
-  irs::RemoveReleased(Fs(), Root(), Released());
+  irs::RemoveReleased(Fs(), Root(), *Released());
   const auto after = Files();
   const irs::containers::FlatHashSet<std::string_view> kept{after.begin(),
                                                             after.end()};
@@ -180,9 +201,11 @@ IndexDir IndexDir::Over(duckdb::FileSystem& fs) const {
 IndexDir IndexDir::Reopened() const {
   SDB_ASSERT(Kind() != StorageKind::Memory);
   IndexDir reopened{Db(), Fs(), Root()};
-  auto segments = Committed();
-  for (auto& meta : segments) {
-    meta.hold.reset();
+  std::vector<CommittedSegment> segments;
+  for (auto& meta : Committed()) {
+    auto files = std::make_shared<const irs::FileTracker>(
+      Fs(), Root(), meta.name, meta.kinds, reopened.Released());
+    segments.push_back({.meta = std::move(meta), .files = std::move(files)});
   }
   reopened.Publish(std::move(segments));
   return reopened;

@@ -51,9 +51,7 @@ struct AnnBuildEnv;
 
 class ColWriter final {
  public:
-  ColWriter(duckdb::DatabaseInstance& db, duckdb::FileSystem& fs,
-            std::string_view root, FileTracker& tracker,
-            std::string_view segment_name);
+  ColWriter(duckdb::DatabaseInstance& db, FileTracker& tracker);
   ~ColWriter();
 
   ColWriter(const ColWriter&) = delete;
@@ -122,10 +120,7 @@ class ColWriter final {
                                    duckdb::CompressionType forced,
                                    DistinctStats distinct);
 
-  duckdb::FileSystem& _fs;
-  std::string _root;
   FileTracker& _tracker;
-  std::string _segment_name;
   std::string _filename;
   duckdb::DatabaseInstance* _db;
   const IndexFieldOptions* _field_options = nullptr;

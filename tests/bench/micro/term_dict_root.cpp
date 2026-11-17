@@ -192,15 +192,12 @@ void Write(Data& data) {
   data.root = path.string();
   auto& db = irs::DuckDBEngine::Instance().instance();
   auto& fs = duckdb::FileSystem::GetFileSystem(db);
-  irs::FileTracker tracker;
+  irs::FileTracker tracker{fs, data.root, "segment"};
   const irs::FlushState state{
-    .fs = fs,
-    .root = data.root,
     .tracker = tracker,
-    .name = "segment",
     .doc_count = data.keys.size(),
   };
-  irs::IdxWriter idx{fs, data.root, tracker, "segment"};
+  irs::IdxWriter idx{tracker};
   irs::term_dict::FieldWriter writer{false};
   writer.SetIdxWriter(idx);
   writer.prepare(state, 1);

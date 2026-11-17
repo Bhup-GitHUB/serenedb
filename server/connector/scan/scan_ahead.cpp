@@ -54,6 +54,15 @@ struct AheadScratch {
   std::vector<duckdb::FileRange>& extents;
 };
 
+uint32_t Claim(std::atomic_uint32_t& mark, uint32_t end) noexcept {
+  auto declared = mark.load(std::memory_order_relaxed);
+  while (declared < end &&
+         !mark.compare_exchange_weak(declared, end, std::memory_order_relaxed,
+                                     std::memory_order_relaxed)) {
+  }
+  return std::min(declared, end);
+}
+
 UnitRows RowGroupRows(const ScanGlobalState& g, UnitRows rows, uint64_t rg) {
   return {.begin = std::max(rows.begin, rg * g.rg_size),
           .end = std::min(rows.end, (rg + 1) * g.rg_size)};
@@ -137,36 +146,19 @@ void DeclareRowGroups(ScanGlobalState& g, const AheadScratch& scratch,
 void DeclareNextSegments(ScanGlobalState& g, const AheadScratch& scratch) {
   const auto claimed =
     std::min(g.next_segment.load(std::memory_order_relaxed), g.live_segments);
-  auto declared = g.ahead_segment.load(std::memory_order_relaxed);
-  for (;;) {
-    const auto begin = std::max(declared, claimed);
-    auto end = begin;
-    while (end != g.live_segments &&
-           g.ahead_before[end] - g.ahead_before[claimed] < g.ahead_rgs) {
-      ++end;
-    }
-    if (end <= declared) {
-      return;
-    }
-    if (!g.ahead_segment.compare_exchange_weak(declared, end,
-                                               std::memory_order_relaxed,
-                                               std::memory_order_relaxed)) {
-      continue;
-    }
-    for (auto i = begin; i != end; ++i) {
-      const auto seg = g.segment_order[i];
-      auto& work = g.segments[seg];
-      const auto count = static_cast<uint32_t>(std::min<uint64_t>(
-        work.rg_count,
-        g.ahead_rgs - (g.ahead_before[i] - g.ahead_before[claimed])));
-      DeclareRowGroups(g, scratch, seg, 0, count);
-      auto ahead = work.ahead_rg.load(std::memory_order_relaxed);
-      while (ahead < count && !work.ahead_rg.compare_exchange_weak(
-                                ahead, count, std::memory_order_relaxed,
-                                std::memory_order_relaxed)) {
-      }
-    }
-    return;
+  auto end = claimed;
+  while (end != g.live_segments &&
+         g.ahead_before[end] - g.ahead_before[claimed] < g.ahead_rgs) {
+    ++end;
+  }
+  for (auto i = std::max(Claim(g.ahead_segment, end), claimed); i < end; ++i) {
+    const auto seg = g.segment_order[i];
+    auto& work = g.segments[seg];
+    const auto count = static_cast<uint32_t>(std::min<uint64_t>(
+      work.rg_count,
+      g.ahead_rgs - (g.ahead_before[i] - g.ahead_before[claimed])));
+    DeclareRowGroups(g, scratch, seg, 0, count);
+    Claim(work.ahead_rg, count);
   }
 }
 
@@ -180,16 +172,8 @@ void DeclareNextRowGroups(ScanGlobalState& g, const AheadScratch& scratch,
       : work.claims[std::min<size_t>(next, work.claims.size() - 1)].rg;
   const auto end = static_cast<uint32_t>(
     std::min<uint64_t>(work.rg_count, claimed + g.ahead_rgs));
-  auto declared = work.ahead_rg.load(std::memory_order_relaxed);
-  while (declared < end) {
-    if (work.ahead_rg.compare_exchange_weak(declared, end,
-                                            std::memory_order_relaxed,
-                                            std::memory_order_relaxed)) {
-      DeclareRowGroups(g, scratch, seg, std::max<uint64_t>(declared, claimed),
-                       end);
-      return;
-    }
-  }
+  DeclareRowGroups(g, scratch, seg,
+                   std::max<uint64_t>(Claim(work.ahead_rg, end), claimed), end);
 }
 
 void CollectProjected(const ScanGlobalState& g, ScanLocalState& l,
@@ -217,21 +201,12 @@ void CollectProjectedAhead(ScanGlobalState& g, ScanLocalState& l,
                       .end = (*g.reader)[l.unit.seg].Meta().docs_count};
   const auto end = static_cast<uint32_t>(std::min<uint64_t>(
     work.rg_count, rg + 1 + std::max<uint64_t>(l.projected_rgs, 1)));
-  auto declared = work.projected_rg.load(std::memory_order_relaxed);
-  while (declared < end) {
-    if (!work.projected_rg.compare_exchange_weak(declared, end,
-                                                 std::memory_order_relaxed,
-                                                 std::memory_order_relaxed)) {
-      continue;
+  for (auto next = std::max<uint64_t>(Claim(work.projected_rg, end), rg + 1);
+       next < end; ++next) {
+    if (RowGroupLive(g, work, l.ahead_checks, rows, next)) {
+      CollectRowGroup(col_reader, g.ahead_projections,
+                      RowGroupRows(g, rows, next), l.ahead_extents);
     }
-    for (auto next = std::max<uint64_t>(declared, rg + 1); next != end;
-         ++next) {
-      if (RowGroupLive(g, work, l.ahead_checks, rows, next)) {
-        CollectRowGroup(col_reader, g.ahead_projections,
-                        RowGroupRows(g, rows, next), l.ahead_extents);
-      }
-    }
-    return;
   }
 }
 

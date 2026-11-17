@@ -30,6 +30,7 @@
 #include <duckdb/parallel/task_executor.hpp>
 #include <duckdb/parallel/task_scheduler.hpp>
 #include <exception>
+#include <iterator>
 #include <utility>
 #include <vector>
 
@@ -37,6 +38,98 @@
 #include "iresearch/utils/log.hpp"
 
 namespace irs {
+
+void ReleasedSegments::Release(std::string name, uint8_t kinds) {
+  std::shared_ptr<const Released> released;
+  if (kinds != 0) {
+    absl::MutexLock lock{&_mutex};
+    if (!_closed) {
+      _segments.emplace_back(std::move(name), kinds);
+      released = _released;
+    }
+  }
+  if (_held.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+    Dropped dropped;
+    std::vector<ReleasedSegment> segments;
+    {
+      absl::MutexLock lock{&_mutex};
+      dropped = std::exchange(_dropped, nullptr);
+      if (dropped) {
+        segments = std::exchange(_segments, {});
+      }
+    }
+    if (dropped) {
+      dropped(std::move(segments));
+      return;
+    }
+  }
+  if (released) {
+    (*released)();
+  }
+}
+
+std::vector<ReleasedSegment> ReleasedSegments::Take() {
+  absl::MutexLock lock{&_mutex};
+  return std::exchange(_segments, {});
+}
+
+void ReleasedSegments::Return(std::vector<ReleasedSegment> segments) {
+  absl::MutexLock lock{&_mutex};
+  _segments.insert(_segments.end(), std::make_move_iterator(segments.begin()),
+                   std::make_move_iterator(segments.end()));
+}
+
+bool ReleasedSegments::Empty() const {
+  absl::MutexLock lock{&_mutex};
+  return _segments.empty();
+}
+
+void ReleasedSegments::Close() {
+  absl::MutexLock lock{&_mutex};
+  _closed = true;
+}
+
+void ReleasedSegments::Drop(Dropped dropped) {
+  std::vector<ReleasedSegment> segments;
+  {
+    absl::MutexLock lock{&_mutex};
+    if (_held.load(std::memory_order_acquire) != 0) {
+      _dropped = std::move(dropped);
+      return;
+    }
+    segments = std::exchange(_segments, {});
+  }
+  dropped(std::move(segments));
+}
+
+void ReleasedSegments::OnRelease(Released released) {
+  auto shared = std::make_shared<const Released>(std::move(released));
+  absl::MutexLock lock{&_mutex};
+  _released = std::move(shared);
+}
+
+FileTracker::FileTracker(duckdb::FileSystem& fs, std::string_view root,
+                         std::string_view name, uint8_t kinds,
+                         std::shared_ptr<ReleasedSegments> released)
+  : _fs{fs},
+    _root{root},
+    _name{name},
+    _released{std::move(released)},
+    _kinds{kinds} {
+  if (_released) {
+    _released->Acquire();
+  }
+}
+
+FileTracker::~FileTracker() {
+  if (_released) {
+    _released->Release(std::move(_name), _kinds);
+  }
+}
+
+void FileTracker::Remove() noexcept {
+  RemoveIndexFiles(_fs, _root, SegmentFiles(_name, std::exchange(_kinds, 0)));
+}
 
 duckdb::unique_ptr<duckdb::FileHandle> OpenWhole(duckdb::FileSystem& fs,
                                                  const std::string& path) {

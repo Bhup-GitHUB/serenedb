@@ -30,9 +30,8 @@
 #include <duckdb/storage/external_file_cache/input_file_reader.hpp>
 #include <iresearch/formats/flush_state.hpp>
 #include <iresearch/index/index_meta.hpp>
-#include <iresearch/index/index_reader_options.hpp>
-#include <iresearch/index/segment_hold.hpp>
 #include <iresearch/store/storage.hpp>
+#include <iresearch/utils/containers/flat_hash_map.hpp>
 #include <iresearch/utils/string.hpp>
 #include <memory>
 #include <span>
@@ -46,6 +45,11 @@ enum class StorageKind : uint8_t {
   Local,
   Memory,
   Remote,
+};
+
+struct CommittedSegment {
+  irs::SegmentMeta meta;
+  std::shared_ptr<const irs::FileTracker> files;
 };
 
 class IndexDir {
@@ -70,16 +74,16 @@ class IndexDir {
   duckdb::FileSystem& Fs() const noexcept { return _state->fs; }
   const std::string& Root() const noexcept { return _state->root; }
   StorageKind Kind() const noexcept { return _state->kind; }
-  irs::ReleasedSegments& Released() const noexcept {
-    return *_state->segments->released;
+  const std::shared_ptr<irs::ReleasedSegments>& Released() const noexcept {
+    return _state->segments->released;
   }
-  irs::FileTracker& Tracker() const noexcept { return _state->tracker; }
-
-  irs::IndexReaderOptions ReaderOptions(
-    irs::IndexReaderOptions options = {}) const;
+  irs::FileTracker& Tracker(std::string_view segment) const;
+  std::shared_ptr<const irs::FileTracker> Files(
+    const irs::SegmentMeta& meta) const;
 
   std::vector<irs::SegmentMeta> Committed() const;
-  void Publish(std::vector<irs::SegmentMeta> segments) const;
+  std::vector<CommittedSegment> CommittedSegments() const;
+  void Publish(std::vector<CommittedSegment> segments) const;
   std::vector<std::string> HeldFiles() const;
   size_t RemoveReleased() const;
   uint64_t TopSegmentId() const;
@@ -91,14 +95,14 @@ class IndexDir {
  private:
   struct Published {
     irs::ReleasedSegment segment;
-    std::weak_ptr<const irs::SegmentHold> hold;
+    std::weak_ptr<const irs::FileTracker> files;
   };
 
   struct Segments {
     std::shared_ptr<irs::ReleasedSegments> released =
       std::make_shared<irs::ReleasedSegments>();
     absl::Mutex mutex;
-    std::vector<irs::SegmentMeta> committed ABSL_GUARDED_BY(mutex);
+    std::vector<CommittedSegment> committed ABSL_GUARDED_BY(mutex);
     std::vector<Published> published ABSL_GUARDED_BY(mutex);
     uint64_t top_segment_id ABSL_GUARDED_BY(mutex) = 0;
   };
@@ -119,7 +123,9 @@ class IndexDir {
     std::string root;
     StorageKind kind;
     std::shared_ptr<Segments> segments;
-    irs::FileTracker tracker;
+    absl::Mutex trackers_mutex;
+    irs::containers::FlatHashMap<std::string, std::unique_ptr<irs::FileTracker>>
+      trackers ABSL_GUARDED_BY(trackers_mutex);
   };
 
   std::shared_ptr<State> _state;

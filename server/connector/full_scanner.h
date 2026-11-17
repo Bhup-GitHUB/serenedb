@@ -68,6 +68,10 @@ class FullScanner {
 
   void Project(uint64_t start_row, duckdb::idx_t count, duckdb::idx_t survivors,
                duckdb::DataChunk& output);
+  duckdb::idx_t Scan(uint64_t start_row, duckdb::idx_t count,
+                     duckdb::DataChunk& output,
+                     const duckdb::SelectionVector* live = nullptr,
+                     duckdb::idx_t live_count = 0);
 
   const duckdb::SelectionVector* Selection() const noexcept {
     return _selection;

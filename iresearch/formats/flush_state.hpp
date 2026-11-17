@@ -23,31 +23,21 @@
 #pragma once
 
 #include <cstddef>
-#include <cstdint>
-#include <duckdb/common/file_system.hpp>
-#include <string_view>
 
 #include "iresearch/index/index_features.hpp"
 #include "iresearch/index/index_reader_options.hpp"
+#include "iresearch/store/storage.hpp"
 
 namespace irs {
 
 struct NormProvider;
 
-struct FileTracker {
-  uint8_t kinds = 0;
-  uint64_t bytes = 0;
-};
-
 struct FlushState {
-  duckdb::FileSystem& fs;
-  const std::string_view root;
   FileTracker& tracker;
   // In-flight norm reader source (SegmentWriter during initial flush,
   // null during merge). Posting writers consult it to read per-doc norms
   // for score bounds while the segment is still being written.
   const NormProvider* norms{};
-  const std::string_view name;  // segment name
   ScorerPtr scorer = nullptr;
   const size_t doc_count;
   IndexFeatures index_features{IndexFeatures::None};

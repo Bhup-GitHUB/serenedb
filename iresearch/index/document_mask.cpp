@@ -236,14 +236,11 @@ bool operator==(const DocumentMask& lhs, const DocumentMask& rhs) {
          roaring::api::roaring_bitmap_equals(&lhs._set, &rhs._set);
 }
 
-std::shared_ptr<byte_type> DocumentMask::AllocateFrozen(uint64_t size) {
-  return {static_cast<byte_type*>(::operator new(size, kFrozenAlignment)),
-          FrozenFree{}};
-}
-
 DocumentMask DocumentMask::ReadFrozen(bytes_view bytes) {
   const auto size = bytes.size();
-  auto frozen = AllocateFrozen(size);
+  std::shared_ptr<byte_type> frozen{
+    static_cast<byte_type*>(::operator new(size, kFrozenAlignment)),
+    FrozenFree{}};
   if (size != 0) {
     std::memcpy(frozen.get(), bytes.data(), size);
   }

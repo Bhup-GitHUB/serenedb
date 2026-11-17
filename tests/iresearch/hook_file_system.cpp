@@ -136,7 +136,9 @@ duckdb::unique_ptr<duckdb::FileWriter> HookFileSystem::OpenFileWriter(
   return writer;
 }
 
-void HookFileSystem::Compact(const std::string& path) { _inner.Compact(path); }
+void HookFileSystem::Compact(const duckdb::vector<std::string>& paths) {
+  _inner.Compact(paths);
+}
 
 void HookFileSystem::Read(duckdb::FileHandle& handle, void* buffer,
                           int64_t nr_bytes, duckdb::idx_t location) {

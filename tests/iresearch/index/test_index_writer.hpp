@@ -174,18 +174,18 @@ class IndexWriter {
  private:
   struct Change {
     uint64_t seq = 0;
-    std::vector<irs::SegmentMeta> added;
+    std::vector<CommittedSegment> added;
     std::vector<Removal> removals;
   };
 
   struct Flushed {
-    std::vector<irs::SegmentMeta> metas;
+    std::vector<CommittedSegment> segments;
     std::vector<uint64_t> starts;
     std::vector<Span> spans;
   };
 
   struct Staged {
-    std::vector<irs::SegmentMeta> segments;
+    std::vector<CommittedSegment> segments;
     uint64_t cut = 0;
     std::vector<size_t> flushed;
     size_t merges = 0;
@@ -193,8 +193,8 @@ class IndexWriter {
 
   OpenSegment& Acquire() ABSL_EXCLUSIVE_LOCKS_REQUIRED(_mutex);
   void FlushFree() ABSL_EXCLUSIVE_LOCKS_REQUIRED(_mutex);
-  std::vector<irs::SegmentMeta> Apply(
-    std::vector<irs::SegmentMeta> segments, std::span<const Change> changes,
+  std::vector<CommittedSegment> Apply(
+    std::vector<CommittedSegment> segments, std::span<const Change> changes,
     std::span<const Flushed* const> flushed,
     std::span<irs::IndexWriter::Merged> merges) const;
 

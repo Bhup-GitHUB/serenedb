@@ -182,6 +182,17 @@ void FullScanner::FillAbsent(duckdb::DataChunk& output) const {
   }
 }
 
+duckdb::idx_t FullScanner::Scan(uint64_t start_row, duckdb::idx_t count,
+                                duckdb::DataChunk& output,
+                                const duckdb::SelectionVector* live,
+                                duckdb::idx_t live_count) {
+  const auto survivors = Filter(start_row, count, output, live, live_count);
+  if (survivors != 0) {
+    Project(start_row, count, survivors, output);
+  }
+  return survivors;
+}
+
 void ScanLiveRows(duckdb::ClientContext& context, const irs::SubReader& segment,
                   uint64_t begin, uint64_t end,
                   std::span<const irs::ColumnstoreProjection> projections,
@@ -199,9 +210,8 @@ void ScanLiveRows(duckdb::ClientContext& context, const irs::SubReader& segment,
   for (uint64_t row = begin; row < end; row += STANDARD_VECTOR_SIZE) {
     const auto take = std::min<uint64_t>(STANDARD_VECTOR_SIZE, end - row);
     chunk.Reset();
-    const auto produced = scanner.Filter(row, take, chunk);
+    const auto produced = scanner.Scan(row, take, chunk);
     SDB_ASSERT(produced == take, "unfiltered scan produced fewer rows");
-    scanner.Project(row, take, produced, chunk);
     chunk.SetChildCardinality(produced);
     std::span<const duckdb::sel_t> kept;
     if (has_mask) {

@@ -134,8 +134,8 @@ std::unique_ptr<Column> Build(const Shape& shape) {
   Words words;
   std::mt19937_64 rng{11};
   {
-    irs::FileTracker tracker;
-    irs::ColWriter writer{CsDb(), c->fs, kRoot, tracker, kSegName};
+    irs::FileTracker tracker{c->fs, kRoot, kSegName};
+    irs::ColWriter writer{CsDb(), tracker};
     auto& cw = writer.OpenColumn(kField, duckdb::LogicalType::VARCHAR);
     for (uint64_t pos = 0; pos < c->windows * kWindow; pos += kWindow) {
       duckdb::Vector v{duckdb::LogicalType::VARCHAR, kWindow};

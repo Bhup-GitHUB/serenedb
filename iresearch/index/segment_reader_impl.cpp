@@ -71,8 +71,10 @@ class SegmentAllDocs : public lead::Node {
 
 std::shared_ptr<const SegmentReaderImpl> SegmentReaderImpl::Open(
   duckdb::DatabaseInstance& db, duckdb::FileSystem& fs, std::string_view root,
-  const SegmentMeta& meta, const IndexReaderOptions& options) {
+  const SegmentMeta& meta, const IndexReaderOptions& options,
+  std::shared_ptr<const FileTracker> files) {
   auto reader = std::make_shared<SegmentReaderImpl>(PrivateTag{}, meta);
+  reader->_files = std::move(files);
   ParseSegmentId(meta.name, reader->_id);
   reader->_readers = std::make_shared<Readers>();
   reader->_readers->Open(db, fs, root, meta, options);
@@ -93,11 +95,6 @@ std::shared_ptr<const SegmentReaderImpl> SegmentReaderImpl::Open(
         reader->_info.byte_size += file->GetSize();
       }
     }
-  }
-  reader->_hold = meta.hold;
-  if (!reader->_hold && options.released) {
-    reader->_hold = std::make_shared<const SegmentHold>(options.released,
-                                                        meta.name, meta.kinds);
   }
   return reader;
 }
@@ -129,7 +126,7 @@ std::shared_ptr<const SegmentReaderImpl> SegmentReaderImpl::WithDocsMask(
   meta.docs_mask = std::move(mask);
   meta.live_docs_count = meta.docs_count - RemovalCount(meta);
   auto reader = std::make_shared<SegmentReaderImpl>(PrivateTag{}, meta);
-  reader->_hold = _hold;
+  reader->_files = _files;
   reader->_id = _id;
   reader->_patch_tick = _patch_tick;
   reader->_patched_docs = _patched_docs;
@@ -145,7 +142,7 @@ std::shared_ptr<const SegmentReaderImpl> SegmentReaderImpl::WithPatches(
   static_cast<SegmentInfo&>(meta) = _info;
   meta.docs_mask = _docs_mask;
   auto reader = std::make_shared<SegmentReaderImpl>(PrivateTag{}, meta);
-  reader->_hold = _hold;
+  reader->_files = _files;
   reader->_id = _id;
   reader->_field_reader = _field_reader;
   reader->_pieces = _pieces;

@@ -616,10 +616,12 @@ const LiveUnits::Unit* LiveUnits::Find(uint64_t id) const noexcept {
 
 Table::Table(duckdb::FileSystem& fs, std::string root,
              irs::IndexReaderOptions options,
+             std::shared_ptr<irs::ReleasedSegments> released,
              std::shared_ptr<const catalog::InvertedIndexConfig> config)
   : _fs{fs},
     _root{std::move(root)},
     _options{std::move(options)},
+    _released{std::move(released)},
     _config{config},
     _versions{InitialState(std::move(config))} {}
 
@@ -708,7 +710,9 @@ OwnSegment Table::OpenSegment(uint64_t id, uint8_t kinds,
   meta.docs_count = rows;
   meta.live_docs_count = rows;
   opened.reader = irs::SegmentReaderImpl::Open(
-    irs::DuckDBEngine::Instance().instance(), _fs, _root, meta, _options);
+    irs::DuckDBEngine::Instance().instance(), _fs, _root, meta, _options,
+    std::make_shared<const irs::FileTracker>(_fs, _root, meta.name, kinds,
+                                             _released));
   meta.byte_size = opened.reader->Meta().byte_size;
   return opened;
 }
@@ -1237,8 +1241,8 @@ void Table::Reopen(Tick tick, std::span<const uint64_t> units) {
     meta.kinds = unit->meta.kinds;
     meta.docs_count = unit->docs;
     meta.live_docs_count = unit->docs;
-    meta.hold = unit->reader->Hold();
-    unit->reader = irs::SegmentReaderImpl::Open(db, _fs, _root, meta, _options);
+    unit->reader = irs::SegmentReaderImpl::Open(db, _fs, _root, meta, _options,
+                                                unit->reader->Files());
     if (unit->deleted) {
       unit->reader = unit->reader->WithDocsMask(unit->deleted);
     }

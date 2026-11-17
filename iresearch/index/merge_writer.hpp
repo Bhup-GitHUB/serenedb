@@ -84,7 +84,8 @@ class MergeWriter : public util::Noncopyable {
       _scorer{options.scorer},
       _db{db},
       _field_options{options.field_options},
-      _hnsw_bases{options.hnsw_bases} {}
+      _hnsw_bases{options.hnsw_bases},
+      _released{options.released} {}
   MergeWriter(MergeWriter&&) = default;
   MergeWriter& operator=(MergeWriter&&) = delete;
 
@@ -98,7 +99,8 @@ class MergeWriter : public util::Noncopyable {
 
   // Flush all added readers into a single segment.
   auto Flush(SegmentMeta& segment, const FlushProgress& progress = {},
-             const AnnBuildEnv* env = nullptr) -> yaclib::Future<bool>;
+             const AnnBuildEnv* env = nullptr)
+    -> yaclib::Future<std::shared_ptr<const FileTracker>>;
 
   std::shared_ptr<const SegmentReaderImpl> FlushPiece(SegmentMeta& segment,
                                                       uint64_t id);
@@ -117,6 +119,7 @@ class MergeWriter : public util::Noncopyable {
   // Non-owning; the caller pins it for the whole merge.
   const IndexFieldOptions* _field_options = nullptr;
   HnswBases* _hnsw_bases = nullptr;
+  std::shared_ptr<ReleasedSegments> _released;
 };
 
 static_assert(std::is_nothrow_move_constructible_v<MergeWriter>);
