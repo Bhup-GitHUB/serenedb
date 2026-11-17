@@ -58,13 +58,11 @@
 #include "connector/iresearch_replacement_scan.h"
 #include "connector/scan/scan_function.h"
 #include "docs/docs_functions.h"
-#include "pg/catalog/engine/builtin_functions.h"
 #include "pg/catalog/engine/registry.h"
 #include "pg/catalog/engine/scan_function.h"
 #include "pg/catalog/functions/functions.h"
 #include "pg/catalog/oids.h"
 #include "pg/connection_context.h"
-#include "pg/types/mapping.h"
 #include "pg/types/register.h"
 #include "query/config.h"
 #include "query/config_variable_names.h"
@@ -238,17 +236,13 @@ void RegisterServerExtensions(duckdb::DatabaseInstance& db) {
   pg::VisitSystemViews("pg_catalog", [&](const pg::StaticView& view) {
     config.builtin_relations.emplace(view.name);
   });
-  config.builtin_function_key = &pg::BuiltinFunctionKey;
-  config.builtin_signature_key = &pg::BuiltinSignatureKey;
-  config.builtin_type_oid = &pg::BuiltinTypeOid;
   for (const auto& wrapper : pg::kForeignDataWrappers) {
     config.foreign_data_wrappers.emplace(
       wrapper.name, duckdb::ForeignDataWrapper{.oid = wrapper.oid});
   }
   for (const auto& language : pg::kSystemLanguages) {
-    config.languages.emplace(
-      language.name,
-      duckdb::Language{.oid = language.oid, .trusted = language.trusted});
+    config.languages.emplace(language.name,
+                             duckdb::Language{.oid = language.oid});
   }
 }
 

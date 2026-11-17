@@ -415,11 +415,10 @@ struct RelationPrivileges : ObjectPrivileges<F> {
                                                std::string_view name,
                                                Rest... rest) {
     if (const auto entry = AttachedRelation(session, name)) {
-      return F::Target(
-        session,
-        RelationAccess{{entry, nullptr, nullptr, nullptr},
-                       &PrivilegePermissions(*session.context, *entry)},
-        rest...);
+      return F::Target(session,
+                       RelationAccess{{entry, nullptr, nullptr, nullptr},
+                                      &PrivilegePermissions(*entry)},
+                       rest...);
     }
     const auto oid = Resolve(session, name);
     return Find(session, oid, EntryByOid(session, oid), rest...);
@@ -459,12 +458,9 @@ struct AnyColumnPrivileges : RelationPrivileges<AnyColumnPrivileges> {
                         RelationRights(relation)};
     if (!target.owner_only) {
       target.any_column = TableColumns(relation);
-      const auto* rows = relation.column_acls;
-      if (!rows && RelationType(relation) == CatalogType::VIEW_ENTRY) {
-        rows = &relation.entry->Cast<duckdb::ViewCatalogEntry>().column_acls;
-      }
-      if (rows) {
-        for (const auto& column : *rows) {
+      if (RelationType(relation) == CatalogType::VIEW_ENTRY) {
+        for (const auto& column :
+             relation.entry->Cast<duckdb::ViewCatalogEntry>().column_acls) {
           target.columns.emplace_back(column.acl);
         }
       }
@@ -491,7 +487,7 @@ struct ColumnPrivileges : RelationPrivileges<ColumnPrivileges> {
     } else if (const auto* columns = TableColumns(relation)) {
       if (columns->ColumnExists(name)) {
         return ObjectTarget{relation.permissions,
-                            {ColumnAclOf(relation, columns->GetColumn(name))}};
+                            {columns->GetColumn(name).Acl()}};
       }
     } else if (RelationType(relation) == CatalogType::SEQUENCE_ENTRY) {
       if (absl::c_linear_search(kSequenceColumns, AsView(column))) {
@@ -501,9 +497,8 @@ struct ColumnPrivileges : RelationPrivileges<ColumnPrivileges> {
       auto& view =
         relation.entry.get_mutable()->Cast<duckdb::ViewCatalogEntry>();
       if (const auto attnum = ViewAttnum(*session.context, view, name)) {
-        return ObjectTarget{
-          relation.permissions,
-          {duckdb::ColumnAclAt(view, relation.column_acls, attnum - 1)}};
+        return ObjectTarget{relation.permissions,
+                            {duckdb::ColumnAclAt(view, attnum - 1)}};
       }
     }
     THROW_SQL_ERROR(ERR_CODE(ERRCODE_UNDEFINED_COLUMN),
@@ -531,8 +526,7 @@ struct ColumnPrivileges : RelationPrivileges<ColumnPrivileges> {
       }
       return ObjectTarget{
         relation.permissions,
-        {ColumnAclOf(relation,
-                     columns->GetColumn(duckdb::LogicalIndex(attnum - 1)))}};
+        {columns->GetColumn(duckdb::LogicalIndex(attnum - 1)).Acl()}};
     }
     duckdb::idx_t count = 0;
     if (RelationType(relation) == CatalogType::SEQUENCE_ENTRY) {
@@ -545,9 +539,8 @@ struct ColumnPrivileges : RelationPrivileges<ColumnPrivileges> {
       if (static_cast<duckdb::idx_t>(attnum) > info->types.size()) {
         return std::nullopt;
       }
-      return ObjectTarget{
-        relation.permissions,
-        {duckdb::ColumnAclAt(view, relation.column_acls, attnum - 1)}};
+      return ObjectTarget{relation.permissions,
+                          {duckdb::ColumnAclAt(view, attnum - 1)}};
     }
     if (static_cast<duckdb::idx_t>(attnum) > count) {
       return std::nullopt;
@@ -569,15 +562,10 @@ struct SchemaPrivileges : ObjectPrivileges<SchemaPrivileges> {
   static std::optional<ObjectTarget> Find(const Session& session,
                                           uint64_t oid) {
     if (FindSystemObject(kSystemNamespaces, oid)) {
-      return ObjectTarget{session.database
-                            ? &duckdb::EffectivePermissions(
-                                *session.context,
-                                session.database->GetName().GetIdentifierName(),
-                                oid, SchemaPermissions())
-                            : &SchemaPermissions()};
+      return ObjectTarget{&SchemaPermissions()};
     }
     if (const auto schema = SchemaByOid(session, oid)) {
-      return ObjectTarget{&PrivilegePermissions(*session.context, *schema)};
+      return ObjectTarget{&PrivilegePermissions(*schema)};
     }
     return std::nullopt;
   }
@@ -623,10 +611,9 @@ struct FunctionPrivileges : ObjectPrivileges<FunctionPrivileges> {
       found = {.entry = &macro, .macro = macro.FindOverload(oid).get()};
     }
     if (found.macro) {
-      return ObjectTarget{
-        duckdb::IsUnowned(*found.entry)
-          ? &PrivilegePermissions(*session.context, *found.entry)
-          : &found.entry->OverloadPermissions(*found.macro)};
+      return ObjectTarget{duckdb::IsUnowned(*found.entry)
+                            ? &PrivilegePermissions(*found.entry)
+                            : &found.entry->OverloadPermissions(*found.macro)};
     }
     if (found.entry) {
       return std::nullopt;
@@ -636,9 +623,8 @@ struct FunctionPrivileges : ObjectPrivileges<FunctionPrivileges> {
     if (!builtin) {
       return std::nullopt;
     }
-    return ObjectTarget{
-      .permissions = &BuiltinFunctionPermissions(*session.context, *builtin),
-      .capability = builtin->capability};
+    return ObjectTarget{.permissions = &BuiltinFunctionPermissions(*builtin),
+                        .capability = builtin->capability};
   }
 };
 
@@ -671,7 +657,7 @@ struct TypePrivileges : ObjectPrivileges<TypePrivileges> {
       if (entry->type != CatalogType::TYPE_ENTRY) {
         return std::nullopt;
       }
-      return ObjectTarget{&PrivilegePermissions(*session.context, *entry)};
+      return ObjectTarget{&PrivilegePermissions(*entry)};
     }
     if (oid & kRowTypeOidBit) {
       const auto relation = EntryByOid(session, RowTypeRelation(oid));
@@ -691,14 +677,10 @@ struct TypePrivileges : ObjectPrivileges<TypePrivileges> {
       }
       return Type(session, element, EntryByOid(session, element), true);
     }
-    const auto* builtin = FindBuiltinType(static_cast<int32_t>(oid));
-    if (!builtin) {
+    if (!FindBuiltinType(static_cast<int32_t>(oid))) {
       return std::nullopt;
     }
-    const auto granted = duckdb::BuiltinTypeGrant(
-      *session.context,
-      element_of_array && builtin->IsArray() ? builtin->elem : builtin->oid);
-    return ObjectTarget{granted ? granted.get() : &kBuiltinPermissions};
+    return ObjectTarget{&kBuiltinPermissions};
   }
 };
 
@@ -722,7 +704,7 @@ struct DatabasePrivileges : ObjectPrivileges<DatabasePrivileges> {
     if (!database) {
       return std::nullopt;
     }
-    return ObjectTarget{&PrivilegePermissions(*session.context, *database)};
+    return ObjectTarget{&PrivilegePermissions(*database)};
   }
 };
 
@@ -747,7 +729,7 @@ struct ServerPrivileges : ObjectPrivileges<ServerPrivileges> {
     if (!entry || entry->type != CatalogType::FOREIGN_SERVER_ENTRY) {
       return std::nullopt;
     }
-    return ObjectTarget{&PrivilegePermissions(*session.context, *entry)};
+    return ObjectTarget{&PrivilegePermissions(*entry)};
   }
 };
 
@@ -825,28 +807,6 @@ struct LanguagePrivileges : ObjectPrivileges<LanguagePrivileges> {
   static constexpr AclMode kModes = duckdb::ObjectKindOf(kType).privileges;
   static constexpr bool kSuperuserFirst = true;
 
-  struct Scope : ObjectScope {
-    std::array<duckdb::Permissions, kSystemLanguages.size()> languages;
-  };
-
-  static Scope Begin(duckdb::ClientContext& context,
-                     duckdb::optional_idx caller) {
-    Scope scope{ObjectPrivileges::Begin(context, caller)};
-    const auto database = FindDatabase(
-      context,
-      duckdb::DatabaseManager::GetDefaultDatabase(context).GetIdentifierName());
-    for (size_t i = 0; i < kSystemLanguages.size(); ++i) {
-      auto& language = scope.languages[i];
-      language.owner = kRootUser;
-      if (database) {
-        const auto acl = database->permissions.RowAcl(
-          duckdb::CatalogType::LANGUAGE_ENTRY, kSystemLanguages[i].oid);
-        language.acl.assign(acl.begin(), acl.end());
-      }
-    }
-    return scope;
-  }
-
   static uint64_t Resolve(const Session&, std::string_view name) {
     if (const auto* language = FindSystemObject(kSystemLanguages, name)) {
       return language->oid;
@@ -854,12 +814,11 @@ struct LanguagePrivileges : ObjectPrivileges<LanguagePrivileges> {
     ThrowUndefinedObject("language", name);
   }
 
-  static std::optional<ObjectTarget> Find(const Scope& scope, uint64_t oid) {
-    const auto* language = FindSystemObject(kSystemLanguages, oid);
-    if (!language) {
+  static std::optional<ObjectTarget> Find(const Session&, uint64_t oid) {
+    if (!FindSystemObject(kSystemLanguages, oid)) {
       return std::nullopt;
     }
-    return ObjectTarget{&scope.languages[language - kSystemLanguages.data()]};
+    return ObjectTarget{&kBuiltinPermissions};
   }
 };
 
@@ -924,8 +883,7 @@ struct LargeObjectPrivileges : ObjectPrivileges<LargeObjectPrivileges> {
 class ObjectAcls final : public duckdb::FunctionLocalState {
  public:
   ObjectAcls(duckdb::ClientContext& context, duckdb::optional_idx caller)
-    : _wrappers{ForeignDataWrapperPrivileges::Begin(context, caller)},
-      _languages{LanguagePrivileges::Begin(context, caller)} {}
+    : _wrappers{ForeignDataWrapperPrivileges::Begin(context, caller)} {}
 
   std::span<const duckdb::AclItem> Of(uint64_t classid, uint64_t objid,
                                       int32_t objsubid) const {
@@ -978,7 +936,7 @@ class ObjectAcls final : public duckdb::FunctionLocalState {
       return ForeignDataWrapperPrivileges::Find(_wrappers, objid);
     }
     if (classid == kPgLanguageTable) {
-      return LanguagePrivileges::Find(_languages, objid);
+      return LanguagePrivileges::Find(session, objid);
     }
     if (classid == kPgTablespaceTable) {
       return TablespacePrivileges::Find(session, objid);
@@ -987,7 +945,6 @@ class ObjectAcls final : public duckdb::FunctionLocalState {
   }
 
   ForeignDataWrapperPrivileges::Scope _wrappers;
-  LanguagePrivileges::Scope _languages;
 };
 
 duckdb::unique_ptr<duckdb::FunctionLocalState> InitObjectAcls(

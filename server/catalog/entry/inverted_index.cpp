@@ -142,7 +142,6 @@ std::shared_ptr<const InvertedIndexConfig> FromPersisted(
     auto& call = config->calls.emplace_back();
     call.type = record.type;
     call.name = std::move(record.name);
-    call.builtin_key = std::move(record.builtin_key);
     call.capability = record.capability;
     call.catalog = record.catalog.empty()
                      ? catalog
@@ -561,7 +560,6 @@ persistence::InvertedIndexData InvertedIndexEntry::ToPersisted() const {
     data.calls.push_back({
       .type = call.type,
       .name = call.name,
-      .builtin_key = call.builtin_key,
       .capability = call.capability,
       .catalog = call.catalog == catalog.GetName()
                    ? std::string{}

@@ -177,8 +177,8 @@ class PgProc final : public SystemTableScan<kPgProcSql> {
     Col<"prosrc">([](const auto& function) -> std::string_view {
       return function.src.empty() ? function.name : function.src;
     }),
-    Col<"proacl">([](const auto& function, SystemScan& scan) -> const auto& {
-      return BuiltinFunctionPermissions(scan.Context(), function).acl;
+    Col<"proacl">([](const auto& function) -> const auto& {
+      return BuiltinFunctionPermissions(function).acl;
     }));
 
   static constexpr auto kMacro = Shape<kSql, const Macro>(

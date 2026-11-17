@@ -3,10 +3,6 @@ DROP TABLE IF EXISTS iee_items;
 
 
 statement ok
-DROP TABLE IF EXISTS iee_amounts;
-
-
-statement ok
 DROP FUNCTION IF EXISTS iee_double(INTEGER);
 
 
@@ -31,15 +27,7 @@ CREATE INDEX iee_items_double ON iee_items (iee_double(a));
 
 
 statement ok
-CREATE TABLE iee_amounts (a INTEGER);
-
-
-statement ok
-CREATE INDEX iee_amounts_abs ON iee_amounts (abs(a));
-
-
-statement ok
-GRANT SELECT, INSERT, UPDATE, DELETE ON iee_items, iee_amounts TO iee_vedernikoff;
+GRANT SELECT, INSERT, UPDATE, DELETE ON iee_items TO iee_vedernikoff;
 
 
 statement ok
@@ -48,10 +36,6 @@ INSERT INTO iee_items VALUES (1, 1);
 
 statement ok
 REVOKE EXECUTE ON FUNCTION iee_double(INTEGER) FROM PUBLIC;
-
-
-statement ok
-REVOKE EXECUTE ON FUNCTION abs(INTEGER) FROM PUBLIC;
 
 
 statement ok
@@ -72,12 +56,6 @@ db error: ERROR: permission denied for function iee_double
 
 statement ok
 UPDATE iee_items SET b = 4;
-
-
-statement error
-INSERT INTO iee_amounts VALUES (-5);
-----
-db error: ERROR: permission denied for function abs
 
 
 statement ok
@@ -138,15 +116,7 @@ a	b
 
 
 statement ok
-GRANT EXECUTE ON FUNCTION abs(INTEGER) TO PUBLIC;
-
-
-statement ok
 DROP TABLE iee_items;
-
-
-statement ok
-DROP TABLE iee_amounts;
 
 
 statement ok

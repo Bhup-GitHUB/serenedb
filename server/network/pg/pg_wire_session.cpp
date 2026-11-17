@@ -190,9 +190,8 @@ bool DeallocatesPreparedStatements(const duckdb::SQLStatement& statement) {
   if (statement.type != duckdb::StatementType::DROP_STATEMENT) {
     return false;
   }
-  const auto& infos = statement.Cast<duckdb::DropStatement>().infos;
-  return !infos.empty() &&
-         infos[0]->type == duckdb::CatalogType::PREPARED_STATEMENT;
+  const auto& info = statement.Cast<duckdb::DropStatement>().info;
+  return info && info->type == duckdb::CatalogType::PREPARED_STATEMENT;
 }
 
 // Classified from the parsed statement BEFORE Prepare -- the CSV sniff opens

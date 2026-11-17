@@ -108,7 +108,7 @@ duckdb::AlterPermissionsInfo& AddRevoke(std::vector<OwnedAlter>& alters,
   alter.privileges = duckdb::ObjectKindOf(acl_class).privileges;
   alter.revoke = true;
   alter.cascade = true;
-  alter.grantee_ids = {role};
+  alter.grantee_id = role;
   alter.grantors = info.grantors;
   return alter;
 }
@@ -175,16 +175,12 @@ void RevokeShared(ClusterCatalog& cluster, duckdb::ClientContext& context,
           continue;
         }
         for (const auto& row : permissions.Rows().rows) {
-          if (!GrantsTo(row.acl, role) &&
-              absl::c_none_of(row.columns,
-                              [&](const duckdb::ColumnAcl& column) {
-                                return GrantsTo(column.acl, role);
-                              })) {
+          if (!GrantsTo(row.acl, role)) {
             continue;
           }
           auto& alter = database(role, row.kind);
           alter.database_rows = {
-            duckdb::GrantRow{row.kind, row.oid, row.name, {}, {}}};
+            duckdb::GrantRow{row.kind, row.oid, row.name, {}}};
           alter.object_owner_id = bootstrap;
         }
         if (absl::c_any_of(permissions.defaults,
@@ -219,7 +215,7 @@ void RevokeShared(ClusterCatalog& cluster, duckdb::ClientContext& context,
             auto& alter = AddRevoke(alters, cluster, transaction, member, role,
                                     duckdb::CatalogType::PARAMETER_ENTRY, info);
             alter.database_rows = {
-              duckdb::GrantRow{row.kind, row.oid, row.name, {}, {}}};
+              duckdb::GrantRow{row.kind, row.oid, row.name, {}}};
             alter.object_owner_id = bootstrap;
           }
         }

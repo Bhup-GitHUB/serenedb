@@ -3858,6 +3858,14 @@ def test_sequence_sqlstates(conn):
     assert not errors(_simple(conn, "DROP SEQUENCE ns_seq"))
 
 
+def test_database_owner_membership_is_feature_not_supported(conn):
+    assert not errors(_simple(conn, "DROP ROLE IF EXISTS ns_dor_member"))
+    assert not errors(_simple(conn, "CREATE ROLE ns_dor_member"))
+    assert sqlstates(_simple(conn, "GRANT pg_database_owner TO ns_dor_member")) == ["0A000"]
+    assert sqlstates(_simple(conn, "GRANT ns_dor_member TO pg_database_owner")) == ["0A000"]
+    assert not errors(_simple(conn, "DROP ROLE ns_dor_member"))
+
+
 @pytest.mark.parametrize(
     "query",
     [

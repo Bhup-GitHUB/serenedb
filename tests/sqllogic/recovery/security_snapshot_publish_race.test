@@ -1,13 +1,17 @@
 statement ok
+CREATE ROLE sspr_group;
+
+
+statement ok
 CREATE ROLE sspr_lead;
 
 
 statement ok
-GRANT SELECT (rolname) ON pg_catalog.pg_authid TO sspr_lead;
+GRANT sspr_group TO sspr_lead;
 
 
 query
-SELECT has_column_privilege('sspr_lead', 'pg_catalog.pg_authid', 'rolname', 'SELECT') AS lead;
+SELECT pg_has_role('sspr_lead', 'sspr_group', 'MEMBER') AS lead;
 ----
 lead
 t
@@ -34,7 +38,7 @@ SET sdb_faults = 'pause_publish_after_catalog_version';
 
 connection revoker
 statement async ok
-REVOKE SELECT (rolname) ON pg_catalog.pg_authid FROM sspr_lead;
+REVOKE sspr_group FROM sspr_lead;
 
 
 connection default
@@ -63,7 +67,7 @@ wait
 
 connection default
 query
-SELECT has_column_privilege('sspr_lead', 'pg_catalog.pg_authid', 'rolname', 'SELECT') AS lead;
+SELECT pg_has_role('sspr_lead', 'sspr_group', 'MEMBER') AS lead;
 ----
 lead
 f
@@ -75,3 +79,7 @@ DROP ROLE sspr_other;
 
 statement ok
 DROP ROLE sspr_lead;
+
+
+statement ok
+DROP ROLE sspr_group;

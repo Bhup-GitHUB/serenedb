@@ -1411,11 +1411,11 @@ yaclib::Task<> PgReplicationClient::ApplyTruncate(
     locals.emplace_back(&table.get());
   }
   for (auto& sequence : sequences) {
-    auto statement = duckdb::make_uniq<duckdb::AlterStatement>(
-      duckdb::make_uniq<duckdb::RestartSequenceInfo>(
-        duckdb::AlterEntryData(std::move(sequence),
-                               duckdb::OnEntryNotFound::THROW_EXCEPTION),
-        duckdb::optional<int64_t>()));
+    auto statement = duckdb::make_uniq<duckdb::AlterStatement>();
+    statement->info = duckdb::make_uniq<duckdb::RestartSequenceInfo>(
+      duckdb::AlterEntryData(std::move(sequence),
+                             duckdb::OnEntryNotFound::THROW_EXCEPTION),
+      duckdb::optional<int64_t>());
     auto prepared = this->_conn->Prepare(std::move(statement));
     if (prepared->HasError()) {
       prepared->GetErrorObject().Throw();

@@ -21,7 +21,6 @@
 #include <duckdb/catalog/catalog_entry/table_catalog_entry.hpp>
 #include <duckdb/catalog/catalog_entry/type_catalog_entry.hpp>
 #include <duckdb/catalog/catalog_entry/view_catalog_entry.hpp>
-#include <duckdb/catalog/permissions.hpp>
 #include <type_traits>
 
 #include "pg/catalog/builtin/builtin.h"
@@ -192,12 +191,7 @@ class PgType final : public SystemTableScan<kPgTypeSql> {
     Col<"typtypmod">(&BuiltinType::typmod),
     Col<"typnotnull">(&BuiltinType::notnull),
     Col<"typdefault">(
-      [](const auto& type) { return NonEmpty(type.default_text); }),
-    Col<"typacl">([](const auto& type, SystemScan& scan) -> const auto& {
-      static const duckdb::vector<duckdb::AclItem> kDefault;
-      const auto granted = duckdb::BuiltinTypeGrant(scan.Context(), type.oid);
-      return granted ? granted->acl : kDefault;
-    }));
+      [](const auto& type) { return NonEmpty(type.default_text); }));
 
   static constexpr auto kEnumType = Shape<kSql, const UserType>(
     kUserTypeColumns, kTypeTraits, Col<"typlen">([](const auto&) { return 4; }),

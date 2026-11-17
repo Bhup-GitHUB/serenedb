@@ -15,11 +15,19 @@ DROP ROLE IF EXISTS lgs_other;
 
 
 statement ok
+DROP ROLE IF EXISTS lgs_plain;
+
+
+statement ok
 CREATE ROLE lgs_member;
 
 
 statement ok
 CREATE ROLE lgs_other;
+
+
+statement ok
+CREATE ROLE lgs_plain LOGIN PASSWORD 'lgs_pw';
 
 
 statement ok
@@ -64,6 +72,21 @@ lgs_other
 
 statement ok
 ALTER GROUP lgs_group DROP USER lgs_member;
+
+
+connection c_plain user=lgs_plain password=lgs_pw
+statement error
+ALTER GROUP lgs_group ADD USER lgs_member;
+----
+db error: ERROR: permission denied to alter role
+DETAIL: Only roles with the ADMIN option on role "lgs_group" may add or drop members.
+
+
+statement error
+ALTER GROUP pg_monitor ADD USER lgs_member;
+----
+db error: ERROR: role name "pg_monitor" is reserved
+DETAIL: Cannot alter reserved roles.
 
 
 statement ok
@@ -147,3 +170,7 @@ DROP ROLE lgs_member;
 
 statement ok
 DROP ROLE lgs_other;
+
+
+statement ok
+DROP ROLE lgs_plain;

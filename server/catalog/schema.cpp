@@ -40,7 +40,6 @@
 #include <duckdb/catalog/entry_lookup_info.hpp>
 #include <duckdb/catalog/permissions.hpp>
 #include <duckdb/common/exception/catalog_exception.hpp>
-#include <duckdb/main/config.hpp>
 #include <duckdb/parser/parsed_data/alter_info.hpp>
 #include <duckdb/parser/parsed_data/alter_scalar_function_info.hpp>
 #include <duckdb/parser/parsed_data/alter_table_info.hpp>
@@ -195,15 +194,6 @@ bool MoveOverload(Schema& schema, Schema& target_schema,
   return true;
 }
 
-void GrantOnDatabase(duckdb::ClientContext& context, const Schema& schema,
-                     duckdb::unique_ptr<duckdb::AlterInfo> info) {
-  auto& grant = info->Cast<duckdb::AlterPermissionsInfo>();
-  grant.entry_catalog_type = duckdb::CatalogType::DATABASE_ENTRY;
-  grant.SetQualifiedName(duckdb::Identifier{}, duckdb::Identifier{},
-                         schema.ParentCatalog().GetName());
-  duckdb::Catalog::GetSystemCatalog(context).Alter(context, grant);
-}
-
 void AlterAllInSchema(Schema& schema, duckdb::CatalogTransaction transaction,
                       duckdb::AlterPermissionsInfo& info) {
   const auto kind = info.entry_catalog_type;
@@ -212,16 +202,8 @@ void AlterAllInSchema(Schema& schema, duckdb::CatalogTransaction transaction,
     duckdb::idx_t overload_oid;
   };
   std::vector<Target> targets;
-  std::vector<duckdb::reference<duckdb::CatalogEntry>> system_relations;
   const auto collect = [&](duckdb::CatalogEntry& entry) {
-    if (!InKind(entry, kind)) {
-      return;
-    }
-    if (entry.internal) {
-      if (kind == duckdb::CatalogType::TABLE_ENTRY &&
-          !duckdb::IsUnowned(entry)) {
-        system_relations.emplace_back(entry);
-      }
+    if (entry.internal || !InKind(entry, kind)) {
       return;
     }
     if (entry.type != duckdb::CatalogType::MACRO_ENTRY &&
@@ -253,37 +235,6 @@ void AlterAllInSchema(Schema& schema, duckdb::CatalogTransaction transaction,
     schema.Alter(transaction, info);
   }
   info.overload_oid = 0;
-  if (!transaction.HasContext()) {
-    return;
-  }
-  auto& context = transaction.GetContext();
-  for (const auto& relation : system_relations) {
-    auto grant = info.Copy();
-    auto& relation_grant = grant->Cast<duckdb::AlterPermissionsInfo>();
-    relation_grant.database_rows = {
-      duckdb::GrantRow{duckdb::CatalogType::TABLE_ENTRY,
-                       relation.get().oid,
-                       {},
-                       relation.get().permissions.acl,
-                       {}}};
-    relation_grant.object_owner_id = relation.get().permissions.owner;
-    GrantOnDatabase(context, schema, std::move(grant));
-  }
-  const auto& config = duckdb::DBConfig::GetConfig(context);
-  if (kind != duckdb::CatalogType::MACRO_ENTRY || !info.include_functions ||
-      !schema.internal || duckdb::IsUnowned(schema) ||
-      !config.builtin_function_key) {
-    return;
-  }
-  auto rows = duckdb::BuiltinFunctionRows(context, schema);
-  if (rows.empty()) {
-    return;
-  }
-  auto grant = info.Copy();
-  auto& function_grant = grant->Cast<duckdb::AlterPermissionsInfo>();
-  function_grant.database_rows = std::move(rows);
-  function_grant.object_owner_id = config.bootstrap_role;
-  GrantOnDatabase(context, schema, std::move(grant));
 }
 
 void ReownSequences(duckdb::CatalogTransaction transaction,

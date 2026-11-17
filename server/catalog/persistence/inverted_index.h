@@ -81,7 +81,6 @@ struct UniqueKeyRecord {
 struct FunctionCallRecord {
   duckdb::CatalogType type = duckdb::CatalogType::INVALID;
   std::string name;
-  std::string builtin_key;
   duckdb::RoleCapability capability = duckdb::RoleCapability::None;
   std::string catalog;
   duckdb::idx_t macro_overload = 0;

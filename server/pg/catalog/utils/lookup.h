@@ -157,14 +157,10 @@ const duckdb::ColumnList* TableColumns(const Relation& relation);
 
 struct RelationAccess : Relation {
   const duckdb::Permissions* permissions;
-  const duckdb::vector<duckdb::ColumnAcl>* column_acls = nullptr;
 };
 
-std::span<const duckdb::AclItem> ColumnAclOf(
-  const RelationAccess& relation, const duckdb::ColumnDefinition& column);
-
 const duckdb::Permissions& PrivilegePermissions(
-  duckdb::ClientContext& context, const duckdb::CatalogEntry& entry);
+  const duckdb::CatalogEntry& entry);
 
 std::optional<RelationAccess> RelationByOid(const Session& session,
                                             uint64_t oid);

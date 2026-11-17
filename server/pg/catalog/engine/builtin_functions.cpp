@@ -179,20 +179,6 @@ struct BuiltinOverload {
   BuiltinFunction function;
 };
 
-std::string FunctionKey(duckdb::idx_t nsp, std::string_view name,
-                        std::span<const duckdb::idx_t> argtypes) {
-  return absl::StrCat(nsp, ".", name, "(", absl::StrJoin(argtypes, ","), ")");
-}
-
-std::string BuiltinGrantKey(std::string_view schema, std::string_view name,
-                            std::span<const duckdb::idx_t> argtypes) {
-  if (schema == DEFAULT_SCHEMA) {
-    return FunctionKey(kPgCatalogSchema, name, argtypes);
-  }
-  const auto* system = FindSystemObject(kSystemNamespaces, schema);
-  return system ? FunctionKey(system->oid, name, argtypes) : std::string{};
-}
-
 template<typename Visit>
 void VisitBuiltinOverloads(duckdb::ClientContext& context, Visit&& visit) {
   const auto emit_source = [&](std::string_view schema, std::string_view name,
@@ -206,7 +192,6 @@ void VisitBuiltinOverloads(duckdb::ClientContext& context, Visit&& visit) {
                           bool exact, char kind, duckdb::idx_t rettype,
                           std::vector<duckdb::idx_t> argtypes, bool retset,
                           bool strict, char volatility) {
-      auto grant_key = BuiltinGrantKey(schema, name, argtypes);
       visit(BuiltinOverload{
         .key = absl::StrCat(kind_name, " ", system_entry ? "system." : "",
                             schema, ".", name, "(", parameters, ")"),
@@ -224,8 +209,7 @@ void VisitBuiltinOverloads(duckdb::ClientContext& context, Visit&& visit) {
           .retset = retset,
           .strict = strict,
           .volatility = volatility,
-          .capability = capability,
-          .grant_key = std::move(grant_key)}});
+          .capability = capability}});
     };
     const auto emit_macros =
       [&](std::string_view kind_name,
@@ -321,15 +305,13 @@ std::vector<BuiltinFunction> CollectBuiltinFunctions(
   duckdb::ClientContext& context) {
   std::vector<BuiltinFunction> functions;
   for (const auto& proc : BuiltinProcs()) {
-    auto& function = functions.emplace_back(
+    functions.emplace_back(
       static_cast<duckdb::idx_t>(proc.oid), std::string{proc.name},
       kPgCatalogSchema, proc.kind, static_cast<duckdb::idx_t>(proc.lang),
       static_cast<duckdb::idx_t>(proc.rettype),
       std::vector<duckdb::idx_t>{proc.argtypes.begin(),
                                  proc.argtypes.begin() + proc.nargs},
       proc.retset, proc.strict, proc.volatility, proc.src);
-    function.grant_key = BuiltinGrantKey(irs::StaticStrings::kPgCatalogSchema,
-                                         function.name, function.argtypes);
   }
   std::vector<BuiltinOverload> overloads;
   VisitBuiltinOverloads(context, [&](BuiltinOverload&& overload) {
@@ -364,74 +346,16 @@ absl::Mutex gBuiltinsLock;
 std::shared_ptr<const BuiltinFunctions> gBuiltins
   ABSL_GUARDED_BY(gBuiltinsLock);
 
-std::vector<duckdb::idx_t> OverloadArgTypes(
-  const duckdb::CatalogEntry& function, duckdb::idx_t overload) {
-  using enum duckdb::CatalogType;
-  switch (function.type) {
-    case SCALAR_FUNCTION_ENTRY:
-      return ArgTypes(function.Cast<duckdb::ScalarFunctionCatalogEntry>()
-                        .functions.functions[overload]
-                        ->GetSignature());
-    case AGGREGATE_FUNCTION_ENTRY:
-      return ArgTypes(function.Cast<duckdb::AggregateFunctionCatalogEntry>()
-                        .functions.functions[overload]
-                        ->GetSignature());
-    case WINDOW_FUNCTION_ENTRY:
-      return ArgTypes(function.Cast<duckdb::WindowFunctionCatalogEntry>()
-                        .functions.functions[overload]
-                        ->GetSignature());
-    case TABLE_FUNCTION_ENTRY:
-      return ArgTypes(function.Cast<duckdb::TableFunctionCatalogEntry>()
-                        .functions.functions[overload]
-                        ->GetSignature());
-    case PRAGMA_FUNCTION_ENTRY:
-      return ArgTypes(function.Cast<duckdb::PragmaFunctionCatalogEntry>()
-                        .functions.functions[overload]
-                        ->GetSignature());
-    case MACRO_ENTRY:
-    case TABLE_MACRO_ENTRY:
-      return ArgTypes(
-        *function.Cast<duckdb::MacroCatalogEntry>().macros[overload]);
-    default:
-      return {};
-  }
-}
-
 }  // namespace
 
-std::string BuiltinFunctionKey(const duckdb::CatalogEntry& function,
-                               duckdb::idx_t overload) {
-  return BuiltinGrantKey(function.ParentSchemaName().GetIdentifierName(),
-                         function.name.GetIdentifierName(),
-                         OverloadArgTypes(function, overload));
-}
-
 const duckdb::Permissions& BuiltinFunctionPermissions(
-  duckdb::ClientContext& context, const BuiltinFunction& function) {
+  const BuiltinFunction& function) {
   static const duckdb::Permissions kPublic{.owner = kRootUser};
   static const duckdb::Permissions kOwner{
     .owner = kRootUser,
     .acl = {duckdb::AclItem{kRootUser, kRootUser, duckdb::AclMode::Execute,
                             duckdb::AclMode::NoRights}}};
-  if (const auto grants = duckdb::BuiltinFunctionGrants(context)) {
-    if (const auto row = grants->find(function.grant_key);
-        row != grants->end()) {
-      return row->second;
-    }
-  }
   return function.capability == duckdb::RoleCapability::None ? kPublic : kOwner;
-}
-
-std::string BuiltinSignatureKey(
-  const duckdb::CatalogEntry& function,
-  const duckdb::vector<duckdb::LogicalType>& arguments) {
-  std::vector<duckdb::idx_t> argtypes;
-  argtypes.reserve(arguments.size());
-  for (const auto& type : arguments) {
-    argtypes.emplace_back(TypeOid(type));
-  }
-  return BuiltinGrantKey(function.ParentSchemaName().GetIdentifierName(),
-                         function.name.GetIdentifierName(), argtypes);
 }
 
 BuiltinFunctions::BuiltinFunctions(duckdb::idx_t version,
@@ -440,20 +364,6 @@ BuiltinFunctions::BuiltinFunctions(duckdb::idx_t version,
   for (uint32_t i = 0; i < _functions.size(); ++i) {
     _by_name[_functions[i].name].emplace_back(i);
   }
-}
-
-const BuiltinFunction* BuiltinFunctions::FindByKey(std::string_view key) const {
-  const auto dot = key.find('.');
-  const auto paren = key.find('(', dot + 1);
-  if (dot == std::string_view::npos || paren == std::string_view::npos) {
-    return nullptr;
-  }
-  for (const auto index : Named(key.substr(dot + 1, paren - dot - 1))) {
-    if (_functions[index].grant_key == key) {
-      return &_functions[index];
-    }
-  }
-  return nullptr;
 }
 
 std::shared_ptr<const BuiltinFunctions> GetBuiltinFunctions(

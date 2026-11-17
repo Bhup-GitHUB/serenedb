@@ -158,7 +158,8 @@ std::string_view AlterTag(const duckdb::AlterInfo& info) {
       return "DROP OWNED";
     case ALTER_ROLE: {
       const auto& role = info.Cast<duckdb::AlterRoleInfo>();
-      if (role.grant_role.empty() || role.alter_group) {
+      if ((role.grant_role.empty() && role.granted_roles.empty()) ||
+          role.alter_group) {
         return "ALTER ROLE";
       }
       return role.revoke ? "REVOKE ROLE" : "GRANT ROLE";
@@ -303,19 +304,19 @@ CommandTag BuildCommandTagImpl(duckdb::StatementType stmt_type,
     case StatementType::DROP_STATEMENT: {
       if (unbound) {
         const auto& drop_stmt = unbound->Cast<duckdb::DropStatement>();
-        if (!drop_stmt.infos.empty()) {
-          const auto& info = *drop_stmt.infos[0];
-          if (info.type == duckdb::CatalogType::PREPARED_STATEMENT) {
-            if (info.extra_drop_info) {
-              return make(DiscardTag(
-                info.extra_drop_info->Cast<duckdb::ExtraDropDiscardInfo>()
-                  .target));
+        if (drop_stmt.info) {
+          if (drop_stmt.info->type == duckdb::CatalogType::PREPARED_STATEMENT) {
+            if (drop_stmt.info->extra_drop_info) {
+              return make(DiscardTag(drop_stmt.info->extra_drop_info
+                                       ->Cast<duckdb::ExtraDropDiscardInfo>()
+                                       .target));
             }
-            return make(info.GetQualifiedName().Name().empty()
+            return make(drop_stmt.info->GetQualifiedName().Name().empty()
                           ? "DEALLOCATE ALL"
                           : "DEALLOCATE");
           }
-          return make(TagsOf(info.type, info.is_procedure).drop);
+          return make(
+            TagsOf(drop_stmt.info->type, drop_stmt.info->is_procedure).drop);
         }
       }
       return make("DROP");
@@ -323,8 +324,8 @@ CommandTag BuildCommandTagImpl(duckdb::StatementType stmt_type,
     case StatementType::ALTER_STATEMENT: {
       if (unbound) {
         const auto& alter_stmt = unbound->Cast<duckdb::AlterStatement>();
-        if (!alter_stmt.infos.empty()) {
-          return make(AlterTag(*alter_stmt.infos[0]));
+        if (alter_stmt.info) {
+          return make(AlterTag(*alter_stmt.info));
         }
       }
       return make("ALTER");

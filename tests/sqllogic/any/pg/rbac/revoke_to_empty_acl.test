@@ -128,58 +128,6 @@ acl
 
 
 statement ok
-REVOKE USAGE ON LANGUAGE sql FROM PUBLIC;
-
-
-statement ok
-REVOKE USAGE ON LANGUAGE sql FROM postgres;
-
-
-query
-SELECT has_language_privilege('rtea_other', 'sql', 'USAGE') AS other_usage;
-----
-other_usage
-f
-
-
-query
-SELECT array_to_string(lanacl, ',') AS acl FROM pg_language WHERE lanname = 'sql';
-----
-acl
-(empty)
-
-
-statement ok
-GRANT USAGE ON LANGUAGE sql TO PUBLIC;
-
-
-statement ok
-REVOKE EXECUTE ON FUNCTION lower(text) FROM PUBLIC;
-
-
-statement ok
-REVOKE EXECUTE ON FUNCTION lower(text) FROM postgres;
-
-
-query
-SELECT has_function_privilege('rtea_other', 'lower(text)', 'EXECUTE') AS other_execute;
-----
-other_execute
-f
-
-
-query
-SELECT array_to_string(proacl, ',') AS acl FROM pg_proc WHERE oid = 'lower(text)'::regprocedure;
-----
-acl
-(empty)
-
-
-statement ok
-GRANT EXECUTE ON FUNCTION lower(text) TO PUBLIC;
-
-
-statement ok
 CREATE DATABASE rtea_db;
 
 

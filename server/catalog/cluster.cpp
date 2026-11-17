@@ -329,16 +329,6 @@ void ClusterCatalog::Alter(duckdb::CatalogTransaction transaction,
     return;
   }
   auto& alter = info.Cast<duckdb::AlterRoleInfo>();
-  if (!alter.members.empty()) {
-    for (const auto& member : alter.members) {
-      auto membership = alter.Copy();
-      auto& one = membership->Cast<duckdb::AlterRoleInfo>();
-      one.members.clear();
-      one.SetName(duckdb::Identifier{member});
-      Alter(transaction, one);
-    }
-    return;
-  }
   if (alter.revoke && !alter.grant_role.empty() &&
       info.bind_mode == duckdb::AlterBindMode::BIND_ON_ALTER) {
     RevokeMembership(transaction, alter);
@@ -524,7 +514,7 @@ duckdb::optional_ptr<duckdb::CatalogEntry> ClusterCatalog::CreateRole(
 
 void ClusterCatalog::DropRole(
   duckdb::CatalogTransaction transaction,
-  const duckdb::vector<duckdb::unique_ptr<duckdb::DropInfo>>& infos) {
+  const duckdb::vector<duckdb::reference<duckdb::DropInfo>>& infos) {
   DeclareModified(transaction, *this,
                   duckdb::DatabaseModificationType::DROP_CATALOG_ENTRY);
   auto& context = transaction.GetContext();
@@ -558,7 +548,7 @@ void ClusterCatalog::DropRole(
     }
   };
   for (const auto& info : infos) {
-    check(*info);
+    check(info.get());
   }
   struct Membership {
     duckdb::Identifier member;

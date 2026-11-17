@@ -36,7 +36,6 @@
 #include <duckdb/parser/keyword_helper.hpp>
 #include <iresearch/utils/pg/errcodes.hpp>
 #include <iresearch/utils/pg/sql_exception_macro.hpp>
-#include <memory>
 #include <ranges>
 #include <span>
 #include <tuple>
@@ -45,9 +44,6 @@
 #include "catalog/catalog.h"
 #include "catalog/cluster.h"
 #include "catalog/schema.h"
-#include "pg/catalog/engine/builtin_functions.h"
-#include "pg/catalog/engine/registry.h"
-#include "pg/catalog/engine/system_table.h"
 #include "pg/catalog/functions/pg_catalog/objectaddress.h"
 #include "pg/catalog/utils/columns.h"
 #include "pg/catalog/utils/lookup.h"
@@ -257,41 +253,6 @@ void VisitDefaultAcls(
   }
 }
 
-void VisitDatabaseGrants(duckdb::ClientContext& context,
-                         const duckdb::CatalogEntry& database,
-                         duckdb::idx_t role,
-                         absl::FunctionRef<void(const ObjectGrant&)> visitor) {
-  const auto names = [&](std::span<const duckdb::AclItem> acl) {
-    return absl::c_any_of(acl, [&](const duckdb::AclItem& item) {
-      return item.grantee == role || item.grantor == role;
-    });
-  };
-  std::shared_ptr<const BuiltinFunctions> builtins;
-  for (const auto& row : database.permissions.Rows().rows) {
-    const auto classid = duckdb::ObjectKindOf(row.kind).pg_class;
-    if (names(row.acl)) {
-      auto objid = row.oid;
-      if (row.kind == duckdb::CatalogType::MACRO_ENTRY) {
-        if (!builtins) {
-          builtins = GetBuiltinFunctions(context);
-        }
-        const auto* builtin = builtins->FindByKey(row.name);
-        objid = builtin ? builtin->oid : kInvalidOid;
-      }
-      visitor({classid, objid, 0});
-    }
-    const auto* system =
-      row.columns.empty() ? nullptr : FindSystemTable(row.oid);
-    for (const auto& column : row.columns) {
-      if (system && names(column.acl) &&
-          system->Columns().ColumnExists(column.column)) {
-        visitor({classid, row.oid,
-                 Attnum(system->Columns().GetColumn(column.column))});
-      }
-    }
-  }
-}
-
 void VisitRoleReferences(
   duckdb::ClientContext& context, duckdb::idx_t role,
   absl::FunctionRef<void(const RoleReference& reference,
@@ -388,13 +349,14 @@ void VisitRoleReferences(
           return object;
         });
       });
-    VisitDatabaseGrants(context, *record, role, [&](const ObjectGrant& grant) {
-      visitor({record->oid, grant.classid, grant.objid, grant.objsubid, 'a'},
-              [&] {
-                return DescribeObject(context, grant.classid, grant.objid,
-                                      grant.objsubid);
-              });
-    });
+    for (const auto& row : record->permissions.Rows().rows) {
+      if (!names(row.acl)) {
+        continue;
+      }
+      const auto classid = duckdb::ObjectKindOf(row.kind).pg_class;
+      visitor({record->oid, classid, row.oid, 0, 'a'},
+              [&] { return DescribeObject(context, classid, row.oid, 0); });
+    }
   }
   cluster.Set(DATABASE_ENTRY)
     .Scan(cluster_transaction, [&](duckdb::CatalogEntry& database) {

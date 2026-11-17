@@ -18,51 +18,20 @@
 /// Copyright holder is SereneDB GmbH, Berlin, Germany
 ////////////////////////////////////////////////////////////////////////////////
 
-#include <span>
-
-#include "catalog/entry/database.h"
-#include "pg/catalog/engine/system_table.h"
 #include "pg/catalog/tables/tables.h"
 
 namespace sdb::pg {
 namespace {
 
-struct LanguageRow {
-  const SystemLanguage& language;
-  std::span<const duckdb::AclItem> acl;
-};
-
-class PgLanguage final : public SystemTableScan<kPgLanguageSql> {
- public:
-  using SystemTableScan::SystemTableScan;
-
-  static constexpr duckdb::idx_t kRows = std::size(kSystemLanguages);
-
-  static constexpr std::tuple kSources{CatalogSetSource{
-    SystemCatalog::Cluster, duckdb::CatalogType::DATABASE_ENTRY, {}}};
-
-  static constexpr auto kLanguage = Shape<kSql, const LanguageRow>(
-    Col<"oid">([](const auto& row) { return row.language.oid; }),
-    Col<"lanname">([](const auto& row) { return row.language.name; }),
-    Col<"lanowner">([](const auto&) { return kRootUser; }),
-    Col<"lanpltrusted">([](const auto& row) { return row.language.trusted; }),
-    Col<"lanvalidator">([](const auto& row) { return row.language.validator; }),
-    Col<"lanacl">([](const auto& row) { return row.acl; }));
-
-  void Row(const catalog::DatabaseCatalogEntry& database) {
-    if (database.oid != Database().GetAttached().oid) {
-      return;
-    }
-    for (const auto& language : kSystemLanguages) {
-      Emit<kLanguage>(
-        {language, database.permissions.RowAcl(
-                     duckdb::CatalogType::LANGUAGE_ENTRY, language.oid)});
-    }
-  }
-};
+constexpr auto kLanguage = Shape<kPgLanguageSql, const SystemLanguage>(
+  Col<"oid">(&SystemLanguage::oid), Col<"lanname">(&SystemLanguage::name),
+  Col<"lanowner">([](const auto&) { return kRootUser; }),
+  Col<"lanpltrusted">(&SystemLanguage::trusted),
+  Col<"lanvalidator">(&SystemLanguage::validator));
 
 }  // namespace
 
-SystemTable gPgLanguage = SystemTableOf<PgLanguage>();
+SystemTable gPgLanguage =
+  SystemTableOf<StaticTable<kLanguage, kSystemLanguages>>();
 
 }  // namespace sdb::pg

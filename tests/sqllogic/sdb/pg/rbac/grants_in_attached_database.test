@@ -40,25 +40,7 @@ USE giad_mem_${__DATABASE__};
 
 
 statement error
-GRANT EXECUTE ON FUNCTION lower(text) TO giad_r;
-----
-db error: ERROR: database "giad_mem_<slt:ignore>" does not exist
-
-
-statement error
-GRANT USAGE ON TYPE int4 TO giad_r;
-----
-db error: ERROR: database "giad_mem_<slt:ignore>" does not exist
-
-
-statement error
 GRANT USAGE ON FOREIGN DATA WRAPPER postgres_fdw TO giad_r;
-----
-db error: ERROR: database "giad_mem_<slt:ignore>" does not exist
-
-
-statement error
-GRANT USAGE ON LANGUAGE sql TO giad_r;
 ----
 db error: ERROR: database "giad_mem_<slt:ignore>" does not exist
 

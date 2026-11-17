@@ -88,8 +88,6 @@ def test_permission_command_tags():
                 (f"CREATE TYPE {prefix}_ty AS ENUM ('a')", "CREATE TYPE"),
                 (f"ALTER TYPE {prefix}_ty OWNER TO {prefix}_r", "ALTER TYPE"),
                 (f"DROP TYPE {prefix}_ty", "DROP TYPE"),
-                (f"GRANT USAGE ON LANGUAGE sql TO {prefix}_r", "GRANT"),
-                (f"REVOKE USAGE ON LANGUAGE sql FROM {prefix}_r", "REVOKE"),
                 (f"CREATE VIEW {prefix}_v AS SELECT 1 AS a", "CREATE VIEW"),
                 (f"CREATE FUNCTION {prefix}_f() RETURNS INT AS $$ SELECT 1 $$ LANGUAGE sql", "CREATE FUNCTION"),
                 (f"CREATE PROCEDURE {prefix}_p() AS $$ SELECT 1 $$ LANGUAGE sql", "CREATE PROCEDURE"),

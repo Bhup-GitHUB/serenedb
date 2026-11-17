@@ -267,6 +267,20 @@ db error: ERROR: role name "pg_read_all_data" is reserved
 DETAIL: Cannot alter reserved roles.
 
 
+statement error
+ALTER ROLE pg_read_all_data IN DATABASE ${__DATABASE__} SET work_mem = '1MB';
+----
+db error: ERROR: role name "pg_read_all_data" is reserved
+DETAIL: Cannot alter reserved roles.
+
+
+statement error
+ALTER ROLE pg_read_all_data RENAME TO prr_renamed;
+----
+db error: ERROR: role name "pg_read_all_data" is reserved
+DETAIL: Role names starting with "pg_" are reserved.
+
+
 connection c_admin user=prr_admin password=prr_pw
 statement error
 GRANT pg_read_all_data TO prr_writer;

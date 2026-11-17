@@ -46,17 +46,6 @@ void VisitDefaultAcls(
   absl::FunctionRef<void(duckdb::idx_t oid, const duckdb::DefaultAcl& row)>
     visitor);
 
-struct ObjectGrant {
-  duckdb::idx_t classid;
-  duckdb::idx_t objid;
-  int32_t objsubid;
-};
-
-void VisitDatabaseGrants(duckdb::ClientContext& context,
-                         const duckdb::CatalogEntry& database,
-                         duckdb::idx_t role,
-                         absl::FunctionRef<void(const ObjectGrant&)> visitor);
-
 struct RoleReference {
   duckdb::idx_t dbid;
   duckdb::idx_t classid;

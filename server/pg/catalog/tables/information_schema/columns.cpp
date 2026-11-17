@@ -257,13 +257,8 @@ class InfoColumns final : public SystemTableScan<kInfoColumnsSql> {
     const auto not_null =
       Reads<"is_nullable">() ? NotNullColumns(table) : std::vector<bool>{};
     const auto system = SystemColumns(table);
-    const auto column_acls =
-      visible ? nullptr : duckdb::EffectiveColumnAcls(Context(), table);
     for (const auto& column : table.GetColumns().Logical()) {
-      const auto acl = column_acls
-                         ? duckdb::FindColumnAcl(*column_acls, column.Name())
-                         : std::span<const duckdb::AclItem>{column.Acl()};
-      if (!visible && (_role.HeldModes(acl) & kAnyColumnPrivilege) ==
+      if (!visible && (_role.HeldModes(column.Acl()) & kAnyColumnPrivilege) ==
                         duckdb::AclMode::NoRights) {
         continue;
       }
@@ -285,8 +280,7 @@ class InfoColumns final : public SystemTableScan<kInfoColumnsSql> {
 
   void Row(duckdb::ViewCatalogEntry& view) {
     const bool visible = Visible(view);
-    const auto column_acls = duckdb::EffectiveColumnAcls(Context(), view);
-    if (!visible && view.column_acls.empty() && !column_acls) {
+    if (!visible && view.column_acls.empty()) {
       return;
     }
     const auto columns = ViewColumns(Context(), view);
@@ -295,9 +289,8 @@ class InfoColumns final : public SystemTableScan<kInfoColumnsSql> {
     }
     const auto [schema, relation] = NameOf(Transaction(), view);
     for (size_t i = 0; i < columns->types.size(); ++i) {
-      if (!visible &&
-          (_role.HeldModes(duckdb::ColumnAclAt(view, column_acls, i)) &
-           kAnyColumnPrivilege) == duckdb::AclMode::NoRights) {
+      if (!visible && (_role.HeldModes(duckdb::ColumnAclAt(view, i)) &
+                       kAnyColumnPrivilege) == duckdb::AclMode::NoRights) {
         continue;
       }
       Emit<kViewColumn>({.scan = *this,
@@ -313,7 +306,7 @@ class InfoColumns final : public SystemTableScan<kInfoColumnsSql> {
 
  private:
   bool Visible(const duckdb::CatalogEntry& relation) const {
-    const auto& permissions = PrivilegePermissions(Context(), relation);
+    const auto& permissions = PrivilegePermissions(relation);
     return permissions.owner == kInvalidOid ||
            _role.CanAny(duckdb::CatalogType::TABLE_ENTRY, permissions,
                         kAnyColumnPrivilege);

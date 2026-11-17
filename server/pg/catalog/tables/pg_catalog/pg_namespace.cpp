@@ -19,7 +19,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 
 #include <duckdb/catalog/catalog_entry/schema_catalog_entry.hpp>
-#include <duckdb/catalog/permissions.hpp>
 
 #include "pg/catalog/tables/tables.h"
 #include "pg/catalog/utils/lookup.h"
@@ -46,8 +45,8 @@ class PgNamespace final : public SystemTableScan<kPgNamespaceSql> {
     Col<"nspname">(&duckdb::CatalogEntry::name),
     Col<"nspowner">(
       [](const auto& schema) { return schema.permissions.owner; }),
-    Col<"nspacl">([](const auto& schema, SystemScan& scan) -> const auto& {
-      return duckdb::EffectivePermissions(scan.Context(), schema).acl;
+    Col<"nspacl">([](const auto& schema) -> const auto& {
+      return schema.permissions.acl;
     }));
 
   void Row(const duckdb::SchemaCatalogEntry& schema) { Emit<kSchema>(schema); }

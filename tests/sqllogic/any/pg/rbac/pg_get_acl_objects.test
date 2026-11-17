@@ -87,17 +87,12 @@ acl	same
 postgres=U/postgres,gao_r=U/postgres	t
 
 
-statement ok
-GRANT USAGE ON LANGUAGE sql TO gao_r;
-
-
 query
-SELECT array_to_string(pg_get_acl('pg_language'::regclass, oid, 0), ',') AS acl,
-       pg_get_acl('pg_language'::regclass, oid, 0) IS NOT DISTINCT FROM lanacl AS same
+SELECT pg_get_acl('pg_language'::regclass, oid, 0) IS NOT DISTINCT FROM lanacl AS same
 FROM pg_language WHERE lanname = 'sql';
 ----
-acl	same
-=U/postgres,postgres=U/postgres,gao_r=U/postgres	t
+same
+t
 
 
 statement ok
@@ -128,10 +123,6 @@ differing
 
 statement ok
 DROP VIEW gao_v;
-
-
-statement ok
-REVOKE USAGE ON LANGUAGE sql FROM gao_r;
 
 
 skipif postgres

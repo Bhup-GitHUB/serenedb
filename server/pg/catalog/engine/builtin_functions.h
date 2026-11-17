@@ -20,11 +20,9 @@
 
 #pragma once
 
-#include <duckdb/catalog/catalog_entry.hpp>
 #include <duckdb/catalog/permissions.hpp>
 #include <duckdb/common/constants.hpp>
 #include <duckdb/common/enums/role_capability.hpp>
-#include <duckdb/common/types.hpp>
 #include <duckdb/main/client_context.hpp>
 #include <iresearch/utils/containers/flat_hash_map.hpp>
 #include <memory>
@@ -49,7 +47,6 @@ struct BuiltinFunction {
   char volatility;
   std::string_view src;
   duckdb::RoleCapability capability = duckdb::RoleCapability::None;
-  std::string grant_key;
 };
 
 class BuiltinFunctions {
@@ -66,7 +63,6 @@ class BuiltinFunctions {
     const auto it = _by_name.find(name);
     return it == _by_name.end() ? std::span<const uint32_t>{} : it->second;
   }
-  const BuiltinFunction* FindByKey(std::string_view key) const;
 
  private:
   duckdb::idx_t _version;
@@ -79,11 +75,6 @@ std::shared_ptr<const BuiltinFunctions> GetBuiltinFunctions(
   duckdb::ClientContext& context);
 
 const duckdb::Permissions& BuiltinFunctionPermissions(
-  duckdb::ClientContext& context, const BuiltinFunction& function);
-std::string BuiltinFunctionKey(const duckdb::CatalogEntry& function,
-                               duckdb::idx_t overload);
-std::string BuiltinSignatureKey(
-  const duckdb::CatalogEntry& function,
-  const duckdb::vector<duckdb::LogicalType>& arguments);
+  const BuiltinFunction& function);
 
 }  // namespace sdb::pg
