@@ -1295,9 +1295,16 @@ struct TimeTzBinCore {
   }
 };
 
+template<WrapContext InContainer>
 struct BitTextCore {
   using Value = duckdb::string_t;
   IRS_FORCE_INLINE static void Render(SerializationContext& ctx, Value raw) {
+    if constexpr (InContainer != WrapContext::None) {
+      if (duckdb::Bit::BitLength(raw) == 0) {
+        WriteWrapped<InContainer>(ctx, [] {});
+        return;
+      }
+    }
     // DuckDB Bit::ToString gives "01001..." string
     ctx.writer->Write(duckdb::Bit::ToString(raw));
   }
@@ -1520,9 +1527,12 @@ bool NeedsQuotingIn(SerializationContext& ctx, const duckdb::LogicalType& type,
     case TIME_NS:
     case TIME_TZ:
     case UUID:
-    case BIT:
     case GEOMETRY:
       return false;
+    case BIT:
+      return duckdb::Bit::BitLength(
+               duckdb::UnifiedVectorFormat::GetDataUnsafe<duckdb::string_t>(
+                 vdata.unified)[idx]) == 0;
     case TIMESTAMP_SEC:
     case TIMESTAMP_MS:
     case TIMESTAMP:
@@ -1640,7 +1650,6 @@ ArrayWrap ArrayWrapOf(
     case TIME_NS:
     case TIME_TZ:
     case UUID:
-    case BIT:
     case GEOMETRY:
       return ArrayWrap::Never;
     default:
@@ -2952,8 +2961,8 @@ SerializationFunction GetArraySerialization(const duckdb::LogicalType& type,
       return MakeArraySerializer<UuidTextCore, UuidBinCore, kUuid>(
         format, context, kind);
     case BIT:
-      return MakeArraySerializer<BitTextCore, BitBinCore, kVarbit>(
-        format, context, kind);
+      return MakeArraySerializer<BitTextCore<WrapContext::Array>, BitBinCore,
+                                 kVarbit>(format, context, kind);
     case TUPLE:
     case STRUCT:
       if (IsInet(type)) {
@@ -3344,8 +3353,9 @@ SerializationFunction GetSerialization(const duckdb::LogicalType& type,
       return SelectFieldSerializer<UuidTextCore, UuidTextCore, UuidBinCore>(
         format, context);
     case BIT:
-      return SelectFieldSerializer<BitTextCore, BitTextCore, BitBinCore>(
-        format, context);
+      return SelectFieldSerializer<BitTextCore<WrapContext::None>,
+                                   BitTextCore<WrapContext::Record>,
+                                   BitBinCore>(format, context);
     case ENUM:
       return SelectFieldSerializer<EnumTextCore<WrapContext::None>,
                                    EnumTextCore<WrapContext::Record>,
