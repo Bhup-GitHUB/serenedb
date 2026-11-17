@@ -165,17 +165,21 @@ std::optional<std::string> ConstraintKeyText(
   duckdb::ClientContext& context, const duckdb::RoleAccess& role,
   const duckdb::TableCatalogEntry& table, const search::KeySpec& spec,
   std::string_view key) {
-  std::vector<duckdb::LogicalIndex> columns;
+  std::vector<duckdb::idx_t> columns;
   if (spec.key.expressions.empty()) {
     for (const auto id : spec.key.columns) {
       for (const auto& column : table.GetColumns().Logical()) {
         if (TableColumnId(column) == id) {
-          columns.push_back(column.Logical());
+          columns.push_back(column.Logical().index);
         }
       }
     }
   }
-  if (!duckdb::ConstraintKeyReader{role, table}.CanRead(columns)) {
+  const bool readable =
+    columns.empty() ? role.Can(duckdb::CatalogType::TABLE_ENTRY,
+                               table.permissions, duckdb::AclMode::Select)
+                    : role.CanColumns(table, duckdb::AclMode::Select, columns);
+  if (!readable) {
     return std::nullopt;
   }
   const auto values = DecodeKey(key, spec.types);

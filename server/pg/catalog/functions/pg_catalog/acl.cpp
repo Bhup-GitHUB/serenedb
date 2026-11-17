@@ -497,8 +497,7 @@ struct ColumnPrivileges : RelationPrivileges<ColumnPrivileges> {
       auto& view =
         relation.entry.get_mutable()->Cast<duckdb::ViewCatalogEntry>();
       if (const auto attnum = ViewAttnum(*session.context, view, name)) {
-        return ObjectTarget{relation.permissions,
-                            {duckdb::ColumnAclAt(view, attnum - 1)}};
+        return ObjectTarget{relation.permissions, {view.ColumnAcl(attnum - 1)}};
       }
     }
     THROW_SQL_ERROR(ERR_CODE(ERRCODE_UNDEFINED_COLUMN),
@@ -539,8 +538,7 @@ struct ColumnPrivileges : RelationPrivileges<ColumnPrivileges> {
       if (static_cast<duckdb::idx_t>(attnum) > info->types.size()) {
         return std::nullopt;
       }
-      return ObjectTarget{relation.permissions,
-                          {duckdb::ColumnAclAt(view, attnum - 1)}};
+      return ObjectTarget{relation.permissions, {view.ColumnAcl(attnum - 1)}};
     }
     if (static_cast<duckdb::idx_t>(attnum) > count) {
       return std::nullopt;

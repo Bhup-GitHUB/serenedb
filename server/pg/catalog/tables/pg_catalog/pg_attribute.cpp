@@ -174,7 +174,7 @@ class PgAttribute final : public SystemTableScan<kPgAttributeSql> {
     for (size_t i = 0; i < columns->types.size(); ++i) {
       Emit<kViewColumn>({{view.oid, columns->names[i].GetIdentifierName(),
                           static_cast<int16_t>(i + 1), columns->types[i]},
-                         duckdb::ColumnAclAt(view, i)});
+                         view.ColumnAcl(i)});
     }
   }
 

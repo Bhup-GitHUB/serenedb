@@ -289,7 +289,7 @@ class InfoColumns final : public SystemTableScan<kInfoColumnsSql> {
     }
     const auto [schema, relation] = NameOf(Transaction(), view);
     for (size_t i = 0; i < columns->types.size(); ++i) {
-      if (!visible && (_role.HeldModes(duckdb::ColumnAclAt(view, i)) &
+      if (!visible && (_role.HeldModes(view.ColumnAcl(i)) &
                        kAnyColumnPrivilege) == duckdb::AclMode::NoRights) {
         continue;
       }
