@@ -644,7 +644,7 @@ void SetConfigFunction(duckdb::DataChunk& args, duckdb::ExpressionState& state,
 
 duckdb::unique_ptr<duckdb::FunctionData> BindSetConfig(
   duckdb::BindScalarFunctionInput& input) {
-  if (input.HasBinder() && input.GetBinder().security_definer_body) {
+  if (input.HasBinder() && input.GetBinder().acting.security_definer) {
     input.GetBoundFunction().SetFunctionCallback(SetConfigFunction<true>);
   }
   return nullptr;
