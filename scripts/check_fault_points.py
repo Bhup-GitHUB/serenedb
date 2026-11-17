@@ -31,7 +31,9 @@ RECOVERY_DIR = "tests/sqllogic/recovery"
 SOURCE_DIRS = ("server", "iresearch")
 DUCKDB_CHECKOUT = "third_party/duckdb/.git"
 DUCKDB_DIRS = ("third_party/duckdb/src", "third_party/duckdb/extension")
-DUCKDB_FAULTS = frozenset({"slow_expression_bind", "slow_expression_rewrite", "slow_statistics_propagation"})
+DUCKDB_FAULTS = frozenset(
+    {"recursive_cte_task_lost", "slow_expression_bind", "slow_expression_rewrite", "slow_statistics_propagation"}
+)
 DUCKDB_PARK_FAULTS = frozenset(
     {
         "async_write_failure_completed",
@@ -39,10 +41,11 @@ DUCKDB_PARK_FAULTS = frozenset(
         "catalog_all_schemas_listed",
         "duckdb_databases_listed",
         "read_duckdb_reader_attached",
+        "recursive_cte_wait",
     }
 )
 DUCKDB_TEST_DIR = "third_party/duckdb/test"
-DUCKDB_TESTED_FAULTS = frozenset({"async_write_failure_completed"})
+DUCKDB_TESTED_FAULTS = frozenset({"async_write_failure_completed", "recursive_cte_task_lost", "recursive_cte_wait"})
 TEST_DIR = "tests"
 
 TEST_EXTS = (".test", ".test_slow")
