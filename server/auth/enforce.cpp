@@ -1293,17 +1293,27 @@ class Enforcer {
   }
 
   duckdb::CatalogEntry& ResolveTarget(duckdb::AlterPermissionsInfo& info) {
+    return *FindTarget(info, duckdb::OnEntryNotFound::THROW_EXCEPTION);
+  }
+
+  duckdb::optional_ptr<duckdb::CatalogEntry> FindTarget(
+    duckdb::AlterPermissionsInfo& info, duckdb::OnEntryNotFound if_not_found) {
     const auto& name = info.GetQualifiedName();
     if (info.entry_catalog_type == CatalogType::SCHEMA_ENTRY) {
-      auto& schema =
-        duckdb::Catalog::GetSchema(_context, name.Catalog(), name.Name());
-      info.SetQualifiedName(schema.ParentCatalog().GetName(),
-                            duckdb::Identifier(), schema.name);
-      return schema;
+      auto schema = duckdb::Catalog::GetSchema(_context, name.Catalog(),
+                                               name.Name(), if_not_found);
+      if (schema) {
+        info.SetQualifiedName(schema->ParentCatalog().GetName(),
+                              duckdb::Identifier(), schema->name);
+      }
+      return schema.get();
     }
     auto entry = FindEntry(info.entry_catalog_type, name);
     if (!entry && info.entry_catalog_type == CatalogType::MACRO_ENTRY) {
       entry = FindEntry(CatalogType::TABLE_MACRO_ENTRY, name);
+    }
+    if (!entry && if_not_found == duckdb::OnEntryNotFound::RETURN_NULL) {
+      return nullptr;
     }
     if (!entry) {
       const bool relation = info.entry_catalog_type == CatalogType::TABLE_ENTRY;
@@ -1320,7 +1330,7 @@ class Enforcer {
       entry->ParentSchemaPath(
         entry->ParentCatalog().GetCatalogTransaction(_context)),
       entry->name));
-    return *entry;
+    return entry;
   }
 
   void ResolveGrant(duckdb::AlterPermissionsInfo& info) {
@@ -1370,7 +1380,11 @@ class Enforcer {
   }
 
   void ResolveOwner(duckdb::AlterPermissionsInfo& info) {
-    auto& entry = ResolveTarget(info);
+    auto target = FindTarget(info, info.if_not_found);
+    if (!target) {
+      return;
+    }
+    auto& entry = *target;
     info.new_owner_id = RoleSpecId(info.new_owner);
     const bool relation = IsRelation(entry.type);
     if (_enforce && relation) {
